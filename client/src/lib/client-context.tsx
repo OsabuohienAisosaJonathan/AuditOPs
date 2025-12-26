@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { clientsApi, Client } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 interface ClientContextType {
   selectedClient: Client | null;
@@ -13,6 +14,7 @@ interface ClientContextType {
 const ClientContext = createContext<ClientContextType | undefined>(undefined);
 
 export function ClientProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [selectedClientId, setSelectedClientIdState] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("selectedClientId") || null;
@@ -25,6 +27,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     queryFn: clientsApi.getAll,
     staleTime: 0,
     refetchOnWindowFocus: true,
+    enabled: !!user,
   });
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) || null;
