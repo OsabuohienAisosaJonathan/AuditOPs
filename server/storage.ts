@@ -673,19 +673,19 @@ export class DbStorage implements IStorage {
 
   // Dashboard Summary
   async getDashboardSummary(): Promise<DashboardSummary> {
-    const allSales = await db.select().from(salesEntries);
-    const totalSales = allSales.reduce((acc, s) => acc + parseFloat(s.totalSales || "0"), 0);
+    const allSales: SalesEntry[] = await db.select().from(salesEntries);
+    const totalSales = allSales.reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
 
-    const allPurchases = await db.select().from(purchases);
-    const totalPurchases = allPurchases.reduce((acc, p) => acc + parseFloat(p.totalAmount || "0"), 0);
+    const allPurchases: Purchase[] = await db.select().from(purchases);
+    const totalPurchases = allPurchases.reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
 
-    const allExceptions = await db.select().from(exceptions);
+    const allExceptions: Exception[] = await db.select().from(exceptions);
     const totalExceptions = allExceptions.length;
-    const openExceptions = allExceptions.filter(e => e.status === "open").length;
+    const openExceptions = allExceptions.filter((e: Exception) => e.status === "open").length;
 
-    const allRecons = await db.select().from(reconciliations);
-    const totalVarianceValue = allRecons.reduce((acc, r) => acc + Math.abs(parseFloat(r.varianceValue || "0")), 0);
-    const pendingReconciliations = allRecons.filter(r => r.status === "pending").length;
+    const allRecons: Reconciliation[] = await db.select().from(reconciliations);
+    const totalVarianceValue = allRecons.reduce((acc: number, r: Reconciliation) => acc + Math.abs(parseFloat(r.varianceValue || "0")), 0);
+    const pendingReconciliations = allRecons.filter((r: Reconciliation) => r.status === "pending").length;
 
     const recentExceptions = allExceptions.slice(0, 5);
 
@@ -707,7 +707,7 @@ export class DbStorage implements IStorage {
       });
     }
 
-    const highVarianceRecons = allRecons.filter(r => Math.abs(parseFloat(r.varianceValue || "0")) > 1000);
+    const highVarianceRecons = allRecons.filter((r: Reconciliation) => Math.abs(parseFloat(r.varianceValue || "0")) > 1000);
     if (highVarianceRecons.length > 0) {
       redFlags.push({
         type: "variance",
@@ -716,7 +716,7 @@ export class DbStorage implements IStorage {
       });
     }
 
-    const criticalExceptions = allExceptions.filter(e => e.severity === "critical" && e.status === "open");
+    const criticalExceptions = allExceptions.filter((e: Exception) => e.severity === "critical" && e.status === "open");
     if (criticalExceptions.length > 0) {
       redFlags.push({
         type: "critical",
