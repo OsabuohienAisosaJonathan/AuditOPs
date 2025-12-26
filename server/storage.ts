@@ -14,6 +14,12 @@ import {
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum } from "drizzle-orm";
 
+export interface DashboardFilters {
+  clientId?: string;
+  departmentId?: string;
+  date?: string;
+}
+
 export interface DashboardSummary {
   totalClients: number;
   activeOutlets: number;
@@ -143,7 +149,10 @@ export interface IStorage {
   setSetting(key: string, value: any, updatedBy: string): Promise<void>;
 
   // Dashboard
-  getDashboardSummary(): Promise<DashboardSummary>;
+  getDashboardSummary(filters?: DashboardFilters): Promise<DashboardSummary>;
+  
+  // Departments by Client
+  getDepartmentsByClient(clientId: string): Promise<Department[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -676,77 +685,121 @@ export class DbStorage implements IStorage {
   }
 
   // Dashboard Summary
-  async getDashboardSummary(): Promise<DashboardSummary> {
+  async getDashboardSummary(filters?: DashboardFilters): Promise<DashboardSummary> {
     const allClients: Client[] = await db.select().from(clients);
-    const totalClients = allClients.length;
-    
     const allOutlets: Outlet[] = await db.select().from(outlets);
-    const activeOutlets = allOutlets.length;
+    const allDepartments: Department[] = await db.select().from(departments);
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Build outlet IDs and department IDs for filtering
+    let filteredOutletIds: string[] = allOutlets.map(o => o.id);
+    let filteredDepartmentIds: string[] = allDepartments.map(d => d.id);
+    let filteredClientCount = allClients.length;
+    let filteredOutletCount = allOutlets.length;
     
+    if (filters?.clientId) {
+      const clientOutlets = allOutlets.filter(o => o.clientId === filters.clientId);
+      filteredOutletIds = clientOutlets.map(o => o.id);
+      filteredDepartmentIds = allDepartments.filter(d => filteredOutletIds.includes(d.outletId)).map(d => d.id);
+      filteredClientCount = 1;
+      filteredOutletCount = clientOutlets.length;
+    }
+    
+    if (filters?.departmentId) {
+      filteredDepartmentIds = [filters.departmentId];
+    }
+    
+    // Date filter
+    const filterDate = filters?.date ? new Date(filters.date) : new Date();
+    filterDate.setHours(0, 0, 0, 0);
+    const nextDay = new Date(filterDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    
+    // Get sales filtered by department and date
     const allSales: SalesEntry[] = await db.select().from(salesEntries);
-    const totalSales = allSales.reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
-    const totalSalesToday = allSales
-      .filter((s: SalesEntry) => new Date(s.date) >= today)
+    const filteredSales = allSales.filter((s: SalesEntry) => {
+      const saleDate = new Date(s.date);
+      const matchesDepartment = filteredDepartmentIds.length === 0 || filteredDepartmentIds.includes(s.departmentId);
+      const matchesDate = saleDate >= filterDate && saleDate < nextDay;
+      return matchesDepartment && matchesDate;
+    });
+    const totalSalesToday = filteredSales.reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
+    const totalSales = allSales
+      .filter((s: SalesEntry) => filteredDepartmentIds.length === 0 || filteredDepartmentIds.includes(s.departmentId))
       .reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
 
+    // Get purchases filtered by outlet and date
     const allPurchases: Purchase[] = await db.select().from(purchases);
-    const totalPurchases = allPurchases.reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
-    const totalPurchasesToday = allPurchases
-      .filter((p: Purchase) => new Date(p.invoiceDate) >= today)
+    const filteredPurchases = allPurchases.filter((p: Purchase) => {
+      const purchaseDate = new Date(p.invoiceDate);
+      const matchesOutlet = filteredOutletIds.length === 0 || filteredOutletIds.includes(p.outletId);
+      const matchesDate = purchaseDate >= filterDate && purchaseDate < nextDay;
+      return matchesOutlet && matchesDate;
+    });
+    const totalPurchasesToday = filteredPurchases.reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
+    const totalPurchases = allPurchases
+      .filter((p: Purchase) => filteredOutletIds.length === 0 || filteredOutletIds.includes(p.outletId))
       .reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
 
+    // Get exceptions filtered by outlet and department
     const allExceptions: Exception[] = await db.select().from(exceptions);
-    const totalExceptions = allExceptions.length;
-    const openExceptions = allExceptions.filter((e: Exception) => e.status === "open").length;
+    const filteredExceptions = allExceptions.filter((e: Exception) => {
+      const matchesOutlet = filteredOutletIds.length === 0 || filteredOutletIds.includes(e.outletId);
+      const matchesDepartment = !filters?.departmentId || e.departmentId === filters.departmentId;
+      return matchesOutlet && matchesDepartment;
+    });
+    const totalExceptions = filteredExceptions.length;
+    const openExceptions = filteredExceptions.filter((e: Exception) => e.status === "open").length;
 
+    // Get reconciliations filtered by department
     const allRecons: Reconciliation[] = await db.select().from(reconciliations);
-    const totalVarianceValue = allRecons.reduce((acc: number, r: Reconciliation) => acc + Math.abs(parseFloat(r.varianceValue || "0")), 0);
-    const pendingReconciliations = allRecons.filter((r: Reconciliation) => r.status === "pending").length;
+    const filteredRecons = allRecons.filter((r: Reconciliation) => {
+      const matchesDepartment = filteredDepartmentIds.length === 0 || filteredDepartmentIds.includes(r.departmentId);
+      return matchesDepartment;
+    });
+    const totalVarianceValue = filteredRecons.reduce((acc: number, r: Reconciliation) => acc + Math.abs(parseFloat(r.varianceValue || "0")), 0);
+    const pendingReconciliations = filteredRecons.filter((r: Reconciliation) => r.status === "pending").length;
 
-    const recentExceptions = allExceptions.slice(0, 5);
+    const recentExceptions = filteredExceptions.slice(0, 5);
 
     const redFlags: { type: string; message: string; severity: string }[] = [];
 
-    if (openExceptions > 10) {
+    if (openExceptions > 0) {
       redFlags.push({
         type: "exceptions",
-        message: `${openExceptions} open exceptions require attention`,
-        severity: "high"
+        message: `${openExceptions} open exception(s) require attention`,
+        severity: openExceptions > 10 ? "high" : "medium"
       });
     }
 
-    if (pendingReconciliations > 5) {
+    if (pendingReconciliations > 0) {
       redFlags.push({
         type: "reconciliations",
-        message: `${pendingReconciliations} reconciliations pending approval`,
-        severity: "medium"
+        message: `${pendingReconciliations} reconciliation(s) pending approval`,
+        severity: pendingReconciliations > 5 ? "high" : "medium"
       });
     }
 
-    const highVarianceRecons = allRecons.filter((r: Reconciliation) => Math.abs(parseFloat(r.varianceValue || "0")) > 1000);
+    const highVarianceRecons = filteredRecons.filter((r: Reconciliation) => Math.abs(parseFloat(r.varianceValue || "0")) > 1000);
     if (highVarianceRecons.length > 0) {
       redFlags.push({
         type: "variance",
-        message: `${highVarianceRecons.length} reconciliations with high variance (>$1000)`,
+        message: `${highVarianceRecons.length} reconciliation(s) with high variance (>₦1000)`,
         severity: "high"
       });
     }
 
-    const criticalExceptions = allExceptions.filter((e: Exception) => e.severity === "critical" && e.status === "open");
+    const criticalExceptions = filteredExceptions.filter((e: Exception) => e.severity === "critical" && e.status === "open");
     if (criticalExceptions.length > 0) {
       redFlags.push({
         type: "critical",
-        message: `${criticalExceptions.length} critical exceptions open`,
+        message: `${criticalExceptions.length} critical exception(s) open`,
         severity: "critical"
       });
     }
 
     return {
-      totalClients,
-      activeOutlets,
+      totalClients: filteredClientCount,
+      activeOutlets: filteredOutletCount,
       totalSalesToday,
       totalPurchasesToday,
       totalSales,
@@ -758,6 +811,19 @@ export class DbStorage implements IStorage {
       recentExceptions,
       redFlags
     };
+  }
+  
+  // Departments by Client
+  async getDepartmentsByClient(clientId: string): Promise<Department[]> {
+    const clientOutlets = await db.select().from(outlets).where(eq(outlets.clientId, clientId));
+    const outletIds = clientOutlets.map(o => o.id);
+    
+    if (outletIds.length === 0) {
+      return [];
+    }
+    
+    const allDepts = await db.select().from(departments);
+    return allDepts.filter(d => outletIds.includes(d.outletId));
   }
 }
 

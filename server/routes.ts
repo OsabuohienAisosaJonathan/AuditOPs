@@ -334,8 +334,24 @@ export async function registerRoutes(
   // ============== DASHBOARD ==============
   app.get("/api/dashboard/summary", requireAuth, async (req, res) => {
     try {
-      const summary = await storage.getDashboardSummary();
+      const { clientId, departmentId, date } = req.query;
+      const filters = {
+        clientId: clientId as string | undefined,
+        departmentId: departmentId as string | undefined,
+        date: date as string | undefined,
+      };
+      const summary = await storage.getDashboardSummary(filters);
       res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  app.get("/api/departments/by-client/:clientId", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const departments = await storage.getDepartmentsByClient(clientId);
+      res.json(departments);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

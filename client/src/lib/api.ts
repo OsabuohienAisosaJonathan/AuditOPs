@@ -304,8 +304,42 @@ export const authApi = {
   me: () => fetchApi<User>("/auth/me"),
 };
 
+export interface DashboardFilters {
+  clientId?: string;
+  departmentId?: string;
+  date?: string;
+}
+
 export const dashboardApi = {
-  getSummary: () => fetchApi<DashboardSummary>("/dashboard/summary"),
+  getSummary: (filters?: DashboardFilters) => {
+    const params = new URLSearchParams();
+    if (filters?.clientId) params.set("clientId", filters.clientId);
+    if (filters?.departmentId) params.set("departmentId", filters.departmentId);
+    if (filters?.date) params.set("date", filters.date);
+    const queryString = params.toString();
+    return fetchApi<DashboardSummary>(`/dashboard/summary${queryString ? `?${queryString}` : ""}`);
+  },
+};
+
+export const departmentsApi = {
+  getAll: () => fetchApi<Department[]>("/departments"),
+  getByClient: (clientId: string) => fetchApi<Department[]>(`/departments/by-client/${clientId}`),
+  getByOutlet: (outletId: string) => fetchApi<Department[]>(`/outlets/${outletId}/departments`),
+  get: (id: string) => fetchApi<Department>(`/departments/${id}`),
+  create: (outletId: string, data: any) =>
+    fetchApi<Department>(`/outlets/${outletId}/departments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: any) =>
+    fetchApi<Department>(`/departments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<void>(`/departments/${id}`, {
+      method: "DELETE",
+    }),
 };
 
 export const clientsApi = {
@@ -346,25 +380,6 @@ export const outletsApi = {
     }),
 };
 
-export const departmentsApi = {
-  getByOutlet: (outletId: string) => fetchApi<Department[]>(`/departments?outletId=${outletId}`),
-  getAll: () => fetchApi<Department[]>(`/departments`),
-  get: (id: string) => fetchApi<Department>(`/departments/${id}`),
-  create: (data: any) =>
-    fetchApi<Department>("/departments", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: any) =>
-    fetchApi<Department>(`/departments/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-  delete: (id: string) =>
-    fetchApi<void>(`/departments/${id}`, {
-      method: "DELETE",
-    }),
-};
 
 export const suppliersApi = {
   getByClient: (clientId: string) => fetchApi<Supplier[]>(`/suppliers?clientId=${clientId}`),

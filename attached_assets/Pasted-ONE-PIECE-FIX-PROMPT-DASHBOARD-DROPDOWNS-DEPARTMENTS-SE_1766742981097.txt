@@ -1,0 +1,122 @@
+ONE-PIECE FIX PROMPT — DASHBOARD DROPDOWNS, DEPARTMENTS SETUP, REPORT BUTTON, LIVE METRICS
+
+You are working on Miemploya AuditOps. The UI loads, but key dashboard controls are not wired correctly. Fix the following end-to-end so that newly created clients/departments show immediately, the Generate Report button works, and all dashboard KPIs respond to dropdown selections.
+
+A) Fix Client Dropdown in Dashboard Header (must show ALL clients, including newly added)
+
+The client dropdown in the top header currently shows only a few clients (e.g., The Grand Lounge, Ocean View Restaurant, Skybar Rooftop).
+
+It must show every client in the database, including any new client created from the Clients → Add Client flow.
+
+The dropdown must refresh automatically after client creation (no hardcoded list, no stale cached list).
+
+Ensure the source of the dropdown is a real data query (e.g., GET /clients or equivalent), not sample data.
+
+If you are paginating, ensure the dropdown loads all clients (or uses searchable loading) and is not limited to first 3/5/10.
+
+Add a searchable dropdown experience: typing filters clients.
+
+Acceptance test: Add a new client → go back to dashboard → the new client appears immediately in the header client dropdown.
+
+B) Implement Department Setup as Part of Add Client Flow (unlimited departments per client)
+
+The header has a Department dropdown, but departments are not properly manageable.
+
+Update the Add Client process so users can configure departments per client (and per outlet if your data model supports it). Requirements:
+a. User must be able to add as many departments as they want for any client.
+b. Departments must be editable and deletable (with safe checks if already used in records).
+c. Departments should be associated with the correct client (and outlet if applicable).
+
+Once a client is selected in the dashboard header, the Department dropdown must show:
+a. “All Departments” as the first option
+b. then all departments created under that selected client (and outlet if you use outlet filtering).
+
+If no departments exist for the client, show a helpful empty state: “No departments created yet — go to Client Setup to add departments.”
+
+Acceptance test: Create client → add 5 departments → return to dashboard → select that client → department dropdown lists those 5 departments + “All Departments”.
+
+C) Make the Dashboard Metrics Fully Functional and Filterable (All Clients vs selected Client/Department/Date)
+
+Currently the dashboard has a dropdown (shows “All Clients”). It must actually control the statistics/cards.
+
+Build a single global filter context for dashboard metrics:
+a. Client filter: All Clients OR one specific client
+b. Department filter: All Departments OR one department
+c. Date filter: default “Today” (or selected date)
+
+Every metric must refresh whenever any filter changes.
+
+These metrics must be real and reactive (not static):
+
+Total Sales Today (or selected date)
+
+Purchases Today (or selected date)
+
+Open Exceptions (requiring attention)
+
+Pending Reconciliations (awaiting review)
+
+Overview Stats section:
+a. Total Clients
+b. Active Outlets
+
+Red Flags panel must also respect filters and show the correct counts.
+
+“All Clients” selection must show aggregated totals across all clients.
+
+Selecting a single client must show totals only for that client.
+
+Selecting a department must show totals only for that department.
+
+Ensure empty states show 0 cleanly (not blank, not NaN, not crashing).
+
+Ensure the dashboard is not relying on seeded demo data or old in-memory arrays.
+
+Ensure the metrics are sourced from correct backend aggregation queries (sales totals, purchase totals, exceptions counts, reconciliations status counts).
+
+Acceptance test:
+
+With “All Clients” selected, totals match combined data.
+
+Selecting a specific client immediately updates Sales, Purchases, Exceptions, Pending Recon, and Overview Stats.
+
+Selecting a department further narrows the numbers.
+
+D) Fix “Generate Report” Button (must work)
+
+The “Generate Report” button on the dashboard header currently does nothing.
+
+Implement it as follows:
+
+On click, open a report modal OR directly generate based on current filters. Must support:
+a. Report type (Daily Audit Report / Weekly Summary / Monthly Pack / P&L)
+b. Scope (Client + Outlet + Department) automatically prefilled from current dashboard selections
+c. Date range (default selected date; allow range selection if weekly/monthly)
+
+Output:
+a. Primary: PDF download
+b. Optional: Excel schedules export (purchases, sales, stock movement, variance register)
+
+Show a loading state (“Generating…”) and a success toast (“Report downloaded”).
+
+If no data exists, generate a valid report showing zeros and “No records found for selected filters”.
+
+Acceptance test: Click Generate Report → PDF downloads successfully for the selected client/department/date. Excel export option works.
+
+E) Navigation Fixes for Related Actions
+
+“View All Exceptions” in Red Flags panel must navigate to Exceptions page with filters applied (client/department/date context carried over).
+
+“Start Daily Audit” and “Import POS Data” must route correctly and preserve the selected client/outlet/department/date.
+
+F) Final Verification Checklist (must be completed)
+
+Create a new client → it appears in header dropdown.
+
+Add departments in the client setup → they appear in department dropdown.
+
+Select All Clients vs one client vs one department → dashboard KPIs change correctly.
+
+Generate Report works and downloads PDF; Excel export works.
+
+No console errors; no silent failing; show friendly messages on errors.
