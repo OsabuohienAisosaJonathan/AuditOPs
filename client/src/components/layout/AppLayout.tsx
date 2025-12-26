@@ -3,6 +3,7 @@ import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut } from "lucide-react";
+import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -168,10 +169,7 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
     <Sidebar className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground" collapsible="icon">
       <SidebarHeader className="h-16 flex items-center justify-center border-b border-sidebar-border/50 px-4">
         <div className="flex items-center gap-2 font-display font-bold text-lg text-sidebar-primary-foreground">
-          <div className="h-8 w-8 rounded bg-primary flex items-center justify-center">
-            <span className="text-white text-xl">M</span>
-          </div>
-          <span className="group-data-[collapsible=icon]:hidden">AuditOps</span>
+          <img src={logoImage} alt="Miemploya" className="h-10 object-contain group-data-[collapsible=icon]:h-8" />
         </div>
       </SidebarHeader>
       

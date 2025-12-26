@@ -4,12 +4,14 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useLocation } from "wouter";
 import { useState } from "react";
-import { authApi } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -21,7 +23,7 @@ export default function Login() {
     const password = formData.get("password") as string;
 
     try {
-      const user = await authApi.login(username, password);
+      const user = await login(username, password);
       toast({
         title: "Welcome back!",
         description: `Signed in as ${user.fullName}`,
@@ -42,11 +44,10 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
       <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-xl border border-border shadow-lg">
         <div className="text-center space-y-2">
-          <div className="mx-auto h-12 w-12 rounded bg-primary flex items-center justify-center mb-4">
-            <span className="text-white text-2xl font-display font-bold">M</span>
+          <div className="mx-auto mb-4">
+            <img src={logoImage} alt="Miemploya" className="h-16 mx-auto object-contain" />
           </div>
-          <h1 className="text-2xl font-display font-bold text-foreground">Sign in to 
-          Miemploya AuditOps</h1>
+          <h1 className="text-2xl font-display font-bold text-foreground">Sign in to AuditOps</h1>
           <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>
         </div>
 
