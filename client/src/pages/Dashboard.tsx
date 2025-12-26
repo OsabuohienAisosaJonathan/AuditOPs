@@ -1,248 +1,312 @@
-import { KPIS, ALERTS, CLIENTS } from "@/lib/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowUpRight, ArrowDownRight, AlertTriangle, FileText, Plus, Upload, ShoppingCart, BarChart3, TrendingUp } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, AlertTriangle, FileText, Plus, Upload, ShoppingCart, BarChart3, TrendingUp, AlertOctagon, FileCheck, Building2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
-
-const CHART_DATA = [
-  { day: "Mon", sales: 400000 },
-  { day: "Tue", sales: 300000 },
-  { day: "Wed", sales: 550000 },
-  { day: "Thu", sales: 450000 },
-  { day: "Fri", sales: 800000 },
-  { day: "Sat", sales: 950000 },
-  { day: "Sun", sales: 750000 },
-];
+import { useQuery } from "@tanstack/react-query";
+import { dashboardApi, DashboardSummary } from "@/lib/api";
+import { Spinner } from "@/components/ui/spinner";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
+import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
 
 export default function Dashboard() {
+  const { data: summary, isLoading, error } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: dashboardApi.getSummary,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]" data-testid="loading-dashboard">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Empty className="min-h-[400px] border" data-testid="error-dashboard">
+        <EmptyMedia variant="icon">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyTitle>Failed to load dashboard</EmptyTitle>
+          <EmptyDescription>Please try refreshing the page.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+
+  const hasData = summary && (summary.totalClients > 0 || summary.activeOutlets > 0);
+
   return (
     <div className="space-y-8 max-w-[1600px] mx-auto">
-      {/* Welcome Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold text-foreground">Audit Command Center</h1>
-          <p className="text-muted-foreground mt-1">Overview for Dec 26, 2025</p>
+          <h1 className="text-3xl font-display font-bold text-foreground" data-testid="text-dashboard-title">
+            Audit Command Center
+          </h1>
+          <p className="text-muted-foreground mt-1">Overview for {format(new Date(), "MMM d, yyyy")}</p>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" data-testid="button-import-pos">
             <Upload className="h-4 w-4" />
             Import POS Data
           </Button>
-          <Button className="gap-2 shadow-lg shadow-primary/20">
+          <Button className="gap-2 shadow-lg shadow-primary/20" data-testid="button-start-audit">
             <Plus className="h-4 w-4" />
             Start Daily Audit
           </Button>
         </div>
       </div>
 
-      {/* KPI Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <KpiCard title="Total Sales" data={KPIS.sales} icon={BarChart3} />
-        <KpiCard title="COGS" data={KPIS.cogs} icon={ShoppingCart} inverse />
-        <KpiCard title="Variance" data={KPIS.variance} icon={AlertTriangle} inverse />
-        <KpiCard title="Gross Margin" data={KPIS.grossMargin} icon={ArrowUpRight} />
-      </div>
+      {!hasData ? (
+        <Empty className="min-h-[300px] border" data-testid="empty-dashboard">
+          <EmptyMedia variant="icon">
+            <BarChart3 className="h-6 w-6" />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>No audit data yet</EmptyTitle>
+            <EmptyDescription>
+              Start by adding clients and outlets to begin tracking audit data.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Button className="gap-2" data-testid="button-add-first-client">
+            <Plus className="h-4 w-4" />
+            Add First Client
+          </Button>
+        </Empty>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <KpiCard 
+              title="Total Sales Today" 
+              value={`₦ ${Number(summary?.totalSalesToday || 0).toLocaleString()}`}
+              subtitle="Today's captured sales"
+              icon={BarChart3} 
+              testId="kpi-sales"
+            />
+            <KpiCard 
+              title="Purchases Today" 
+              value={`₦ ${Number(summary?.totalPurchasesToday || 0).toLocaleString()}`}
+              subtitle="Today's purchases"
+              icon={ShoppingCart} 
+              testId="kpi-purchases"
+            />
+            <KpiCard 
+              title="Open Exceptions" 
+              value={String(summary?.openExceptions || 0)}
+              subtitle="Requiring attention"
+              icon={AlertOctagon} 
+              variant={summary?.openExceptions && summary.openExceptions > 0 ? "destructive" : "default"}
+              testId="kpi-exceptions"
+            />
+            <KpiCard 
+              title="Pending Reconciliations" 
+              value={String(summary?.pendingReconciliations || 0)}
+              subtitle="Awaiting review"
+              icon={FileCheck} 
+              variant={summary?.pendingReconciliations && summary.pendingReconciliations > 0 ? "warning" : "default"}
+              testId="kpi-reconciliations"
+            />
+          </div>
 
-      <div className="grid gap-8 lg:grid-cols-3">
-        {/* Main Content Area - 2 Cols */}
-        <div className="lg:col-span-2 space-y-8">
-          
-          {/* Sales Trend Chart */}
-          <Card className="audit-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                Weekly Sales Trend
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={CHART_DATA}>
-                    <defs>
-                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis 
-                      dataKey="day" 
-                      stroke="hsl(var(--muted-foreground))" 
-                      fontSize={12} 
-                      tickLine={false} 
-                      axisLine={false} 
-                    />
-                    <YAxis 
-                      stroke="hsl(var(--muted-foreground))" 
-                      fontSize={12} 
-                      tickLine={false} 
-                      axisLine={false}
-                      tickFormatter={(value) => `₦${value/1000}k`}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: "hsl(var(--card))", 
-                        borderColor: "hsl(var(--border))",
-                        borderRadius: "8px",
-                        boxShadow: "var(--shadow-md)"
-                      }}
-                      formatter={(value: number) => [`₦ ${value.toLocaleString()}`, "Sales"]}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="sales" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#colorSales)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Audit Status Overview */}
-          <Card className="audit-card">
-            <CardHeader>
-              <CardTitle>Today's Audit Status</CardTitle>
-              <CardDescription>Progress across all active clients</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">Clients Audited</span>
-                    <span className="text-muted-foreground">3 / 4</span>
-                  </div>
-                  <Progress value={75} className="h-2" />
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <StatusCard label="Completed" count={3} color="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" border="border-emerald-200 dark:border-emerald-900" />
-                  <StatusCard label="Pending" count={1} color="bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" border="border-amber-200 dark:border-amber-900" />
-                  <StatusCard label="Overdue" count={0} color="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" border="border-red-200 dark:border-red-900" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Top Risk Departments */}
-          <Card className="audit-card">
-            <CardHeader>
-              <CardTitle>Top Risk Departments</CardTitle>
-              <CardDescription>Ranked by variance and operational flags</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[
-                  { name: "Main Bar (Grand Lounge)", risk: "High", variance: "- ₦ 85,000", issues: 3 },
-                  { name: "Kitchen (Skybar)", risk: "Medium", variance: "- ₦ 22,000", issues: 1 },
-                  { name: "VIP Service (Ocean View)", risk: "Low", variance: "- ₦ 5,000", issues: 0 },
-                ].map((dept, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors">
-                    <div className="space-y-1">
-                      <div className="font-medium">{dept.name}</div>
-                      <div className="text-xs text-muted-foreground">{dept.issues} active issues</div>
+          <div className="grid gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-8">
+              <Card className="audit-card">
+                <CardHeader>
+                  <CardTitle>Overview Stats</CardTitle>
+                  <CardDescription>Client and outlet summary</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="flex items-center gap-4 p-4 rounded-lg border">
+                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Building2 className="h-6 w-6 text-primary" />
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold" data-testid="text-total-clients">
+                          {summary?.totalClients || 0}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Total Clients</div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-mono font-medium text-destructive">{dept.variance}</div>
-                      <span className={cn(
-                        "text-xs px-2 py-0.5 rounded-full font-medium",
-                        dept.risk === "High" ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" :
-                        dept.risk === "Medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" :
-                        "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"
-                      )}>
-                        {dept.risk} Risk
-                      </span>
+                    <div className="flex items-center gap-4 p-4 rounded-lg border">
+                      <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                        <BarChart3 className="h-6 w-6 text-emerald-600" />
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold" data-testid="text-active-outlets">
+                          {summary?.activeOutlets || 0}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Active Outlets</div>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                </CardContent>
+              </Card>
 
-        {/* Sidebar Area - 1 Col */}
-        <div className="space-y-8">
-          {/* Alerts Panel */}
-          <Card className="border-l-4 border-l-destructive shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-destructive">
-                <AlertTriangle className="h-5 w-5" />
-                Red Flags
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {ALERTS.map((alert) => (
-                <div key={alert.id} className="flex gap-3 text-sm p-3 rounded-md bg-destructive/5 border border-destructive/10">
-                  <div className="h-2 w-2 mt-1.5 rounded-full bg-destructive shrink-0" />
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">{alert.message}</p>
-                    <p className="text-xs text-muted-foreground">{alert.time}</p>
-                  </div>
-                </div>
-              ))}
-              <Button variant="ghost" className="w-full text-xs text-muted-foreground hover:text-foreground">View All Exceptions</Button>
-            </CardContent>
-          </Card>
+              {summary?.exceptionsBySeverity && summary.exceptionsBySeverity.length > 0 && (
+                <Card className="audit-card">
+                  <CardHeader>
+                    <CardTitle>Exceptions by Severity</CardTitle>
+                    <CardDescription>Breakdown of open cases</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {summary.exceptionsBySeverity.map((item) => (
+                        <div key={item.severity} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Badge 
+                              variant="outline" 
+                              className={cn(
+                                item.severity === "critical" && "bg-red-50 text-red-700 border-red-200",
+                                item.severity === "high" && "bg-orange-50 text-orange-700 border-orange-200",
+                                item.severity === "medium" && "bg-amber-50 text-amber-700 border-amber-200",
+                                item.severity === "low" && "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              )}
+                              data-testid={`badge-severity-${item.severity}`}
+                            >
+                              {item.severity}
+                            </Badge>
+                          </div>
+                          <span className="font-bold text-lg" data-testid={`text-severity-count-${item.severity}`}>
+                            {item.count}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2">
-              <Button variant="outline" className="w-full justify-start text-left font-normal">
-                <FileText className="mr-2 h-4 w-4" /> Record Purchase / GRN
-              </Button>
-              <Button variant="outline" className="w-full justify-start text-left font-normal">
-                <BarChart3 className="mr-2 h-4 w-4" /> Start Stock Count
-              </Button>
-              <Button variant="outline" className="w-full justify-start text-left font-normal">
-                <AlertTriangle className="mr-2 h-4 w-4" /> Open Exception Case
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              {summary?.recentActivity && summary.recentActivity.length > 0 && (
+                <Card className="audit-card">
+                  <CardHeader>
+                    <CardTitle>Recent Activity</CardTitle>
+                    <CardDescription>Latest system actions</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {summary.recentActivity.slice(0, 5).map((log, i) => (
+                        <div key={log.id || i} className="flex items-start gap-3 text-sm">
+                          <div className="h-2 w-2 mt-2 rounded-full bg-primary shrink-0" />
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{log.action}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {format(new Date(log.createdAt), "MMM d, h:mm a")}
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground">{log.entity} {log.details && `- ${log.details}`}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            <div className="space-y-8">
+              {summary?.openExceptions && summary.openExceptions > 0 ? (
+                <Card className="border-l-4 border-l-destructive shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="h-5 w-5" />
+                      Red Flags
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex gap-3 text-sm p-3 rounded-md bg-destructive/5 border border-destructive/10">
+                      <div className="h-2 w-2 mt-1.5 rounded-full bg-destructive shrink-0" />
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">{summary.openExceptions} open exception(s) need attention</p>
+                        <p className="text-xs text-muted-foreground">Review and resolve pending cases</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" className="w-full text-xs text-muted-foreground hover:text-foreground" data-testid="button-view-exceptions">
+                      View All Exceptions
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-emerald-600">
+                      <AlertTriangle className="h-5 w-5" />
+                      All Clear
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">No open exceptions requiring attention.</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2">
+                  <Button variant="outline" className="w-full justify-start text-left font-normal" data-testid="button-quick-purchase">
+                    <FileText className="mr-2 h-4 w-4" /> Record Purchase / GRN
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal" data-testid="button-quick-stock">
+                    <BarChart3 className="mr-2 h-4 w-4" /> Start Stock Count
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal" data-testid="button-quick-exception">
+                    <AlertTriangle className="mr-2 h-4 w-4" /> Open Exception Case
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function KpiCard({ title, data, icon: Icon, inverse = false }: { title: string, data: any, icon: any, inverse?: boolean }) {
-  const isPositive = data.trend.startsWith("+");
-  const isGood = inverse ? !isPositive : isPositive;
-  
+function KpiCard({ 
+  title, 
+  value, 
+  subtitle,
+  icon: Icon, 
+  variant = "default",
+  testId
+}: { 
+  title: string; 
+  value: string;
+  subtitle?: string;
+  icon: any; 
+  variant?: "default" | "destructive" | "warning";
+  testId: string;
+}) {
   return (
-    <Card className="audit-card">
+    <Card className="audit-card" data-testid={testId}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
+        <Icon className={cn(
+          "h-4 w-4",
+          variant === "destructive" && "text-destructive",
+          variant === "warning" && "text-amber-500",
+          variant === "default" && "text-muted-foreground"
+        )} />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold font-display tracking-tight">{data.value}</div>
-        <p className={cn(
-          "text-xs font-medium flex items-center mt-1",
-          isGood ? "text-emerald-600" : "text-destructive"
-        )}>
-          {isPositive ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
-          {data.trend}
-          <span className="text-muted-foreground ml-1 font-normal">vs yesterday</span>
-        </p>
+        <div className={cn(
+          "text-2xl font-bold font-display tracking-tight",
+          variant === "destructive" && "text-destructive",
+          variant === "warning" && "text-amber-600"
+        )} data-testid={`${testId}-value`}>
+          {value}
+        </div>
+        {subtitle && (
+          <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+        )}
       </CardContent>
     </Card>
-  );
-}
-
-function StatusCard({ label, count, color, border }: { label: string, count: number, color: string, border: string }) {
-  return (
-    <div className={cn("flex flex-col items-center justify-center p-3 rounded-lg border", color, border)}>
-      <span className="text-2xl font-bold">{count}</span>
-      <span className="text-xs font-medium uppercase tracking-wide opacity-80">{label}</span>
-    </div>
   );
 }

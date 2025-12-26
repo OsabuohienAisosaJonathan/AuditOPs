@@ -1,165 +1,371 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Filter, Search, AlertOctagon, MoreHorizontal, Paperclip, MessageSquare } from "lucide-react";
+import { Filter, Search, AlertOctagon, MoreHorizontal, Plus } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { exceptionsApi, outletsApi, Exception } from "@/lib/api";
+import { Spinner } from "@/components/ui/spinner";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default function Exceptions() {
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const queryClient = useQueryClient();
+
+  const { data: exceptions, isLoading } = useQuery({
+    queryKey: ["exceptions", statusFilter],
+    queryFn: () => exceptionsApi.getAll(statusFilter !== "all" ? { status: statusFilter } : undefined),
+  });
+
+  const { data: outlets } = useQuery({
+    queryKey: ["outlets-for-exceptions"],
+    queryFn: async () => {
+      const { clientsApi } = await import("@/lib/api");
+      const clients = await clientsApi.getAll();
+      if (clients.length === 0) return [];
+      return outletsApi.getByClient(clients[0].id);
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<Exception>) => exceptionsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+      setCreateDialogOpen(false);
+      toast.success("Exception raised successfully");
+    },
+    onError: () => {
+      toast.error("Failed to raise exception");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Exception> }) => exceptionsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+      toast.success("Exception updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update exception");
+    },
+  });
+
+  const filteredExceptions = exceptions?.filter(ex => 
+    ex.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    ex.caseNumber.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold">Exceptions Register</h1>
+          <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Exceptions Register</h1>
           <p className="text-muted-foreground">Track, investigate, and resolve audit discrepancies</p>
         </div>
-        <Button className="gap-2">
-          <AlertOctagon className="h-4 w-4" />
-          Log New Exception
-        </Button>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2" data-testid="button-raise-exception">
+              <AlertOctagon className="h-4 w-4" />
+              Raise Exception
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Raise New Exception</DialogTitle>
+              <DialogDescription>Log a new audit exception for investigation.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              createMutation.mutate({
+                outletId: formData.get("outletId") as string,
+                summary: formData.get("summary") as string,
+                description: formData.get("description") as string || null,
+                severity: formData.get("severity") as string,
+                status: "open",
+              });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="outletId">Outlet</Label>
+                  <Select name="outletId" required>
+                    <SelectTrigger data-testid="select-exception-outlet">
+                      <SelectValue placeholder="Select outlet" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {outlets?.map((outlet) => (
+                        <SelectItem key={outlet.id} value={outlet.id}>{outlet.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="summary">Summary</Label>
+                  <Input id="summary" name="summary" required data-testid="input-exception-summary" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea id="description" name="description" rows={3} data-testid="input-exception-description" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="severity">Severity</Label>
+                  <Select name="severity" defaultValue="medium">
+                    <SelectTrigger data-testid="select-exception-severity">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="critical">Critical</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-exception">
+                  {createMutation.isPending && <Spinner className="mr-2" />}
+                  Raise Exception
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <div className="flex gap-4 items-center">
+      <div className="flex gap-4 items-center flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9 bg-card" placeholder="Search cases..." />
+          <Input 
+            className="pl-9 bg-card" 
+            placeholder="Search cases..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            data-testid="input-search-exceptions"
+          />
         </div>
-        <Select defaultValue="open">
-          <SelectTrigger className="w-[180px] bg-card">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px] bg-card" data-testid="select-status-filter">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="review">In Review</SelectItem>
+            <SelectItem value="investigating">Investigating</SelectItem>
             <SelectItem value="resolved">Resolved</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline" size="icon" className="shrink-0 bg-card"><Filter className="h-4 w-4" /></Button>
+        <Button variant="outline" size="icon" className="shrink-0 bg-card" data-testid="button-more-filters">
+          <Filter className="h-4 w-4" />
+        </Button>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">Case ID</TableHead>
-                    <TableHead>Issue Summary</TableHead>
-                    <TableHead>Outlet</TableHead>
-                    <TableHead className="text-right">Impact</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12" data-testid="loading-exceptions">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : !exceptions || exceptions.length === 0 ? (
+            <Empty className="py-12" data-testid="empty-exceptions">
+              <EmptyMedia variant="icon">
+                <AlertOctagon className="h-6 w-6" />
+              </EmptyMedia>
+              <EmptyHeader>
+                <EmptyTitle>No exceptions found</EmptyTitle>
+                <EmptyDescription>
+                  {statusFilter !== "all" 
+                    ? `No exceptions with status "${statusFilter}". Try changing the filter.`
+                    : "Great news! No audit exceptions have been raised yet."}
+                </EmptyDescription>
+              </EmptyHeader>
+              {outlets && outlets.length > 0 && (
+                <Button className="gap-2" onClick={() => setCreateDialogOpen(true)} data-testid="button-raise-first">
+                  <AlertOctagon className="h-4 w-4" /> Raise Exception
+                </Button>
+              )}
+            </Empty>
+          ) : filteredExceptions && filteredExceptions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="no-search-results">
+              No exceptions match your search.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[100px]">Case #</TableHead>
+                  <TableHead>Summary</TableHead>
+                  <TableHead>Severity</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Assigned To</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredExceptions?.map((ex) => (
+                  <TableRow key={ex.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-exception-${ex.id}`}>
+                    <TableCell className="font-mono font-medium text-xs" data-testid={`text-case-number-${ex.id}`}>
+                      {ex.caseNumber}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium" data-testid={`text-summary-${ex.id}`}>{ex.summary}</div>
+                      {ex.description && (
+                        <div className="text-xs text-muted-foreground truncate max-w-[200px]">{ex.description}</div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <SeverityBadge severity={ex.severity} testId={`badge-severity-${ex.id}`} />
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={ex.status} testId={`badge-status-${ex.id}`} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {ex.assignedTo || "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {format(new Date(ex.createdAt), "MMM d, yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-actions-${ex.id}`}>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem 
+                            onClick={() => updateMutation.mutate({ id: ex.id, data: { status: "investigating" } })}
+                            data-testid={`button-investigate-${ex.id}`}
+                          >
+                            Mark Investigating
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => updateMutation.mutate({ id: ex.id, data: { status: "resolved" } })}
+                            data-testid={`button-resolve-${ex.id}`}
+                          >
+                            Mark Resolved
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => updateMutation.mutate({ id: ex.id, data: { status: "closed" } })}
+                            data-testid={`button-close-${ex.id}`}
+                          >
+                            Close Case
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[
-                    { id: "EX-205", summary: "Missing Stock (Hennessy VSOP)", outlet: "Main Bar", impact: "- ₦ 45,000", status: "Open", severity: "High" },
-                    { id: "EX-204", summary: "Unexplained Void (Table 5)", outlet: "Restaurant", impact: "- ₦ 12,500", status: "Review", severity: "Medium" },
-                    { id: "EX-203", summary: "Cash Shortage (Morning Shift)", outlet: "Main Bar", impact: "- ₦ 2,000", status: "Resolved", severity: "Low" },
-                    { id: "EX-202", summary: "Price Discrepancy (Ribeye)", outlet: "Kitchen", impact: "N/A", status: "Resolved", severity: "Low" },
-                    { id: "EX-201", summary: "Missing Invoice #9921", outlet: "Store", impact: "Compliance", status: "Open", severity: "Medium" },
-                  ].map((ex) => (
-                    <TableRow key={ex.id} className="cursor-pointer hover:bg-muted/50 transition-colors">
-                      <TableCell className="font-mono font-medium text-xs">{ex.id}</TableCell>
-                      <TableCell>
-                        <div className="font-medium">{ex.summary}</div>
-                        <div className="text-xs text-muted-foreground md:hidden">{ex.outlet}</div>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-muted-foreground">{ex.outlet}</TableCell>
-                      <TableCell className="text-right font-mono font-medium text-destructive">{ex.impact}</TableCell>
-                      <TableCell>
-                         <StatusBadge status={ex.status} />
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
-        <div className="space-y-6">
-          <Card className="border-l-4 border-l-destructive shadow-md">
-            <CardHeader className="pb-3 bg-muted/20">
-              <div className="flex justify-between items-start">
-                 <div>
-                   <div className="text-xs font-mono text-muted-foreground mb-1">CASE #EX-205</div>
-                   <CardTitle className="text-lg">Missing Stock (Hennessy VSOP)</CardTitle>
-                 </div>
-                 <StatusBadge status="Open" />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-6">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">Variance Qty</div>
-                  <div className="font-mono font-medium text-lg">- 3 Bottles</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Financial Impact</div>
-                  <div className="font-mono font-medium text-lg text-destructive">₦ 45,000</div>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                 <h4 className="text-sm font-medium">Investigation Notes</h4>
-                 <div className="bg-muted/30 p-3 rounded-md text-sm text-muted-foreground">
-                    Physical count conducted by John Doe at 09:30 AM confirmed 12 bottles. System expected 15 bottles. No transfer records found for the missing 3 units. Bar manager notified.
-                 </div>
-              </div>
-
-              <div className="space-y-2">
-                 <h4 className="text-sm font-medium">Evidence</h4>
-                 <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="h-8 text-xs gap-1"><Paperclip className="h-3 w-3" /> Count_Sheet.pdf</Button>
-                    <Button variant="outline" size="sm" className="h-8 text-xs gap-1"><Paperclip className="h-3 w-3" /> Photo_01.jpg</Button>
-                 </div>
-              </div>
-
-              <div className="space-y-2">
-                 <h4 className="text-sm font-medium">Activity</h4>
-                 <div className="space-y-3">
-                    <div className="flex gap-3 text-sm">
-                       <Avatar className="h-6 w-6"><AvatarFallback>JD</AvatarFallback></Avatar>
-                       <div>
-                          <p className="font-medium text-xs">John Doe <span className="text-muted-foreground font-normal">created this case</span></p>
-                          <p className="text-[10px] text-muted-foreground">Today, 09:45 AM</p>
-                       </div>
-                    </div>
-                 </div>
-                 <div className="flex gap-2 mt-2">
-                    <Input placeholder="Add a comment..." className="h-8 text-xs" />
-                    <Button size="icon" className="h-8 w-8"><MessageSquare className="h-4 w-4" /></Button>
-                 </div>
-              </div>
-              
-              <div className="pt-2">
-                 <Button className="w-full">Escalate to Supervisor</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid md:grid-cols-4 gap-4">
+        <StatCard 
+          label="Open" 
+          count={exceptions?.filter(e => e.status === "open").length || 0} 
+          variant="destructive"
+          testId="stat-open"
+        />
+        <StatCard 
+          label="Investigating" 
+          count={exceptions?.filter(e => e.status === "investigating").length || 0} 
+          variant="warning"
+          testId="stat-investigating"
+        />
+        <StatCard 
+          label="Resolved" 
+          count={exceptions?.filter(e => e.status === "resolved").length || 0} 
+          variant="success"
+          testId="stat-resolved"
+        />
+        <StatCard 
+          label="Closed" 
+          count={exceptions?.filter(e => e.status === "closed").length || 0} 
+          variant="muted"
+          testId="stat-closed"
+        />
       </div>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === "Open") {
-    return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Open</Badge>;
-  }
-  if (status === "Review") {
-    return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Review</Badge>;
-  }
-  return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Resolved</Badge>;
+function StatusBadge({ status, testId }: { status: string | null; testId: string }) {
+  return (
+    <Badge 
+      variant="outline" 
+      className={cn(
+        status === "open" && "bg-red-50 text-red-700 border-red-200",
+        status === "investigating" && "bg-amber-50 text-amber-700 border-amber-200",
+        status === "resolved" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+        status === "closed" && "bg-slate-50 text-slate-700 border-slate-200",
+        !status && "bg-muted text-muted-foreground"
+      )}
+      data-testid={testId}
+    >
+      {status || "Unknown"}
+    </Badge>
+  );
+}
+
+function SeverityBadge({ severity, testId }: { severity: string | null; testId: string }) {
+  return (
+    <Badge 
+      variant="outline" 
+      className={cn(
+        severity === "critical" && "bg-red-100 text-red-800 border-red-300",
+        severity === "high" && "bg-orange-100 text-orange-800 border-orange-300",
+        severity === "medium" && "bg-amber-100 text-amber-800 border-amber-300",
+        severity === "low" && "bg-green-100 text-green-800 border-green-300",
+        !severity && "bg-muted text-muted-foreground"
+      )}
+      data-testid={testId}
+    >
+      {severity || "Unknown"}
+    </Badge>
+  );
+}
+
+function StatCard({ label, count, variant, testId }: { 
+  label: string; 
+  count: number; 
+  variant: "destructive" | "warning" | "success" | "muted";
+  testId: string;
+}) {
+  return (
+    <Card data-testid={testId}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">{label}</span>
+          <span className={cn(
+            "text-2xl font-bold font-mono",
+            variant === "destructive" && "text-destructive",
+            variant === "warning" && "text-amber-600",
+            variant === "success" && "text-emerald-600",
+            variant === "muted" && "text-muted-foreground"
+          )} data-testid={`${testId}-count`}>
+            {count}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

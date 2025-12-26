@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -6,172 +7,374 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Plus, Filter, Search, FileText, ArrowRightLeft, Package, Trash2, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, Filter, Search, Package, Users, Truck } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { clientsApi, itemsApi, suppliersApi, Item, Supplier } from "@/lib/api";
+import { Spinner } from "@/components/ui/spinner";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export default function Inventory() {
+  const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: clients } = useQuery({
+    queryKey: ["clients"],
+    queryFn: clientsApi.getAll,
+  });
+
+  const selectedClientId = clients?.[0]?.id;
+
+  const { data: items, isLoading: itemsLoading } = useQuery({
+    queryKey: ["items", selectedClientId],
+    queryFn: () => selectedClientId ? itemsApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!selectedClientId,
+  });
+
+  const { data: suppliers, isLoading: suppliersLoading } = useQuery({
+    queryKey: ["suppliers", selectedClientId],
+    queryFn: () => selectedClientId ? suppliersApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!selectedClientId,
+  });
+
+  const createItemMutation = useMutation({
+    mutationFn: (data: Partial<Item>) => itemsApi.create({ ...data, clientId: selectedClientId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+      setCreateItemOpen(false);
+      toast.success("Item created successfully");
+    },
+    onError: () => {
+      toast.error("Failed to create item");
+    },
+  });
+
+  const createSupplierMutation = useMutation({
+    mutationFn: (data: Partial<Supplier>) => suppliersApi.create({ ...data, clientId: selectedClientId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      setCreateSupplierOpen(false);
+      toast.success("Supplier created successfully");
+    },
+    onError: () => {
+      toast.error("Failed to create supplier");
+    },
+  });
+
+  if (!clients || clients.length === 0) {
+    return (
+      <div className="space-y-6 max-w-[1600px] mx-auto">
+        <div>
+          <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Inventory Management</h1>
+          <p className="text-muted-foreground">Manage items and suppliers</p>
+        </div>
+        <Empty className="min-h-[300px] border" data-testid="empty-no-clients">
+          <EmptyMedia variant="icon">
+            <Package className="h-6 w-6" />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>No clients available</EmptyTitle>
+            <EmptyDescription>
+              Create a client first to manage inventory items and suppliers.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold">Inventory & Purchases</h1>
-          <p className="text-muted-foreground">Manage procurement, GRNs, and stock movements</p>
-        </div>
-        <div className="flex gap-2">
-           <Button className="gap-2">
-             <Plus className="h-4 w-4" /> New Purchase Order
-           </Button>
+          <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Inventory Management</h1>
+          <p className="text-muted-foreground">Manage items and suppliers for {clients[0]?.name}</p>
         </div>
       </div>
 
-      <Tabs defaultValue="purchases" className="w-full">
+      <Tabs defaultValue="items" className="w-full">
         <TabsList className="grid w-full max-w-[400px] grid-cols-2">
-          <TabsTrigger value="purchases">Purchases & GRN</TabsTrigger>
-          <TabsTrigger value="movements">Stock Movements</TabsTrigger>
+          <TabsTrigger value="items" data-testid="tab-items">
+            <Package className="h-4 w-4 mr-2" />
+            Items
+          </TabsTrigger>
+          <TabsTrigger value="suppliers" data-testid="tab-suppliers">
+            <Truck className="h-4 w-4 mr-2" />
+            Suppliers
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="purchases" className="space-y-4 mt-6">
+        <TabsContent value="items" className="space-y-4 mt-6">
           <Card>
             <CardHeader className="px-6 py-4 border-b">
-               <div className="flex items-center justify-between">
-                  <div className="flex gap-4 items-center flex-1">
-                    <div className="relative w-64">
-                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                       <Input className="pl-9 bg-muted/30" placeholder="Search supplier or invoice #" />
-                    </div>
-                    <Button variant="outline" size="sm" className="gap-2"><Filter className="h-3 w-3" /> Filter</Button>
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4 items-center flex-1">
+                  <div className="relative w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input className="pl-9 bg-muted/30" placeholder="Search items..." data-testid="input-search-items" />
                   </div>
-               </div>
+                  <Button variant="outline" size="sm" className="gap-2" data-testid="button-filter-items">
+                    <Filter className="h-3 w-3" /> Filter
+                  </Button>
+                </div>
+                <Dialog open={createItemOpen} onOpenChange={setCreateItemOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2" data-testid="button-add-item">
+                      <Plus className="h-4 w-4" /> Add Item
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create New Item</DialogTitle>
+                      <DialogDescription>Add a new inventory item.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      createItemMutation.mutate({
+                        name: formData.get("name") as string,
+                        sku: formData.get("sku") as string || null,
+                        category: formData.get("category") as string,
+                        unit: formData.get("unit") as string,
+                        costPrice: formData.get("costPrice") as string,
+                        sellingPrice: formData.get("sellingPrice") as string,
+                        reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
+                        status: "active",
+                      });
+                    }}>
+                      <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="name">Item Name</Label>
+                            <Input id="name" name="name" required data-testid="input-item-name" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="sku">SKU</Label>
+                            <Input id="sku" name="sku" data-testid="input-item-sku" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="category">Category</Label>
+                            <Input id="category" name="category" required data-testid="input-item-category" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="unit">Unit</Label>
+                            <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="costPrice">Cost Price</Label>
+                            <Input id="costPrice" name="costPrice" type="number" step="0.01" required data-testid="input-item-cost" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="sellingPrice">Selling Price</Label>
+                            <Input id="sellingPrice" name="sellingPrice" type="number" step="0.01" required data-testid="input-item-price" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="reorderLevel">Reorder Level</Label>
+                          <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue="0" data-testid="input-item-reorder" />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setCreateItemOpen(false)}>Cancel</Button>
+                        <Button type="submit" disabled={createItemMutation.isPending} data-testid="button-submit-item">
+                          {createItemMutation.isPending && <Spinner className="mr-2" />}
+                          Create Item
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead>Date</TableHead>
-                     <TableHead>Supplier</TableHead>
-                     <TableHead>Reference / Invoice</TableHead>
-                     <TableHead className="text-right">Amount (₦)</TableHead>
-                     <TableHead>Status</TableHead>
-                     <TableHead>Evidence</TableHead>
-                     <TableHead className="text-right">Actions</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {[
-                     { date: "Dec 26, 2025", supplier: "Global Spirits Ltd", ref: "INV-2025-882", amount: "450,000", status: "Draft", evidence: false },
-                     { date: "Dec 25, 2025", supplier: "Fresh Farms", ref: "PO-0023", amount: "125,500", status: "GRN Pending", evidence: true },
-                     { date: "Dec 24, 2025", supplier: "Beverage HQ", ref: "INV-9921", amount: "890,000", status: "Completed", evidence: true },
-                   ].map((po, i) => (
-                     <TableRow key={i}>
-                       <TableCell className="font-mono text-sm">{po.date}</TableCell>
-                       <TableCell className="font-medium">{po.supplier}</TableCell>
-                       <TableCell>{po.ref}</TableCell>
-                       <TableCell className="text-right font-mono">{po.amount}</TableCell>
-                       <TableCell>
-                         <Badge variant="outline" className={
-                           po.status === "Completed" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                           po.status === "GRN Pending" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                           "bg-muted text-muted-foreground"
-                         }>
-                           {po.status}
-                         </Badge>
-                       </TableCell>
-                       <TableCell>
-                         {po.evidence ? 
-                           <Badge variant="secondary" className="gap-1 font-normal"><FileText className="h-3 w-3" /> Attached</Badge> : 
-                           <span className="text-xs text-muted-foreground italic">Missing</span>
-                         }
-                       </TableCell>
-                       <TableCell className="text-right">
-                         <Button variant="ghost" size="sm">View</Button>
-                       </TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
+              {itemsLoading ? (
+                <div className="flex items-center justify-center py-12" data-testid="loading-items">
+                  <Spinner className="h-8 w-8" />
+                </div>
+              ) : !items || items.length === 0 ? (
+                <Empty className="py-12" data-testid="empty-items">
+                  <EmptyMedia variant="icon">
+                    <Package className="h-6 w-6" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>No items yet</EmptyTitle>
+                    <EmptyDescription>Add your first inventory item to get started.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button className="gap-2" onClick={() => setCreateItemOpen(true)} data-testid="button-add-first-item">
+                    <Plus className="h-4 w-4" /> Add First Item
+                  </Button>
+                </Empty>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead className="text-right">Cost Price</TableHead>
+                      <TableHead className="text-right">Selling Price</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => (
+                      <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
+                        <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
+                        <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
+                        <TableCell>{item.category}</TableCell>
+                        <TableCell>{item.unit}</TableCell>
+                        <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(
+                            item.status === "active" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-muted text-muted-foreground"
+                          )} data-testid={`badge-item-status-${item.id}`}>
+                            {item.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="movements" className="mt-6">
-          <div className="grid gap-6 md:grid-cols-4">
-             <Card className="md:col-span-3">
-               <CardHeader>
-                 <CardTitle>Internal Stock Movements</CardTitle>
-                 <CardDescription>Transfers, Wastage, and Complimentary Issues</CardDescription>
-               </CardHeader>
-               <CardContent>
-                 <Table>
-                   <TableHeader>
-                     <TableRow>
-                       <TableHead>Type</TableHead>
-                       <TableHead>From</TableHead>
-                       <TableHead>To / Reason</TableHead>
-                       <TableHead>Items</TableHead>
-                       <TableHead className="text-right">Value (₦)</TableHead>
-                       <TableHead>Authorized By</TableHead>
-                     </TableRow>
-                   </TableHeader>
-                   <TableBody>
-                     <TableRow>
-                       <TableCell><Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Transfer</Badge></TableCell>
-                       <TableCell>Main Store</TableCell>
-                       <TableCell>VIP Bar</TableCell>
-                       <TableCell className="text-muted-foreground text-sm">Hennessy VSOP (6), Coke (24)...</TableCell>
-                       <TableCell className="text-right font-mono">180,000</TableCell>
-                       <TableCell>Jane Mgr</TableCell>
-                     </TableRow>
-                     <TableRow>
-                       <TableCell><Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Wastage</Badge></TableCell>
-                       <TableCell>Kitchen</TableCell>
-                       <TableCell>Spoilage</TableCell>
-                       <TableCell className="text-muted-foreground text-sm">Tomatoes (5kg)</TableCell>
-                       <TableCell className="text-right font-mono">15,000</TableCell>
-                       <TableCell>Chef Mike</TableCell>
-                     </TableRow>
-                   </TableBody>
-                 </Table>
-               </CardContent>
-             </Card>
-
-             <Card>
-               <CardHeader>
-                 <CardTitle className="text-sm">Quick Record</CardTitle>
-               </CardHeader>
-               <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Movement Type</Label>
-                    <Select>
-                      <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="transfer">Transfer (Internal)</SelectItem>
-                        <SelectItem value="waste">Wastage / Spoilage</SelectItem>
-                        <SelectItem value="promo">Complimentary / Promo</SelectItem>
-                        <SelectItem value="staff">Staff Meal</SelectItem>
-                      </SelectContent>
-                    </Select>
+        <TabsContent value="suppliers" className="mt-6">
+          <Card>
+            <CardHeader className="px-6 py-4 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4 items-center flex-1">
+                  <div className="relative w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input className="pl-9 bg-muted/30" placeholder="Search suppliers..." data-testid="input-search-suppliers" />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Source</Label>
-                    <Select>
-                      <SelectTrigger><SelectValue placeholder="From..." /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="main">Main Store</SelectItem>
-                        <SelectItem value="bar">Main Bar</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                     <Label>Items</Label>
-                     <Button variant="outline" className="w-full justify-start text-muted-foreground font-normal">
-                       <Plus className="h-4 w-4 mr-2" /> Add items...
-                     </Button>
-                  </div>
-                  <Button className="w-full">Record Movement</Button>
-               </CardContent>
-             </Card>
-          </div>
+                  <Button variant="outline" size="sm" className="gap-2" data-testid="button-filter-suppliers">
+                    <Filter className="h-3 w-3" /> Filter
+                  </Button>
+                </div>
+                <Dialog open={createSupplierOpen} onOpenChange={setCreateSupplierOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2" data-testid="button-add-supplier">
+                      <Plus className="h-4 w-4" /> Add Supplier
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create New Supplier</DialogTitle>
+                      <DialogDescription>Add a new supplier to your network.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      createSupplierMutation.mutate({
+                        name: formData.get("name") as string,
+                        contactPerson: formData.get("contactPerson") as string || null,
+                        phone: formData.get("phone") as string || null,
+                        email: formData.get("email") as string || null,
+                        address: formData.get("address") as string || null,
+                        status: "active",
+                      });
+                    }}>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="supplierName">Supplier Name</Label>
+                          <Input id="supplierName" name="name" required data-testid="input-supplier-name" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="contactPerson">Contact Person</Label>
+                          <Input id="contactPerson" name="contactPerson" data-testid="input-supplier-contact" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="phone">Phone</Label>
+                            <Input id="phone" name="phone" data-testid="input-supplier-phone" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="email">Email</Label>
+                            <Input id="email" name="email" type="email" data-testid="input-supplier-email" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="address">Address</Label>
+                          <Input id="address" name="address" data-testid="input-supplier-address" />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setCreateSupplierOpen(false)}>Cancel</Button>
+                        <Button type="submit" disabled={createSupplierMutation.isPending} data-testid="button-submit-supplier">
+                          {createSupplierMutation.isPending && <Spinner className="mr-2" />}
+                          Create Supplier
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {suppliersLoading ? (
+                <div className="flex items-center justify-center py-12" data-testid="loading-suppliers">
+                  <Spinner className="h-8 w-8" />
+                </div>
+              ) : !suppliers || suppliers.length === 0 ? (
+                <Empty className="py-12" data-testid="empty-suppliers">
+                  <EmptyMedia variant="icon">
+                    <Truck className="h-6 w-6" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>No suppliers yet</EmptyTitle>
+                    <EmptyDescription>Add your first supplier to manage procurement.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button className="gap-2" onClick={() => setCreateSupplierOpen(true)} data-testid="button-add-first-supplier">
+                    <Plus className="h-4 w-4" /> Add First Supplier
+                  </Button>
+                </Empty>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Contact Person</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {suppliers.map((supplier) => (
+                      <TableRow key={supplier.id} data-testid={`row-supplier-${supplier.id}`}>
+                        <TableCell className="font-medium" data-testid={`text-supplier-name-${supplier.id}`}>{supplier.name}</TableCell>
+                        <TableCell>{supplier.contactPerson || "-"}</TableCell>
+                        <TableCell>{supplier.phone || "-"}</TableCell>
+                        <TableCell>{supplier.email || "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(
+                            supplier.status === "active" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-muted text-muted-foreground"
+                          )} data-testid={`badge-supplier-status-${supplier.id}`}>
+                            {supplier.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
