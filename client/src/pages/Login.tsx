@@ -19,7 +19,8 @@ export default function Login() {
           <div className="mx-auto h-12 w-12 rounded bg-primary flex items-center justify-center mb-4">
             <span className="text-white text-2xl font-display font-bold">M</span>
           </div>
-          <h1 className="text-2xl font-display font-bold text-foreground">Sign in to AuditOps</h1>
+          <h1 className="text-2xl font-display font-bold text-foreground">Sign in to 
+          Miemploya AuditOps</h1>
           <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>
         </div>
 
