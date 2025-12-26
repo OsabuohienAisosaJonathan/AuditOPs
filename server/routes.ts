@@ -188,7 +188,11 @@ export async function registerRoutes(
         return res.status(429).json({ error: `Too many login attempts. Please try again in ${LOCKOUT_MINUTES} minutes.` });
       }
 
-      const user = await storage.getUserByUsername(username);
+      // Try to find user by username first, then by email
+      let user = await storage.getUserByUsername(username);
+      if (!user) {
+        user = await storage.getUserByEmail(username);
+      }
 
       if (!user) {
         recordFailedAttempt(identifier);
@@ -196,7 +200,7 @@ export async function registerRoutes(
           userId: null,
           action: "Login Failed",
           entity: "Session",
-          details: `Failed login attempt for username: ${username}`,
+          details: `Failed login attempt for: ${username}`,
           ipAddress: req.ip || "Unknown",
         });
         return res.status(401).json({ error: "Invalid credentials" });

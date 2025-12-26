@@ -52,16 +52,15 @@ export default function Login() {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">Email or Username</Label>
             <Input 
               id="username" 
               name="username"
               type="text" 
-              placeholder="john.doe" 
+              placeholder="you@example.com" 
               className="h-10" 
               required
               data-testid="input-username"
-              defaultValue="john.doe"
             />
           </div>
           <div className="space-y-2">
@@ -76,7 +75,6 @@ export default function Login() {
               className="h-10" 
               required
               data-testid="input-password"
-              defaultValue="demo123"
             />
           </div>
           
@@ -101,7 +99,6 @@ export default function Login() {
         </form>
 
         <div className="text-center text-xs text-muted-foreground">
-          <p className="mb-2">Demo credentials: <strong>john.doe</strong> / <strong>demo123</strong></p>
           &copy; 2025 Miemploya Audit Services. All rights reserved.
         </div>
       </div>
