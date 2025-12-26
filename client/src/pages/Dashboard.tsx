@@ -147,59 +147,34 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
 
-              {summary?.exceptionsBySeverity && summary.exceptionsBySeverity.length > 0 && (
+              {summary?.recentExceptions && summary.recentExceptions.length > 0 && (
                 <Card className="audit-card">
                   <CardHeader>
-                    <CardTitle>Exceptions by Severity</CardTitle>
-                    <CardDescription>Breakdown of open cases</CardDescription>
+                    <CardTitle>Recent Exceptions</CardTitle>
+                    <CardDescription>Latest reported issues</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {summary.exceptionsBySeverity.map((item) => (
-                        <div key={item.severity} className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <Badge 
-                              variant="outline" 
-                              className={cn(
-                                item.severity === "critical" && "bg-red-50 text-red-700 border-red-200",
-                                item.severity === "high" && "bg-orange-50 text-orange-700 border-orange-200",
-                                item.severity === "medium" && "bg-amber-50 text-amber-700 border-amber-200",
-                                item.severity === "low" && "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              )}
-                              data-testid={`badge-severity-${item.severity}`}
-                            >
-                              {item.severity}
-                            </Badge>
-                          </div>
-                          <span className="font-bold text-lg" data-testid={`text-severity-count-${item.severity}`}>
-                            {item.count}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {summary?.recentActivity && summary.recentActivity.length > 0 && (
-                <Card className="audit-card">
-                  <CardHeader>
-                    <CardTitle>Recent Activity</CardTitle>
-                    <CardDescription>Latest system actions</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {summary.recentActivity.slice(0, 5).map((log, i) => (
-                        <div key={log.id || i} className="flex items-start gap-3 text-sm">
-                          <div className="h-2 w-2 mt-2 rounded-full bg-primary shrink-0" />
+                      {summary.recentExceptions.slice(0, 5).map((exception) => (
+                        <div key={exception.id} className="flex items-start gap-3 text-sm">
+                          <div className="h-2 w-2 mt-2 rounded-full bg-destructive shrink-0" />
                           <div className="space-y-1 flex-1">
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">{log.action}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(log.createdAt), "MMM d, h:mm a")}
-                              </span>
+                              <span className="font-medium">{exception.caseNumber}</span>
+                              <Badge 
+                                variant="outline" 
+                                className={cn(
+                                  exception.severity === "critical" && "bg-red-50 text-red-700 border-red-200",
+                                  exception.severity === "high" && "bg-orange-50 text-orange-700 border-orange-200",
+                                  exception.severity === "medium" && "bg-amber-50 text-amber-700 border-amber-200",
+                                  exception.severity === "low" && "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                )}
+                                data-testid={`badge-severity-${exception.id}`}
+                              >
+                                {exception.severity}
+                              </Badge>
                             </div>
-                            <p className="text-muted-foreground">{log.entity} {log.details && `- ${log.details}`}</p>
+                            <p className="text-muted-foreground">{exception.summary}</p>
                           </div>
                         </div>
                       ))}
