@@ -50,6 +50,59 @@ export const departments = pgTable("departments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const suppliers = pgTable("suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  contactPerson: text("contact_person"),
+  phone: text("phone"),
+  email: text("email"),
+  address: text("address"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const items = pgTable("items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sku: text("sku"),
+  category: text("category").notNull().default("general"),
+  unit: text("unit").notNull().default("pcs"),
+  costPrice: decimal("cost_price", { precision: 12, scale: 2 }).default("0.00"),
+  sellingPrice: decimal("selling_price", { precision: 12, scale: 2 }).default("0.00"),
+  reorderLevel: integer("reorder_level").default(10),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const purchaseLines = pgTable("purchase_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseId: varchar("purchase_id").notNull().references(() => purchases.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
+  unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+  totalPrice: decimal("total_price", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const stockCounts = pgTable("stock_counts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  openingQty: decimal("opening_qty", { precision: 10, scale: 2 }).default("0.00"),
+  receivedQty: decimal("received_qty", { precision: 10, scale: 2 }).default("0.00"),
+  soldQty: decimal("sold_qty", { precision: 10, scale: 2 }).default("0.00"),
+  expectedClosingQty: decimal("expected_closing_qty", { precision: 10, scale: 2 }).default("0.00"),
+  actualClosingQty: decimal("actual_closing_qty", { precision: 10, scale: 2 }),
+  varianceQty: decimal("variance_qty", { precision: 10, scale: 2 }).default("0.00"),
+  varianceValue: decimal("variance_value", { precision: 12, scale: 2 }).default("0.00"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const salesEntries = pgTable("sales_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
@@ -171,6 +224,10 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true, creat
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
+export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true });
+export const insertPurchaseLineSchema = createInsertSchema(purchaseLines).omit({ id: true, createdAt: true });
+export const insertStockCountSchema = createInsertSchema(stockCounts).omit({ id: true, createdAt: true });
 export const insertSalesEntrySchema = createInsertSchema(salesEntries).omit({ id: true, createdAt: true });
 export const insertPurchaseSchema = createInsertSchema(purchases).omit({ id: true, createdAt: true });
 export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({ id: true, createdAt: true });
@@ -189,6 +246,14 @@ export type InsertOutlet = z.infer<typeof insertOutletSchema>;
 export type Outlet = typeof outlets.$inferSelect;
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
 export type Department = typeof departments.$inferSelect;
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+export type InsertItem = z.infer<typeof insertItemSchema>;
+export type Item = typeof items.$inferSelect;
+export type InsertPurchaseLine = z.infer<typeof insertPurchaseLineSchema>;
+export type PurchaseLine = typeof purchaseLines.$inferSelect;
+export type InsertStockCount = z.infer<typeof insertStockCountSchema>;
+export type StockCount = typeof stockCounts.$inferSelect;
 export type InsertSalesEntry = z.infer<typeof insertSalesEntrySchema>;
 export type SalesEntry = typeof salesEntries.$inferSelect;
 export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;

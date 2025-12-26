@@ -3,7 +3,13 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { hash, compare } from "bcrypt";
 import session from "express-session";
-import { insertUserSchema, insertClientSchema, insertOutletSchema, insertDepartmentSchema, insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema, type UserRole } from "@shared/schema";
+import { 
+  insertUserSchema, insertClientSchema, insertOutletSchema, insertDepartmentSchema, 
+  insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, 
+  insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
+  insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
+  type UserRole 
+} from "@shared/schema";
 import { randomBytes } from "crypto";
 
 declare module "express-session" {
@@ -13,12 +19,10 @@ declare module "express-session" {
   }
 }
 
-// Password validation
 function isStrongPassword(password: string): boolean {
   return password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password);
 }
 
-// Rate limiting store
 const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -63,7 +67,6 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Session middleware
   app.use(
     session({
       secret: process.env.SESSION_SECRET || "audit-ops-secret-key-change-in-production",
@@ -77,7 +80,6 @@ export async function registerRoutes(
     })
   );
 
-  // Auth middleware
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -85,7 +87,6 @@ export async function registerRoutes(
     next();
   };
 
-  // Role-based access middleware
   const requireRole = (...roles: string[]) => {
     return async (req: Request, res: Response, next: NextFunction) => {
       if (!req.session?.userId) {
@@ -188,7 +189,6 @@ export async function registerRoutes(
         return res.status(429).json({ error: `Too many login attempts. Please try again in ${LOCKOUT_MINUTES} minutes.` });
       }
 
-      // Try to find user by username first, then by email
       let user = await storage.getUserByUsername(username);
       if (!user) {
         user = await storage.getUserByEmail(username);
@@ -331,6 +331,16 @@ export async function registerRoutes(
     }
   });
 
+  // ============== DASHBOARD ==============
+  app.get("/api/dashboard/summary", requireAuth, async (req, res) => {
+    try {
+      const summary = await storage.getDashboardSummary();
+      res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============== USER MANAGEMENT (Super Admin Only) ==============
   app.get("/api/users", requireSuperAdmin, async (req, res) => {
     try {
@@ -341,7 +351,6 @@ export async function registerRoutes(
         search: search as string,
       });
       
-      // Remove password from response
       const safeUsers = users.map(u => ({
         id: u.id,
         username: u.username,
@@ -397,7 +406,6 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Role must be supervisor or auditor" });
       }
 
-      // Check if email or username already exists
       const existingEmail = await storage.getUserByEmail(email);
       if (existingEmail) {
         return res.status(400).json({ error: "Email already in use" });
@@ -408,7 +416,6 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Username already in use" });
       }
 
-      // Generate temporary password
       const tempPassword = randomBytes(12).toString("base64").slice(0, 12);
       const hashedPassword = await hash(tempPassword, 12);
 
@@ -457,7 +464,6 @@ export async function registerRoutes(
 
       const { fullName, role, phone, accessScope, status } = req.body;
 
-      // Cannot change super_admin role
       if (targetUser.role === "super_admin" && role && role !== "super_admin") {
         return res.status(403).json({ error: "Cannot change the role of a Super Admin" });
       }
@@ -664,7 +670,6 @@ export async function registerRoutes(
       const user = await storage.getUser(req.session.userId!);
       const clients = await storage.getClients();
       
-      // Filter by access scope if not super_admin or global access
       if (user?.role !== "super_admin" && user?.accessScope && !user.accessScope.global) {
         const filteredClients = clients.filter(c => 
           user.accessScope?.clientIds?.includes(c.id)
@@ -760,11 +765,64 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/outlets/:id", requireAuth, async (req, res) => {
+    try {
+      const outlet = await storage.getOutlet(req.params.id);
+      if (!outlet) {
+        return res.status(404).json({ error: "Outlet not found" });
+      }
+      res.json(outlet);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/outlets", requireSuperAdmin, async (req, res) => {
     try {
       const data = insertOutletSchema.parse(req.body);
       const outlet = await storage.createOutlet(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Outlet",
+        entity: "Outlet",
+        entityId: outlet.id,
+        details: `New outlet added: ${outlet.name}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
       res.json(outlet);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/outlets/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const outlet = await storage.updateOutlet(req.params.id, req.body);
+      if (!outlet) {
+        return res.status(404).json({ error: "Outlet not found" });
+      }
+      res.json(outlet);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/outlets/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      await storage.deleteOutlet(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Outlet",
+        entity: "Outlet",
+        entityId: req.params.id,
+        details: `Outlet deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -780,17 +838,336 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/departments", requireAuth, async (req, res) => {
+    try {
+      const departments = await storage.getAllDepartments();
+      res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/departments/:id", requireAuth, async (req, res) => {
+    try {
+      const department = await storage.getDepartment(req.params.id);
+      if (!department) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      res.json(department);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/departments", requireSuperAdmin, async (req, res) => {
     try {
       const data = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Department",
+        entity: "Department",
+        entityId: department.id,
+        details: `New department added: ${department.name}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
       res.json(department);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
+  app.patch("/api/departments/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const department = await storage.updateDepartment(req.params.id, req.body);
+      if (!department) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      res.json(department);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/departments/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      await storage.deleteDepartment(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Department",
+        entity: "Department",
+        entityId: req.params.id,
+        details: `Department deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== SUPPLIERS ==============
+  app.get("/api/suppliers", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.query;
+      if (!clientId) {
+        return res.status(400).json({ error: "clientId query parameter is required" });
+      }
+      const suppliers = await storage.getSuppliers(clientId as string);
+      res.json(suppliers);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/suppliers/:id", requireAuth, async (req, res) => {
+    try {
+      const supplier = await storage.getSupplier(req.params.id);
+      if (!supplier) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(supplier);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/suppliers", requireAuth, async (req, res) => {
+    try {
+      const data = insertSupplierSchema.parse(req.body);
+      const supplier = await storage.createSupplier(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Supplier",
+        entity: "Supplier",
+        entityId: supplier.id,
+        details: `New supplier added: ${supplier.name}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(supplier);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/suppliers/:id", requireAuth, async (req, res) => {
+    try {
+      const supplier = await storage.updateSupplier(req.params.id, req.body);
+      if (!supplier) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(supplier);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/suppliers/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteSupplier(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Supplier",
+        entity: "Supplier",
+        entityId: req.params.id,
+        details: `Supplier deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== ITEMS ==============
+  app.get("/api/items", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.query;
+      if (!clientId) {
+        return res.status(400).json({ error: "clientId query parameter is required" });
+      }
+      const items = await storage.getItems(clientId as string);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/items/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/items", requireAuth, async (req, res) => {
+    try {
+      const data = insertItemSchema.parse(req.body);
+      const item = await storage.createItem(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Item",
+        entity: "Item",
+        entityId: item.id,
+        details: `New item added: ${item.name}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(item);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/items/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.updateItem(req.params.id, req.body);
+      if (!item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/items/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteItem(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Item",
+        entity: "Item",
+        entityId: req.params.id,
+        details: `Item deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== STOCK COUNTS ==============
+  app.get("/api/stock-counts", requireAuth, async (req, res) => {
+    try {
+      const { departmentId, date } = req.query;
+      if (!departmentId) {
+        return res.status(400).json({ error: "departmentId query parameter is required" });
+      }
+      const stockCounts = await storage.getStockCounts(
+        departmentId as string,
+        date ? new Date(date as string) : undefined
+      );
+      res.json(stockCounts);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/stock-counts/:id", requireAuth, async (req, res) => {
+    try {
+      const stockCount = await storage.getStockCount(req.params.id);
+      if (!stockCount) {
+        return res.status(404).json({ error: "Stock count not found" });
+      }
+      res.json(stockCount);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/stock-counts", requireAuth, async (req, res) => {
+    try {
+      const data = insertStockCountSchema.parse({
+        ...req.body,
+        createdBy: req.session.userId!,
+      });
+      const stockCount = await storage.createStockCount(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Stock Count",
+        entity: "StockCount",
+        entityId: stockCount.id,
+        details: `Stock count recorded`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(stockCount);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/stock-counts/:id", requireAuth, async (req, res) => {
+    try {
+      const stockCount = await storage.updateStockCount(req.params.id, req.body);
+      if (!stockCount) {
+        return res.status(404).json({ error: "Stock count not found" });
+      }
+      res.json(stockCount);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/stock-counts/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteStockCount(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Stock Count",
+        entity: "StockCount",
+        entityId: req.params.id,
+        details: `Stock count deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== SALES ENTRIES ==============
+  app.get("/api/sales-entries", requireAuth, async (req, res) => {
+    try {
+      const { departmentId, startDate, endDate } = req.query;
+      
+      if (departmentId) {
+        const sales = await storage.getSalesEntries(
+          departmentId as string,
+          startDate ? new Date(startDate as string) : undefined,
+          endDate ? new Date(endDate as string) : undefined
+        );
+        return res.json(sales);
+      }
+      
+      const sales = await storage.getAllSalesEntries();
+      res.json(sales);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/departments/:departmentId/sales", requireAuth, async (req, res) => {
     try {
       const { startDate, endDate } = req.query;
@@ -802,6 +1179,41 @@ export async function registerRoutes(
       res.json(sales);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/sales-entries/:id", requireAuth, async (req, res) => {
+    try {
+      const entry = await storage.getSalesEntry(req.params.id);
+      if (!entry) {
+        return res.status(404).json({ error: "Sales entry not found" });
+      }
+      res.json(entry);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/sales-entries", requireAuth, async (req, res) => {
+    try {
+      const data = insertSalesEntrySchema.parse({
+        ...req.body,
+        createdBy: req.session.userId!,
+      });
+      const entry = await storage.createSalesEntry(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Sales Entry",
+        entity: "Sales",
+        entityId: entry.id,
+        details: `Sales entry for ${req.body.shift || 'full'} shift`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(entry);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
     }
   });
 
@@ -828,6 +1240,31 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/sales-entries/import", requireAuth, async (req, res) => {
+    try {
+      res.json({
+        success: true,
+        message: "POS import functionality is a placeholder. Implement integration with POS system.",
+        importedCount: 0,
+        status: "stub"
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/sales-entries/:id", requireAuth, async (req, res) => {
+    try {
+      const entry = await storage.updateSalesEntry(req.params.id, req.body);
+      if (!entry) {
+        return res.status(404).json({ error: "Sales entry not found" });
+      }
+      res.json(entry);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.patch("/api/sales/:id", requireAuth, async (req, res) => {
     try {
       const entry = await storage.updateSalesEntry(req.params.id, req.body);
@@ -840,7 +1277,42 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/sales-entries/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteSalesEntry(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Sales Entry",
+        entity: "Sales",
+        entityId: req.params.id,
+        details: `Sales entry deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== PURCHASES ==============
+  app.get("/api/purchases", requireAuth, async (req, res) => {
+    try {
+      const { outletId } = req.query;
+      
+      if (outletId) {
+        const purchases = await storage.getPurchases(outletId as string);
+        return res.json(purchases);
+      }
+      
+      const purchases = await storage.getAllPurchases();
+      res.json(purchases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/outlets/:outletId/purchases", requireAuth, async (req, res) => {
     try {
       const purchases = await storage.getPurchases(req.params.outletId);
@@ -850,13 +1322,56 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/purchases/:id", requireAuth, async (req, res) => {
+    try {
+      const purchase = await storage.getPurchase(req.params.id);
+      if (!purchase) {
+        return res.status(404).json({ error: "Purchase not found" });
+      }
+      res.json(purchase);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/purchases/:id/lines", requireAuth, async (req, res) => {
+    try {
+      const lines = await storage.getPurchaseLines(req.params.id);
+      res.json(lines);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/purchases", requireAuth, async (req, res) => {
     try {
+      const { lines, ...purchaseData } = req.body;
+      
       const data = insertPurchaseSchema.parse({
-        ...req.body,
+        ...purchaseData,
         createdBy: req.session.userId!,
       });
       const purchase = await storage.createPurchase(data);
+
+      if (lines && Array.isArray(lines)) {
+        for (const line of lines) {
+          const lineData = insertPurchaseLineSchema.parse({
+            ...line,
+            purchaseId: purchase.id,
+          });
+          await storage.createPurchaseLine(lineData);
+        }
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Purchase",
+        entity: "Purchase",
+        entityId: purchase.id,
+        details: `Purchase invoice: ${purchase.invoiceRef}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
       res.json(purchase);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -870,6 +1385,25 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Purchase not found" });
       }
       res.json(purchase);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/purchases/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deletePurchase(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Purchase",
+        entity: "Purchase",
+        entityId: req.params.id,
+        details: `Purchase deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -899,6 +1433,25 @@ export async function registerRoutes(
   });
 
   // ============== RECONCILIATIONS ==============
+  app.get("/api/reconciliations", requireAuth, async (req, res) => {
+    try {
+      const { departmentId, date } = req.query;
+      
+      if (departmentId) {
+        const reconciliations = await storage.getReconciliations(
+          departmentId as string,
+          date ? new Date(date as string) : undefined
+        );
+        return res.json(reconciliations);
+      }
+      
+      const reconciliations = await storage.getAllReconciliations();
+      res.json(reconciliations);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/departments/:departmentId/reconciliations", requireAuth, async (req, res) => {
     try {
       const { date } = req.query;
@@ -912,6 +1465,18 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/reconciliations/:id", requireAuth, async (req, res) => {
+    try {
+      const reconciliation = await storage.getReconciliation(req.params.id);
+      if (!reconciliation) {
+        return res.status(404).json({ error: "Reconciliation not found" });
+      }
+      res.json(reconciliation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/reconciliations", requireAuth, async (req, res) => {
     try {
       const data = insertReconciliationSchema.parse({
@@ -919,7 +1484,52 @@ export async function registerRoutes(
         createdBy: req.session.userId!,
       });
       const reconciliation = await storage.createReconciliation(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Reconciliation",
+        entity: "Reconciliation",
+        entityId: reconciliation.id,
+        details: `Reconciliation created for department`,
+        ipAddress: req.ip || "Unknown",
+      });
+
       res.json(reconciliation);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/reconciliations/compute", requireAuth, async (req, res) => {
+    try {
+      const { departmentId, date, openingStock, additions, physicalCount } = req.body;
+
+      if (!departmentId || !date || !openingStock || !additions || !physicalCount) {
+        return res.status(400).json({ error: "Missing required fields for reconciliation computation" });
+      }
+
+      const openingQty = parseFloat(openingStock.quantity || openingStock.totalQty || 0);
+      const additionsQty = parseFloat(additions.quantity || additions.totalQty || 0);
+      const physicalQty = parseFloat(physicalCount.quantity || physicalCount.totalQty || 0);
+
+      const expectedClosing = openingQty + additionsQty;
+      const varianceQty = physicalQty - expectedClosing;
+      const unitValue = parseFloat(openingStock.unitValue || 10);
+      const varianceValue = varianceQty * unitValue;
+
+      res.json({
+        departmentId,
+        date,
+        openingStock,
+        additions,
+        expectedUsage: { quantity: 0 },
+        physicalCount,
+        expectedClosingQty: expectedClosing.toFixed(2),
+        actualClosingQty: physicalQty.toFixed(2),
+        varianceQty: varianceQty.toFixed(2),
+        varianceValue: varianceValue.toFixed(2),
+        status: varianceQty === 0 ? "balanced" : (Math.abs(varianceQty) > 10 ? "significant_variance" : "minor_variance")
+      });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -964,11 +1574,34 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/reconciliations/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteReconciliation(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Reconciliation",
+        entity: "Reconciliation",
+        entityId: req.params.id,
+        details: `Reconciliation deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== EXCEPTIONS ==============
   app.get("/api/exceptions", requireAuth, async (req, res) => {
     try {
-      const { outletId } = req.query;
-      const exceptions = await storage.getExceptions(outletId as string | undefined);
+      const { outletId, status, severity } = req.query;
+      const exceptions = await storage.getExceptions({
+        outletId: outletId as string | undefined,
+        status: status as string | undefined,
+        severity: severity as string | undefined,
+      });
       res.json(exceptions);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1012,11 +1645,51 @@ export async function registerRoutes(
 
   app.patch("/api/exceptions/:id", requireAuth, async (req, res) => {
     try {
-      const exception = await storage.updateException(req.params.id, req.body);
+      const updateData = { ...req.body };
+      
+      if (req.body.status === "resolved" && !req.body.resolvedAt) {
+        updateData.resolvedAt = new Date();
+      }
+      
+      const exception = await storage.updateException(req.params.id, updateData);
       if (!exception) {
         return res.status(404).json({ error: "Exception not found" });
       }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Updated Exception",
+        entity: exception.caseNumber,
+        entityId: exception.id,
+        details: `Exception status: ${exception.status}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
       res.json(exception);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/exceptions/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const exception = await storage.getException(req.params.id);
+      if (!exception) {
+        return res.status(404).json({ error: "Exception not found" });
+      }
+      
+      await storage.deleteException(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Exception",
+        entity: exception.caseNumber,
+        entityId: req.params.id,
+        details: `Exception deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -1046,12 +1719,60 @@ export async function registerRoutes(
     }
   });
 
+  // ============== REPORTS ==============
+  app.get("/api/reports/generate", requireAuth, async (req, res) => {
+    try {
+      const { type, startDate, endDate, reportType } = req.query;
+
+      if (!type || !["pdf", "excel"].includes(type as string)) {
+        return res.status(400).json({ error: "type query parameter is required (pdf or excel)" });
+      }
+
+      const report = {
+        id: `RPT-${Date.now()}`,
+        type: type,
+        format: type === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        generatedAt: new Date().toISOString(),
+        parameters: {
+          startDate: startDate || null,
+          endDate: endDate || null,
+          reportType: reportType || "summary",
+        },
+        status: "stub",
+        message: "Report generation is a placeholder. Implement PDF/Excel generation library.",
+        downloadUrl: null
+      };
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Generated Report",
+        entity: "Report",
+        entityId: report.id,
+        details: `Report type: ${type}, Report: ${reportType || 'summary'}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(report);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== AUDIT LOGS ==============
   app.get("/api/audit-logs", requireAuth, async (req, res) => {
     try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const logs = await storage.getAuditLogs(limit);
-      res.json(logs);
+      const { limit, offset, userId, entity, startDate, endDate } = req.query;
+      
+      const result = await storage.getAuditLogs({
+        limit: limit ? parseInt(limit as string) : 50,
+        offset: offset ? parseInt(offset as string) : 0,
+        userId: userId as string,
+        entity: entity as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+      });
+      
+      res.json(result);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
