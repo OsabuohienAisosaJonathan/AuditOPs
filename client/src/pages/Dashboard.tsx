@@ -1,19 +1,35 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowUpRight, ArrowDownRight, AlertTriangle, FileText, Plus, Upload, ShoppingCart, BarChart3, TrendingUp, AlertOctagon, FileCheck, Building2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
-import { dashboardApi, DashboardSummary } from "@/lib/api";
+import { dashboardApi, clientsApi, DashboardSummary, Client } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useLocation } from "wouter";
+import { toast } from "sonner";
 
 export default function Dashboard() {
+  const [, setLocation] = useLocation();
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
   const { data: summary, isLoading, error } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: dashboardApi.getSummary,
+  });
+
+  const { data: clients } = useQuery({
+    queryKey: ["clients"],
+    queryFn: clientsApi.getAll,
   });
 
   if (isLoading) {
@@ -40,26 +56,135 @@ export default function Dashboard() {
 
   const hasData = summary && (summary.totalClients > 0 || summary.activeOutlets > 0);
 
+  const handleStartDailyAudit = () => {
+    setLocation("/sales-capture");
+  };
+
+  const handleImportPOS = () => {
+    setImportDialogOpen(true);
+  };
+
+  const handleImportSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    toast.success("POS data import initiated. This feature will process your file.");
+    setImportDialogOpen(false);
+  };
+
+  const handleViewExceptions = () => {
+    setLocation("/exceptions");
+  };
+
+  const handleQuickPurchase = () => {
+    setLocation("/inventory");
+  };
+
+  const handleQuickStockCount = () => {
+    setLocation("/reconciliation");
+  };
+
+  const handleQuickException = () => {
+    setLocation("/exceptions");
+  };
+
+  const handleAddFirstClient = () => {
+    setLocation("/clients");
+  };
+
   return (
     <div className="space-y-8 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-display font-bold text-foreground" data-testid="text-dashboard-title">
-            Audit Command Center
-          </h1>
-          <p className="text-muted-foreground mt-1">Overview for {format(new Date(), "MMM d, yyyy")}</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-foreground" data-testid="text-dashboard-title">
+              Audit Command Center
+            </h1>
+            <p className="text-muted-foreground mt-1">Overview for {format(new Date(), "MMM d, yyyy")}</p>
+          </div>
+          {clients && clients.length > 0 && (
+            <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+              <SelectTrigger className="w-[200px]" data-testid="select-dashboard-client">
+                <SelectValue placeholder="All Clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clients</SelectItem>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2" data-testid="button-import-pos">
+          <Button variant="outline" className="gap-2" onClick={handleImportPOS} data-testid="button-import-pos">
             <Upload className="h-4 w-4" />
             Import POS Data
           </Button>
-          <Button className="gap-2 shadow-lg shadow-primary/20" data-testid="button-start-audit">
+          <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handleStartDailyAudit} data-testid="button-start-audit">
             <Plus className="h-4 w-4" />
             Start Daily Audit
           </Button>
         </div>
       </div>
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import POS Data</DialogTitle>
+            <DialogDescription>Upload a CSV or Excel file containing POS sales data.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleImportSubmit}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="posFile">Select File</Label>
+                <Input 
+                  id="posFile" 
+                  name="posFile" 
+                  type="file" 
+                  accept=".csv,.xlsx,.xls"
+                  data-testid="input-pos-file"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="importDate">Import Date</Label>
+                <Input 
+                  id="importDate" 
+                  name="importDate" 
+                  type="date" 
+                  defaultValue={format(new Date(), "yyyy-MM-dd")}
+                  data-testid="input-import-date"
+                />
+              </div>
+              {clients && clients.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="importClient">Client</Label>
+                  <Select name="importClient">
+                    <SelectTrigger data-testid="select-import-client">
+                      <SelectValue placeholder="Select client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setImportDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" data-testid="button-submit-import">
+                Import Data
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {!hasData ? (
         <Empty className="min-h-[300px] border" data-testid="empty-dashboard">
@@ -72,7 +197,7 @@ export default function Dashboard() {
               Start by adding clients and outlets to begin tracking audit data.
             </EmptyDescription>
           </EmptyHeader>
-          <Button className="gap-2" data-testid="button-add-first-client">
+          <Button className="gap-2" onClick={handleAddFirstClient} data-testid="button-add-first-client">
             <Plus className="h-4 w-4" />
             Add First Client
           </Button>
@@ -201,7 +326,12 @@ export default function Dashboard() {
                         <p className="text-xs text-muted-foreground">Review and resolve pending cases</p>
                       </div>
                     </div>
-                    <Button variant="ghost" className="w-full text-xs text-muted-foreground hover:text-foreground" data-testid="button-view-exceptions">
+                    <Button 
+                      variant="ghost" 
+                      className="w-full text-xs text-muted-foreground hover:text-foreground" 
+                      onClick={handleViewExceptions}
+                      data-testid="button-view-exceptions"
+                    >
                       View All Exceptions
                     </Button>
                   </CardContent>
@@ -225,13 +355,28 @@ export default function Dashboard() {
                   <CardTitle>Quick Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-2">
-                  <Button variant="outline" className="w-full justify-start text-left font-normal" data-testid="button-quick-purchase">
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start text-left font-normal" 
+                    onClick={handleQuickPurchase}
+                    data-testid="button-quick-purchase"
+                  >
                     <FileText className="mr-2 h-4 w-4" /> Record Purchase / GRN
                   </Button>
-                  <Button variant="outline" className="w-full justify-start text-left font-normal" data-testid="button-quick-stock">
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start text-left font-normal" 
+                    onClick={handleQuickStockCount}
+                    data-testid="button-quick-stock"
+                  >
                     <BarChart3 className="mr-2 h-4 w-4" /> Start Stock Count
                   </Button>
-                  <Button variant="outline" className="w-full justify-start text-left font-normal" data-testid="button-quick-exception">
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start text-left font-normal" 
+                    onClick={handleQuickException}
+                    data-testid="button-quick-exception"
+                  >
                     <AlertTriangle className="mr-2 h-4 w-4" /> Open Exception Case
                   </Button>
                 </CardContent>
