@@ -2,17 +2,20 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut } from "lucide-react";
+import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut, Check, ChevronsUpDown, Layers } from "lucide-react";
 import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { useState } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { useClientContext } from "@/lib/client-context";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { useQuery } from "@tanstack/react-query";
+import { departmentsApi, Department } from "@/lib/api";
 
 const MAIN_NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -49,6 +52,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const { user, logout } = useAuth();
+  const { clients, selectedClient, selectedClientId, setSelectedClientId, isLoading: clientsLoading } = useClientContext();
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ["departments-by-client", selectedClientId],
+    queryFn: () => selectedClientId ? departmentsApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!selectedClientId,
+    staleTime: 0,
+  });
+
+  const selectedDepartment = departments.find((d: Department) => d.id === selectedDepartmentId);
 
   if (location === "/" || location === "/setup") return <>{children}</>;
 
@@ -62,40 +77,111 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="h-6 w-px bg-border mx-2" />
             
             <div className="flex items-center gap-2 flex-1 overflow-x-auto no-scrollbar">
-              <Select defaultValue="c1">
-                <SelectTrigger className="w-[200px] h-9 bg-muted/30 border-dashed border-border focus:ring-0 shadow-none" data-testid="select-client-context">
-                  <SelectValue placeholder="Select Client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="c1">The Grand Lounge</SelectItem>
-                  <SelectItem value="c2">Ocean View Restaurant</SelectItem>
-                  <SelectItem value="c3">Skybar Rooftop</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={clientSearchOpen}
+                    className="w-[220px] h-9 justify-between bg-muted/30 border-dashed border-border"
+                    data-testid="select-client-context"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <Building2 className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="truncate">
+                        {selectedClient ? selectedClient.name : "Select Client..."}
+                      </span>
+                    </div>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[280px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search clients..." />
+                    <CommandList>
+                      <CommandEmpty>No clients found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="all-clients"
+                          onSelect={() => {
+                            setSelectedClientId(null);
+                            setSelectedDepartmentId("");
+                            setClientSearchOpen(false);
+                          }}
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", !selectedClientId ? "opacity-100" : "opacity-0")} />
+                          All Clients
+                        </CommandItem>
+                        {clients.map((client) => (
+                          <CommandItem
+                            key={client.id}
+                            value={client.name}
+                            onSelect={() => {
+                              setSelectedClientId(client.id);
+                              setSelectedDepartmentId("");
+                              setClientSearchOpen(false);
+                            }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", selectedClientId === client.id ? "opacity-100" : "opacity-0")} />
+                            {client.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
 
-              <Select defaultValue="o1">
-                <SelectTrigger className="w-[180px] h-9 bg-muted/30 border-dashed border-border focus:ring-0 shadow-none" data-testid="select-outlet-context">
-                  <SelectValue placeholder="Select Outlet" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="o1">Main Bar</SelectItem>
-                  <SelectItem value="o2">VIP Lounge</SelectItem>
-                  <SelectItem value="o3">Kitchen</SelectItem>
-                </SelectContent>
-              </Select>
+              {selectedClientId && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-[180px] h-9 justify-between bg-muted/30 border-dashed border-border"
+                      data-testid="select-department-context"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">
+                          {selectedDepartment ? selectedDepartment.name : "All Departments"}
+                        </span>
+                      </div>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[200px]">
+                    <DropdownMenuItem onClick={() => setSelectedDepartmentId("")}>
+                      <Check className={cn("mr-2 h-4 w-4", !selectedDepartmentId ? "opacity-100" : "opacity-0")} />
+                      All Departments
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {departments.filter((d: Department) => d.status === "active").map((dept: Department) => (
+                      <DropdownMenuItem key={dept.id} onClick={() => setSelectedDepartmentId(dept.id)}>
+                        <Check className={cn("mr-2 h-4 w-4", selectedDepartmentId === dept.id ? "opacity-100" : "opacity-0")} />
+                        {dept.name}
+                      </DropdownMenuItem>
+                    ))}
+                    {departments.filter((d: Department) => d.status === "active").length === 0 && (
+                      <DropdownMenuItem disabled className="text-muted-foreground text-sm">
+                        No active departments
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant={"outline"}
                     className={cn(
-                      "w-[240px] h-9 justify-start text-left font-normal bg-muted/30 border-dashed border-border shadow-none",
+                      "w-[180px] h-9 justify-start text-left font-normal bg-muted/30 border-dashed border-border shadow-none",
                       !date && "text-muted-foreground"
                     )}
                     data-testid="button-date-picker"
                   >
                     <span className="truncate">
-                      {date ? format(date, "PPP") : <span>Pick a date</span>}
+                      {date ? format(date, "MMM d, yyyy") : <span>Pick a date</span>}
                     </span>
                   </Button>
                 </PopoverTrigger>
@@ -109,9 +195,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </PopoverContent>
               </Popover>
 
-              <Button variant="default" size="sm" className="ml-auto bg-primary text-primary-foreground shadow-sm hover:bg-primary/90" data-testid="button-generate-report">
-                Generate Report
-              </Button>
+              {selectedClient && (
+                <div className="hidden md:flex items-center gap-2 ml-2 px-3 py-1 rounded-md bg-primary/10 text-primary text-sm">
+                  <Building2 className="h-3.5 w-3.5" />
+                  <span className="font-medium">{selectedClient.name}</span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-4 ml-4">
