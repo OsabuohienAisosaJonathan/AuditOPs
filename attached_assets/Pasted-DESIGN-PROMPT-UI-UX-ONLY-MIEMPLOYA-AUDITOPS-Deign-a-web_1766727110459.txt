@@ -1,0 +1,179 @@
+DESIGN PROMPT (UI/UX ONLY) — MIEMPLOYA AUDITOPS
+Deign a web application called Miemploya AuditOps (Lounge & Restaurant Edition) that can also be viewed on tablet and android. The app is used by Miemploya’s audit team to conduct daily and weekly audit support for clients (lounges/restaurants), including multi-outlet and multi-department sales auditing. Design a modern, professional, audit-grade interface that is web-first, fully mobile responsive, and optimized for fast data capture and evidence-based reporting.
+1) Design Goals
+1.	Build a boardroom-ready look and feel: clean, trustworthy, finance/audit style.
+2.	Prioritize speed and clarity for auditors doing daily/weekly work.
+3.	Make it easy to audit clients with multiple outlets and multiple departments (Main Bar, VIP Bar, Kitchen, Outdoor Bar, Events, Rooms, Takeaway).
+4.	Every key number must be traceable (evidence and audit trail mindset).
+5.	The UI must support two usage modes:
+a. POS-heavy clients (CSV/Excel upload import)
+b. Manual clients (summary sales entry + optional item-level mode)
+2) Information Architecture (Main Navigation)
+Create a left sidebar (collapsible) with these sections:
+1.	Dashboard
+2.	Clients
+3.	Audit Workspace
+4.	Sales Capture
+5.	Inventory & Purchases
+6.	Reconciliation
+7.	Exceptions (Case Register)
+8.	Reports (PDF/Excel)
+9.	Settings
+10.	Audit Trail (Logs)
+Top bar must include:
+1.	Client selector (searchable)
+2.	Outlet selector (searchable)
+3.	Department selector (multi-select optional)
+4.	Date picker (Today, Yesterday, Custom Range)
+5.	“Generate Report” button
+6.	User profile + role badge
+3) Core Screens to Design (High Fidelity)
+Design each screen with desktop + mobile responsive behavior.
+A. Login
+1.	Simple login (email/password)
+2.	Clean brand space for Miemploya logo
+3.	Role-based welcome message after login (Auditor vs Supervisor)
+B. Dashboard (Audit Command Center)
+Must show:
+1.	Today’s audit status overview: “Clients audited / pending / overdue”
+2.	Alerts panel: “Red Flags” (high variance, missing GRN, negative stock, abnormal discounts/voids)
+3.	Key KPIs: Sales, COGS, Gross Margin, Variance Loss Estimate, Purchases posted, GRNs missing
+4.	“Top Risk Departments” list (ranked)
+5.	Quick actions:
+a. Start Daily Audit
+b. Upload POS Export
+c. Record Purchase/GRN
+d. Start Stock Count
+e. Open Exceptions
+Mobile: KPIs become stacked cards; alerts become a swipeable list.
+C. Clients Module
+1.	Client list table with filters (active, risk score, size, outlets count)
+2.	Client profile page:
+a. Client details
+b. Outlets and departments
+c. Audit frequency rules (daily/weekly)
+d. Threshold rules (variance limits, void/refund limits)
+e. Data mode setting (POS import / manual summary / item-level)
+3.	Onboarding Wizard (multi-step):
+Step 1: Client details
+Step 2: Create outlets (nameable)
+Step 3: Create departments per outlet (nameable)
+Step 4: Add stores/locations (Main Store, Bar Store, Kitchen Store, Department Store optional)
+Step 5: Import items list (Excel mapping UI)
+D. Audit Workspace (Daily Audit Flow)
+This is the “one screen to run the day.”
+1.	Left panel: audit checklist timeline:
+a. Sales captured
+b. Purchases captured
+c. Transfers/adjustments captured
+d. Stock counts captured
+e. Reconciliation done
+f. Exceptions reviewed
+g. Report generated
+2.	Main panel: tabbed workflow:
+Tab 1: Sales
+Tab 2: Purchases/GRN
+Tab 3: Stock Movements
+Tab 4: Counts
+Tab 5: Reconciliation Summary
+3.	Each tab has a “Complete Step” button with timestamps and who completed it.
+4.	Show “Evidence Required” indicators where needed.
+Mobile: Convert to a stepper wizard with sticky “Next” button.
+E. Sales Capture Screen
+Support 3 modes with a toggle:
+1.	POS Import Mode
+a. Upload area + drag/drop
+b. Mapping preview table (date, department, terminal/cashier, totals, payment method)
+c. Import validation warnings (missing department tag, wrong date, duplicates)
+2.	Summary Sales Mode (default “professional” mode)
+a. Department-based grid input
+b. Payment split entry (Cash/POS/Transfer/Other)
+c. Shift segmentation (Morning/Evening/Night) optional
+d. Voids/Refunds/Discount totals entry
+3.	Item-Level Sales Mode (optional)
+a. Search item, qty, price, department
+b. Batch entry optimized for speed
+Include: “Sales vs Payments” reconciliation hint panel.
+F. Inventory & Purchases Screen
+1.	Purchases list with status: Draft, GRN Pending, Complete
+2.	Purchase entry flow:
+a. Supplier, invoice number/date
+b. Item lines (qty, unit cost)
+c. Add delivery/extra costs
+d. Attach invoice/waybill (evidence locker)
+e. GRN capture section: received qty vs invoiced qty
+3.	Stock movement tab: transfers, wastage, complimentary, staff consumption
+Use clear “movement type” chips and color-coded labels.
+G. Stock Count Screen (Mobile-first)
+1.	Select outlet → department → store location
+2.	Show prioritized “High-risk items” list at top
+3.	Fast count input: item name, system qty (optional), count qty, variance auto-calc
+4.	Add photo note option for key variances
+5.	Submit count for approval (Supervisor sign-off)
+Mobile: Big touch targets, sticky search bar.
+H. Reconciliation Screen
+Must provide:
+1.	Department-level reconciliation cards:
+a. Opening stock
+b. Transfers in/out
+c. Expected usage (from sales)
+d. Expected closing
+e. Physical count
+f. Variance qty + variance ₦
+2.	Consolidated outlet view (sum of departments)
+3.	“Explain Variance” workflow: select reason, attach evidence, create exception case
+4.	“Sign off” button with role-based permissions (Supervisor required)
+I. Exceptions (Case Register)
+A professional case management UI:
+1.	Table view with filters (client/outlet/department/date/severity/status)
+2.	Each case page must show:
+a. What happened (summary)
+b. Numbers (variance qty, ₦ impact)
+c. Evidence attachments
+d. Assigned auditor and reviewer
+e. Status timeline (Open → Review → Responded → Resolved/Escalated)
+f. Recommendations and action plan
+3.	“Recurring issues” sidebar: repeated items/departments flagged automatically
+J. Reports Screen (PDF + Excel)
+1.	Report builder: choose type (Daily, Weekly, Monthly, P&L, Management Pack)
+2.	Choose scope: client → outlet → departments
+3.	Preview layout thumbnails
+4.	Generate PDF button (primary)
+5.	Download Excel schedules option (secondary)
+6.	Report archive list with versioning and timestamps
+4) Visual Style Guide
+1.	Tone: premium, compliant, audit-grade (clean typography, lots of whitespace)
+2.	Use a neutral palette with strong contrast for readability.
+3.	Alerts should be clear but not noisy:
+a. Red = critical
+b. Amber = warning
+c. Green = normal
+4.	Use consistent card layouts, subtle shadows, rounded corners.
+5.	Icons should be minimal and professional.
+6.	Ensure accessibility: readable font sizes, strong contrast, large tap targets on mobile.
+5) Components to Define
+Create a reusable design system for:
+1.	KPI cards
+2.	Filter bars with dropdown selectors
+3.	Department summary cards
+4.	Tables with sticky headers
+5.	Evidence attachment widget (drag/drop + preview)
+6.	Status chips (Draft, Pending, Approved, Overdue)
+7.	Red-flag alert list items
+8.	Stepper/wizard for mobile audit flow
+9.	Report template thumbnail cards
+6) Critical UX Rules
+1.	Always show user context: Client + Outlet + Department + Date at the top.
+2.	Never hide discrepancies—surface them early with clear next actions.
+3.	Every reconciliation number should have a “source” tooltip (sales import, purchase invoice, count sheet).
+4.	Reduce friction: minimal clicks to record daily audit essentials.
+5.	Provide “quick duplicate” and “use last settings” options for recurring daily entries.
+6.	Keep summary sales mode very easy—this is your default.
+7) Deliverables Required from You
+Produce:
+1.	Full sitemap and navigation structure
+2.	High-fidelity mockups for all screens listed above (desktop + mobile)
+3.	Component library (design system) with states
+4.	A clickable prototype flow for Daily Audit:
+Dashboard → Select client/outlet → Sales capture → Purchases/GRN → Stock count → Reconciliation → Exceptions → Generate Daily Report PDF
+
