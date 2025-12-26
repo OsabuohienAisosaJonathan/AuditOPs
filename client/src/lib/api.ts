@@ -206,12 +206,16 @@ export interface AuditLog {
 export interface DashboardSummary {
   totalClients: number;
   activeOutlets: number;
+  totalSalesToday: number;
+  totalPurchasesToday: number;
+  totalSales: number;
+  totalPurchases: number;
+  totalExceptions: number;
   openExceptions: number;
+  totalVarianceValue: number;
   pendingReconciliations: number;
-  totalSalesToday: string;
-  totalPurchasesToday: string;
-  recentActivity: AuditLog[];
-  exceptionsBySeverity: { severity: string; count: number }[];
+  recentExceptions: Exception[];
+  redFlags: { type: string; message: string; severity: string }[];
 }
 
 const API_BASE = "/api";

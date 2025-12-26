@@ -15,6 +15,10 @@ import {
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum } from "drizzle-orm";
 
 export interface DashboardSummary {
+  totalClients: number;
+  activeOutlets: number;
+  totalSalesToday: number;
+  totalPurchasesToday: number;
   totalSales: number;
   totalPurchases: number;
   totalExceptions: number;
@@ -673,11 +677,26 @@ export class DbStorage implements IStorage {
 
   // Dashboard Summary
   async getDashboardSummary(): Promise<DashboardSummary> {
+    const allClients: Client[] = await db.select().from(clients);
+    const totalClients = allClients.length;
+    
+    const allOutlets: Outlet[] = await db.select().from(outlets);
+    const activeOutlets = allOutlets.length;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
     const allSales: SalesEntry[] = await db.select().from(salesEntries);
     const totalSales = allSales.reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
+    const totalSalesToday = allSales
+      .filter((s: SalesEntry) => new Date(s.date) >= today)
+      .reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
 
     const allPurchases: Purchase[] = await db.select().from(purchases);
     const totalPurchases = allPurchases.reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
+    const totalPurchasesToday = allPurchases
+      .filter((p: Purchase) => new Date(p.invoiceDate) >= today)
+      .reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
 
     const allExceptions: Exception[] = await db.select().from(exceptions);
     const totalExceptions = allExceptions.length;
@@ -726,6 +745,10 @@ export class DbStorage implements IStorage {
     }
 
     return {
+      totalClients,
+      activeOutlets,
+      totalSalesToday,
+      totalPurchasesToday,
       totalSales,
       totalPurchases,
       totalExceptions,
