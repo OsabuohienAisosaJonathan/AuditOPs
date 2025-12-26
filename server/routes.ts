@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { hash, compare } from "bcrypt";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db";
 import { 
   insertUserSchema, insertClientSchema, insertOutletSchema, insertDepartmentSchema, 
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, 
@@ -67,14 +69,22 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  const PgStore = connectPgSimple(session);
+  
   app.use(
     session({
+      store: new PgStore({
+        pool: pool,
+        tableName: "session",
+        createTableIfMissing: true,
+      }),
       secret: process.env.SESSION_SECRET || "audit-ops-secret-key-change-in-production",
       resave: false,
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 24 * 60 * 60 * 1000,
       },
     })
