@@ -1,30 +1,38 @@
 import { db } from "./db";
 import { 
   users, clients, outlets, departments, salesEntries, purchases,
-  stockMovements, reconciliations, exceptions, exceptionComments, auditLogs,
+  stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   type User, type InsertUser, type Client, type InsertClient,
   type Outlet, type InsertOutlet, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
   type StockMovement, type InsertStockMovement, type Reconciliation, type InsertReconciliation,
   type Exception, type InsertException, type ExceptionComment, type InsertExceptionComment,
-  type AuditLog, type InsertAuditLog
+  type AuditLog, type InsertAuditLog, type AdminActivityLog, type InsertAdminActivityLog
 } from "@shared/schema";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, or, ilike, count } from "drizzle-orm";
 
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUsers(filters?: { role?: string; status?: string; search?: string }): Promise<User[]>;
+  getUserCount(): Promise<number>;
+  getSuperAdminCount(): Promise<number>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
 
   // Clients
   getClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
+  deleteClient(id: string): Promise<boolean>;
 
   // Outlets
   getOutlets(clientId: string): Promise<Outlet[]>;
+  getAllOutlets(): Promise<Outlet[]>;
   getOutlet(id: string): Promise<Outlet | undefined>;
   createOutlet(outlet: InsertOutlet): Promise<Outlet>;
 
@@ -68,6 +76,14 @@ export interface IStorage {
   // Audit Logs
   getAuditLogs(limit?: number): Promise<AuditLog[]>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+
+  // Admin Activity Logs
+  getAdminActivityLogs(filters?: { actorId?: string; targetUserId?: string; actionType?: string; startDate?: Date; endDate?: Date }): Promise<AdminActivityLog[]>;
+  createAdminActivityLog(log: InsertAdminActivityLog): Promise<AdminActivityLog>;
+
+  // System Settings
+  getSetting(key: string): Promise<any>;
+  setSetting(key: string, value: any, updatedBy: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -82,9 +98,57 @@ export class DbStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUsers(filters?: { role?: string; status?: string; search?: string }): Promise<User[]> {
+    let conditions = [];
+    
+    if (filters?.role) {
+      conditions.push(eq(users.role, filters.role));
+    }
+    if (filters?.status) {
+      conditions.push(eq(users.status, filters.status));
+    }
+    if (filters?.search) {
+      conditions.push(or(
+        ilike(users.fullName, `%${filters.search}%`),
+        ilike(users.email, `%${filters.search}%`),
+        ilike(users.username, `%${filters.search}%`)
+      ));
+    }
+
+    if (conditions.length > 0) {
+      return db.select().from(users).where(and(...conditions)).orderBy(desc(users.createdAt));
+    }
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async getUserCount(): Promise<number> {
+    const result = await db.select({ count: count() }).from(users);
+    return result[0]?.count || 0;
+  }
+
+  async getSuperAdminCount(): Promise<number> {
+    const result = await db.select({ count: count() }).from(users).where(eq(users.role, "super_admin"));
+    return result[0]?.count || 0;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async updateUser(id: string, updateData: Partial<InsertUser>): Promise<User | undefined> {
+    const [user] = await db.update(users).set({ ...updateData, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+    return user;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await db.delete(users).where(eq(users.id, id));
+    return true;
   }
 
   // Clients
@@ -107,9 +171,18 @@ export class DbStorage implements IStorage {
     return client;
   }
 
+  async deleteClient(id: string): Promise<boolean> {
+    await db.delete(clients).where(eq(clients.id, id));
+    return true;
+  }
+
   // Outlets
   async getOutlets(clientId: string): Promise<Outlet[]> {
     return db.select().from(outlets).where(eq(outlets.clientId, clientId));
+  }
+
+  async getAllOutlets(): Promise<Outlet[]> {
+    return db.select().from(outlets);
   }
 
   async getOutlet(id: string): Promise<Outlet | undefined> {
@@ -139,8 +212,6 @@ export class DbStorage implements IStorage {
 
   // Sales
   async getSalesEntries(departmentId: string, startDate?: Date, endDate?: Date): Promise<SalesEntry[]> {
-    let query = db.select().from(salesEntries).where(eq(salesEntries.departmentId, departmentId));
-    
     if (startDate && endDate) {
       return db.select().from(salesEntries).where(
         and(
@@ -151,7 +222,7 @@ export class DbStorage implements IStorage {
       ).orderBy(desc(salesEntries.date));
     }
     
-    return query.orderBy(desc(salesEntries.date));
+    return db.select().from(salesEntries).where(eq(salesEntries.departmentId, departmentId)).orderBy(desc(salesEntries.date));
   }
 
   async getSalesEntry(id: string): Promise<SalesEntry | undefined> {
@@ -241,9 +312,8 @@ export class DbStorage implements IStorage {
   }
 
   async createException(insertException: InsertException): Promise<Exception> {
-    // Generate case number
-    const count = await db.select({ count: sql<number>`count(*)` }).from(exceptions);
-    const caseNumber = `EX-${String((count[0]?.count || 0) + 200).padStart(3, '0')}`;
+    const countResult = await db.select({ count: count() }).from(exceptions);
+    const caseNumber = `EX-${String((countResult[0]?.count || 0) + 200).padStart(3, '0')}`;
     
     const [exception] = await db.insert(exceptions).values({
       ...insertException,
@@ -275,6 +345,52 @@ export class DbStorage implements IStorage {
   async createAuditLog(insertLog: InsertAuditLog): Promise<AuditLog> {
     const [log] = await db.insert(auditLogs).values(insertLog).returning();
     return log;
+  }
+
+  // Admin Activity Logs
+  async getAdminActivityLogs(filters?: { actorId?: string; targetUserId?: string; actionType?: string; startDate?: Date; endDate?: Date }): Promise<AdminActivityLog[]> {
+    let conditions = [];
+    
+    if (filters?.actorId) {
+      conditions.push(eq(adminActivityLogs.actorId, filters.actorId));
+    }
+    if (filters?.targetUserId) {
+      conditions.push(eq(adminActivityLogs.targetUserId, filters.targetUserId));
+    }
+    if (filters?.actionType) {
+      conditions.push(eq(adminActivityLogs.actionType, filters.actionType));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(adminActivityLogs.createdAt, filters.startDate));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(adminActivityLogs.createdAt, filters.endDate));
+    }
+
+    if (conditions.length > 0) {
+      return db.select().from(adminActivityLogs).where(and(...conditions)).orderBy(desc(adminActivityLogs.createdAt)).limit(100);
+    }
+    return db.select().from(adminActivityLogs).orderBy(desc(adminActivityLogs.createdAt)).limit(100);
+  }
+
+  async createAdminActivityLog(insertLog: InsertAdminActivityLog): Promise<AdminActivityLog> {
+    const [log] = await db.insert(adminActivityLogs).values(insertLog).returning();
+    return log;
+  }
+
+  // System Settings
+  async getSetting(key: string): Promise<any> {
+    const [setting] = await db.select().from(systemSettings).where(eq(systemSettings.key, key));
+    return setting?.value;
+  }
+
+  async setSetting(key: string, value: any, updatedBy: string): Promise<void> {
+    const existing = await this.getSetting(key);
+    if (existing !== undefined) {
+      await db.update(systemSettings).set({ value, updatedBy, updatedAt: new Date() }).where(eq(systemSettings.key, key));
+    } else {
+      await db.insert(systemSettings).values({ key, value, updatedBy });
+    }
   }
 }
 

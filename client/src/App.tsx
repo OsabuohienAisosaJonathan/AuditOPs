@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
+import Setup from "@/pages/Setup";
 import Dashboard from "@/pages/Dashboard";
 import AuditWorkspace from "@/pages/AuditWorkspace";
 import Clients from "@/pages/Clients";
@@ -16,10 +17,12 @@ import Exceptions from "@/pages/Exceptions";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import AuditTrail from "@/pages/AuditTrail";
+import UserManagement from "@/pages/UserManagement";
+import AdminActivityLog from "@/pages/AdminActivityLog";
 import AppLayout from "@/components/layout/AppLayout";
 import { useEffect } from "react";
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function ProtectedRoute({ component: Component, requiredRole }: { component: React.ComponentType; requiredRole?: string }) {
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 
@@ -37,6 +40,17 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     return null;
   }
 
+  if (requiredRole && user.role !== requiredRole) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-destructive mb-2">Access Denied</h2>
+          <p className="text-muted-foreground">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
   return <Component />;
 }
 
@@ -45,6 +59,7 @@ function Router() {
     <AppLayout>
       <Switch>
         <Route path="/" component={Login} />
+        <Route path="/setup" component={Setup} />
         <Route path="/dashboard">
           <ProtectedRoute component={Dashboard} />
         </Route>
@@ -74,6 +89,12 @@ function Router() {
         </Route>
         <Route path="/audit-trail">
           <ProtectedRoute component={AuditTrail} />
+        </Route>
+        <Route path="/users">
+          <ProtectedRoute component={UserManagement} requiredRole="super_admin" />
+        </Route>
+        <Route path="/admin-activity">
+          <ProtectedRoute component={AdminActivityLog} requiredRole="super_admin" />
         </Route>
         <Route component={NotFound} />
       </Switch>

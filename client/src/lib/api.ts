@@ -6,6 +6,29 @@ export interface User {
   email: string;
   fullName: string;
   role: string;
+  status?: string;
+  lastLoginAt?: Date | null;
+  createdAt?: Date;
+  accessScope?: { clientIds?: string[]; outletIds?: string[]; global?: boolean } | null;
+  phone?: string | null;
+  mustChangePassword?: boolean;
+}
+
+export interface AdminActivityLog {
+  id: string;
+  actorId: string;
+  targetUserId: string | null;
+  actionType: string;
+  beforeState: any;
+  afterState: any;
+  reason: string | null;
+  ipAddress: string | null;
+  createdAt: Date;
+}
+
+export interface SetupStatus {
+  setupRequired: boolean;
+  requiresSecret: boolean;
 }
 
 export interface Client {
@@ -268,4 +291,78 @@ export const auditLogsApi = {
     const query = limit ? `?limit=${limit}` : "";
     return fetchApi<AuditLog[]>(`/audit-logs${query}`);
   },
+};
+
+// Setup (Bootstrap)
+export const setupApi = {
+  getStatus: () => fetchApi<SetupStatus>("/setup/status"),
+  bootstrap: (data: { fullName: string; email: string; username: string; password: string; bootstrapSecret?: string }) =>
+    fetchApi<{ success: boolean; message: string; mustChangePassword: boolean; user: User }>("/setup/bootstrap", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
+// User Management (Super Admin only)
+export const usersApi = {
+  getAll: (filters?: { role?: string; status?: string; search?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.role) params.append("role", filters.role);
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.search) params.append("search", filters.search);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return fetchApi<User[]>(`/users${query}`);
+  },
+  getOne: (id: string) => fetchApi<User>(`/users/${id}`),
+  create: (data: { fullName: string; email: string; username: string; role: string; phone?: string; accessScope?: any }) =>
+    fetchApi<{ user: User; temporaryPassword: string; message: string }>("/users", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<User>) =>
+    fetchApi<User>(`/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deactivate: (id: string, reason?: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${id}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  reactivate: (id: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${id}/reactivate`, {
+      method: "POST",
+    }),
+  resetPassword: (id: string) =>
+    fetchApi<{ success: boolean; temporaryPassword: string; message: string }>(`/users/${id}/reset-password`, {
+      method: "POST",
+    }),
+  delete: (id: string, confirmation: string, reason?: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/users/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation, reason }),
+    }),
+};
+
+// Admin Activity Logs
+export const adminActivityLogsApi = {
+  getAll: (filters?: { actorId?: string; targetUserId?: string; actionType?: string; startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.actorId) params.append("actorId", filters.actorId);
+    if (filters?.targetUserId) params.append("targetUserId", filters.targetUserId);
+    if (filters?.actionType) params.append("actionType", filters.actionType);
+    if (filters?.startDate) params.append("startDate", filters.startDate);
+    if (filters?.endDate) params.append("endDate", filters.endDate);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return fetchApi<AdminActivityLog[]>(`/admin-activity-logs${query}`);
+  },
+};
+
+// Change Password
+export const changePasswordApi = {
+  change: (currentPassword: string, newPassword: string) =>
+    fetchApi<{ success: boolean; message: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 };

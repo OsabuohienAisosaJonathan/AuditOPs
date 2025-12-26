@@ -1,0 +1,199 @@
+SUPER ADMIN + USER MANAGEMENT (NO CLIENT ACCESS)
+
+You are building Miemploya AuditOps (Lounge & Restaurant Edition), a multi-client audit operations platform used strictly by Miemploya internal staff (audit team). There must be NO client login access for now. Clients only receive PDF/Excel reports exported by Miemploya staff.
+
+1) Roles and Access Control (RBAC)
+
+Implement role-based access control with these roles only:
+
+Super Admin (Miemploya HQ)
+
+Audit Supervisor / Manager
+
+Auditor
+
+Define permissions clearly:
+
+1.1 Super Admin permissions:
+
+Full access to all modules, all clients, all outlets, all departments.
+
+Create, edit, deactivate, and delete user accounts.
+
+Assign roles to users (Auditor or Supervisor).
+
+Reset passwords / send password reset invitations.
+
+Configure global settings (security settings, report templates, audit thresholds defaults).
+
+View admin activity logs and audit trail logs.
+
+Can create, edit, and delete “client profiles” and structures (outlets/departments/stores).
+
+Can approve final system settings and manage system-level exports.
+
+1.2 Audit Supervisor permissions:
+
+Can view all clients/outlets/departments assigned to them (scope-based).
+
+Can review and approve reconciliations and stock adjustments.
+
+Can assign exceptions/cases to auditors.
+
+Can generate and approve daily/weekly/monthly reports for their scope.
+
+Cannot create or delete users.
+
+Cannot change Super Admin permissions or access system global security settings.
+
+1.3 Auditor permissions:
+
+Can capture operational audit data: sales, purchases/GRN, stock movements, stock counts.
+
+Can prepare reconciliation and raise exception cases.
+
+Can generate draft reports for review.
+
+Cannot approve reconciliations (Supervisor-only).
+
+Cannot delete records; edits must be tracked or restricted based on policy.
+
+Cannot manage users.
+
+2) Bootstrap Super Admin (Never Get Locked Out Again)
+
+2.1 Create a secure first-time setup flow at /setup (Bootstrap Admin).
+2.2 The bootstrap flow must be protected in one of these ways:
+
+It only works if no Super Admin exists, OR
+
+It requires a secret environment value like BOOTSTRAP_SECRET.
+2.3 Bootstrap creates the first Super Admin using:
+
+Name
+
+Email
+
+Password
+2.4 Force “Change password on first login” for the bootstrap-created Super Admin.
+2.5 Never hardcode default credentials in the UI, database seed, or code. No public demo passwords.
+
+3) User Management Features (Super Admin Only)
+
+Build a complete “User Management” module accessible only by Super Admin.
+
+3.1 Users List Page:
+
+Table with search (name/email), filters (role/status), sort, pagination.
+
+Columns: Name, Email, Role, Status (Active/Deactivated), Last Login, Created Date.
+
+Quick actions per row: View, Edit, Deactivate, Reset Password, Delete.
+
+3.2 Create User:
+
+Fields: Name, Email, Role (Supervisor/Auditor), Status (default Active).
+
+Account provisioning options:
+a. Send secure invite link (preferred), OR
+b. Generate temporary password that must be changed at first login.
+
+Scope control must be supported:
+a. Global access (default for Supervisor if you want), OR
+b. Restrict to specific clients/outlets/departments.
+Include a simple UI selector for assigning access scope.
+
+3.3 Edit User:
+
+Change name, role, access scope, status.
+
+Track all changes in admin activity log (before/after).
+
+3.4 Deactivate User (Preferred Over Delete):
+
+Deactivated users cannot log in.
+
+Keep their history for audit trail integrity.
+
+Require confirmation + reason.
+
+3.5 Delete User (Allowed but Strict):
+
+Only Super Admin can delete users.
+
+Show strong warning: deletion may affect audit traceability.
+
+Require typing confirmation and a reason.
+
+Consider soft-delete or archive by default, and only hard-delete if needed.
+
+3.6 Password Reset:
+
+Super Admin can trigger password reset link or generate temporary password.
+
+Temporary password must force change on next login.
+
+Log every reset action.
+
+4) Security Requirements (Minimum Standard)
+
+Passwords must be stored hashed (bcrypt/argon) and never stored or logged in plain text.
+
+Strong password policy: minimum length + complexity.
+
+Rate-limit login attempts and optionally lock account after repeated failures.
+
+Sensitive actions require extra confirmation (re-auth or password prompt): deleting users, changing roles, resetting passwords.
+
+Session management: secure sessions/JWT with expiration and refresh strategy.
+
+Multi-tenant isolation: users must only access data within their scope.
+
+5) Audit Trail and Admin Activity Logs
+
+5.1 The system must log:
+
+User creation, edits, deactivation, deletion
+
+Role changes and scope changes
+
+Password resets and invites sent
+
+Login attempts (success/failure) and last login timestamp
+5.2 Provide a dedicated “Admin Activity Log” screen:
+
+Filterable by date, actor (who did it), target user, action type.
+
+Shows before/after changes where applicable.
+
+6) UI/UX Design Requirements (Professional Audit-Grade)
+
+Web-first layout with mobile responsive design.
+
+Clean, boardroom-ready look: minimal clutter, clear tables, strong typography.
+
+Clear permission messages: if a user lacks access, show “You don’t have permission” with no data leakage.
+
+Confirmations must be explicit for destructive actions (Deactivate/Delete/Role Change).
+
+Always show the logged-in user role badge and scope context.
+
+7) Acceptance Tests (Must Pass)
+
+Bootstrap works once and cannot be abused (no repeated admin creation without rules).
+
+Super Admin can create Supervisor and Auditor users.
+
+Created users can log in and see only allowed clients/outlets/departments (scope enforced).
+
+Deactivated users cannot log in.
+
+Password reset works and forces change on next login.
+
+All user management actions appear in Admin Activity Log.
+
+Supervisor can approve reconciliations but cannot manage users.
+
+Auditor can capture data but cannot approve reconciliations or manage users.
+
+Clients have no login access; only exports can be generated and shared by Miemploya staff.

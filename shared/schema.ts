@@ -1,17 +1,30 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, timestamp, decimal, jsonb, boolean } from "drizzle-orm/pg-core";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Roles enum
+export const USER_ROLES = ["super_admin", "supervisor", "auditor"] as const;
+export type UserRole = typeof USER_ROLES[number];
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
   fullName: text("full_name").notNull(),
-  email: text("email").notNull(),
   role: text("role").notNull().default("auditor"),
   phone: text("phone"),
+  status: text("status").notNull().default("active"),
+  mustChangePassword: boolean("must_change_password").default(false),
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpiry: timestamp("password_reset_expiry"),
+  loginAttempts: integer("login_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  lastLoginAt: timestamp("last_login_at"),
+  accessScope: jsonb("access_scope").$type<{ clientIds?: string[]; outletIds?: string[]; global?: boolean }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const clients = pgTable("clients", {
@@ -91,7 +104,8 @@ export const reconciliations = pgTable("reconciliations", {
   varianceQty: decimal("variance_qty", { precision: 10, scale: 2 }).default("0.00"),
   varianceValue: decimal("variance_value", { precision: 12, scale: 2 }).default("0.00"),
   status: text("status").default("pending"),
-  signedOffBy: varchar("signed_off_by").references(() => users.id),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -126,13 +140,34 @@ export const auditLogs = pgTable("audit_logs", {
   userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
   action: text("action").notNull(),
   entity: text("entity").notNull(),
+  entityId: varchar("entity_id"),
   details: text("details"),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const adminActivityLogs = pgTable("admin_activity_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  actorId: varchar("actor_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  targetUserId: varchar("target_user_id").references(() => users.id, { onDelete: "set null" }),
+  actionType: text("action_type").notNull(),
+  beforeState: jsonb("before_state"),
+  afterState: jsonb("after_state"),
+  reason: text("reason"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const systemSettings = pgTable("system_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(),
+  value: jsonb("value").notNull(),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
@@ -143,6 +178,7 @@ export const insertReconciliationSchema = createInsertSchema(reconciliations).om
 export const insertExceptionSchema = createInsertSchema(exceptions).omit({ id: true, createdAt: true, caseNumber: true });
 export const insertExceptionCommentSchema = createInsertSchema(exceptionComments).omit({ id: true, createdAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export const insertAdminActivityLogSchema = createInsertSchema(adminActivityLogs).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -167,3 +203,5 @@ export type InsertExceptionComment = z.infer<typeof insertExceptionCommentSchema
 export type ExceptionComment = typeof exceptionComments.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAdminActivityLog = z.infer<typeof insertAdminActivityLogSchema>;
+export type AdminActivityLog = typeof adminActivityLogs.$inferSelect;
