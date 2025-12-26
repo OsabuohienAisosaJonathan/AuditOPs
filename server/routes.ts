@@ -854,6 +854,28 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/outlets/:outletId/departments", requireSuperAdmin, async (req, res) => {
+    try {
+      const { outletId } = req.params;
+      const data = { ...req.body, outletId };
+      const parsed = insertDepartmentSchema.parse(data);
+      const department = await storage.createDepartment(parsed);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Department",
+        entity: "Department",
+        entityId: department.id,
+        details: `New department added: ${department.name}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(department);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.get("/api/departments", requireAuth, async (req, res) => {
     try {
       const departments = await storage.getAllDepartments();

@@ -47,6 +47,7 @@ export const departments = pgTable("departments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

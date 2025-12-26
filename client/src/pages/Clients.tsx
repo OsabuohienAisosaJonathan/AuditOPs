@@ -5,28 +5,51 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Filter, MoreHorizontal, Building2, Trash2, Edit, Eye } from "lucide-react";
+import { Plus, Search, Filter, MoreHorizontal, Building2, Trash2, Edit, Eye, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { clientsApi, outletsApi, Client } from "@/lib/api";
+import { clientsApi, outletsApi, departmentsApi, Client, Outlet, Department } from "@/lib/api";
 import { format } from "date-fns";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 export default function Clients() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deleteConfirmClient, setDeleteConfirmClient] = useState<Client | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  
+  const [createOutletDialogOpen, setCreateOutletDialogOpen] = useState(false);
+  const [selectedClientForOutlet, setSelectedClientForOutlet] = useState<Client | null>(null);
+  
+  const [createDeptDialogOpen, setCreateDeptDialogOpen] = useState(false);
+  const [selectedOutletForDept, setSelectedOutletForDept] = useState<Outlet | null>(null);
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [deleteDeptConfirm, setDeleteDeptConfirm] = useState<Department | null>(null);
 
   const queryClient = useQueryClient();
 
   const { data: clients, isLoading, error } = useQuery({
     queryKey: ["clients"],
     queryFn: clientsApi.getAll,
+  });
+
+  const { data: expandedOutlets = [] } = useQuery({
+    queryKey: ["outlets", expandedClientId],
+    queryFn: () => expandedClientId ? outletsApi.getByClient(expandedClientId) : Promise.resolve([]),
+    enabled: !!expandedClientId,
+  });
+
+  const { data: expandedDepartments = [] } = useQuery({
+    queryKey: ["departments-by-client", expandedClientId],
+    queryFn: () => expandedClientId ? departmentsApi.getByClient(expandedClientId) : Promise.resolve([]),
+    enabled: !!expandedClientId,
   });
 
   const createMutation = useMutation({
@@ -65,9 +88,67 @@ export default function Clients() {
     },
   });
 
+  const createOutletMutation = useMutation({
+    mutationFn: (data: { clientId: string; name: string }) => outletsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["outlets", expandedClientId] });
+      setCreateOutletDialogOpen(false);
+      setSelectedClientForOutlet(null);
+      toast.success("Outlet created successfully");
+    },
+    onError: () => {
+      toast.error("Failed to create outlet");
+    },
+  });
+
+  const createDeptMutation = useMutation({
+    mutationFn: (data: { outletId: string; name: string }) => departmentsApi.create(data.outletId, { name: data.name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
+      setCreateDeptDialogOpen(false);
+      setSelectedOutletForDept(null);
+      toast.success("Department created successfully");
+    },
+    onError: () => {
+      toast.error("Failed to create department");
+    },
+  });
+
+  const updateDeptMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Department> }) => departmentsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
+      setEditingDepartment(null);
+      toast.success("Department updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update department");
+    },
+  });
+
+  const deleteDeptMutation = useMutation({
+    mutationFn: (id: string) => departmentsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
+      setDeleteDeptConfirm(null);
+      toast.success("Department deleted successfully");
+    },
+    onError: () => {
+      toast.error("Failed to delete department");
+    },
+  });
+
   const filteredClients = clients?.filter(client => 
     client.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const toggleExpand = (clientId: string) => {
+    setExpandedClientId(expandedClientId === clientId ? null : clientId);
+  };
+
+  const getDepartmentsForOutlet = (outletId: string) => {
+    return expandedDepartments.filter(d => d.outletId === outletId);
+  };
 
   if (error) {
     return (
@@ -88,7 +169,7 @@ export default function Clients() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Client Management</h1>
-          <p className="text-muted-foreground">Manage audit configurations and client profiles</p>
+          <p className="text-muted-foreground">Manage clients, outlets and departments</p>
         </div>
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
@@ -178,83 +259,182 @@ export default function Clients() {
               No clients match your search.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Client Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Risk Score</TableHead>
-                  <TableHead>Variance Threshold</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredClients?.map((client) => (
-                  <TableRow key={client.id} className="cursor-pointer" data-testid={`row-client-${client.id}`}>
-                    <TableCell className="font-medium" data-testid={`text-client-name-${client.id}`}>
-                      {client.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn(
-                        "font-normal",
-                        client.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400" : 
-                        "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400"
-                      )} data-testid={`badge-status-${client.id}`}>
-                        {client.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className={cn(
-                          "h-2 w-full max-w-[60px] rounded-full bg-muted overflow-hidden"
-                        )}>
-                          <div className={cn("h-full", 
-                             (client.riskScore || 0) > 80 ? "bg-emerald-500" : 
-                             (client.riskScore || 0) > 50 ? "bg-amber-500" : "bg-destructive"
-                          )} style={{ width: `${client.riskScore || 0}%` }} />
+            <div className="space-y-2">
+              {filteredClients?.map((client) => (
+                <Collapsible 
+                  key={client.id} 
+                  open={expandedClientId === client.id}
+                  onOpenChange={() => toggleExpand(client.id)}
+                >
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between p-4 bg-card hover:bg-muted/50 transition-colors">
+                      <CollapsibleTrigger asChild>
+                        <div className="flex items-center gap-3 flex-1 cursor-pointer" data-testid={`row-client-${client.id}`}>
+                          {expandedClientId === client.id ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <Building2 className="h-5 w-5 text-primary" />
+                          <div>
+                            <div className="font-medium" data-testid={`text-client-name-${client.id}`}>{client.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Created {format(new Date(client.createdAt), "MMM d, yyyy")}
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs font-mono" data-testid={`text-risk-score-${client.id}`}>
-                          {client.riskScore || 0}/100
-                        </span>
+                      </CollapsibleTrigger>
+                      <div className="flex items-center gap-4">
+                        <Badge variant="outline" className={cn(
+                          "font-normal",
+                          client.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400" : 
+                          "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400"
+                        )} data-testid={`badge-status-${client.id}`}>
+                          {client.status}
+                        </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" data-testid={`button-actions-${client.id}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedClientForOutlet(client);
+                              setCreateOutletDialogOpen(true);
+                            }} data-testid={`button-add-outlet-${client.id}`}>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Add Outlet
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setEditingClient(client)} data-testid={`button-edit-${client.id}`}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit Client
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              className="text-destructive" 
+                              onClick={() => setDeleteConfirmClient(client)}
+                              data-testid={`button-delete-${client.id}`}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Client
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{client.varianceThreshold}%</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {format(new Date(client.createdAt), "MMM d, yyyy")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" data-testid={`button-actions-${client.id}`}>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem data-testid={`button-view-outlets-${client.id}`}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Outlets
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setEditingClient(client)} data-testid={`button-edit-${client.id}`}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit Client
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-destructive" 
-                            onClick={() => setDeleteConfirmClient(client)}
-                            data-testid={`button-delete-${client.id}`}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Client
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </div>
+                    <CollapsibleContent>
+                      <div className="border-t bg-muted/30 p-4">
+                        {expandedOutlets.length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground">
+                            <p className="text-sm">No outlets for this client.</p>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="mt-2 gap-2"
+                              onClick={() => {
+                                setSelectedClientForOutlet(client);
+                                setCreateOutletDialogOpen(true);
+                              }}
+                            >
+                              <Plus className="h-3 w-3" />
+                              Add First Outlet
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {expandedOutlets.map((outlet) => (
+                              <div key={outlet.id} className="bg-card rounded-lg border p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <Layers className="h-4 w-4 text-muted-foreground" />
+                                    <span className="font-medium text-sm">{outlet.name}</span>
+                                  </div>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="gap-1 h-7 text-xs"
+                                    onClick={() => {
+                                      setSelectedOutletForDept(outlet);
+                                      setCreateDeptDialogOpen(true);
+                                    }}
+                                    data-testid={`button-add-dept-${outlet.id}`}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add Department
+                                  </Button>
+                                </div>
+                                <div className="ml-6 space-y-1">
+                                  {getDepartmentsForOutlet(outlet.id).length === 0 ? (
+                                    <p className="text-xs text-muted-foreground italic">No departments yet</p>
+                                  ) : (
+                                    getDepartmentsForOutlet(outlet.id).map((dept) => (
+                                      <div 
+                                        key={dept.id} 
+                                        className="flex items-center justify-between py-1.5 px-2 rounded bg-muted/50 group hover:bg-muted"
+                                        data-testid={`row-dept-${dept.id}`}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm">{dept.name}</span>
+                                          <Badge variant="outline" className={cn(
+                                            "text-xs font-normal",
+                                            dept.status === "active" 
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400" 
+                                              : "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400"
+                                          )}>
+                                            {dept.status || "active"}
+                                          </Badge>
+                                        </div>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-6 w-6"
+                                            onClick={() => setEditingDepartment(dept)}
+                                            data-testid={`button-edit-dept-${dept.id}`}
+                                          >
+                                            <Edit className="h-3 w-3" />
+                                          </Button>
+                                          <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-6 w-6"
+                                            onClick={() => {
+                                              const newStatus = dept.status === "active" ? "suspended" : "active";
+                                              updateDeptMutation.mutate({ id: dept.id, data: { status: newStatus } });
+                                            }}
+                                            data-testid={`button-toggle-dept-${dept.id}`}
+                                          >
+                                            {dept.status === "active" ? (
+                                              <PauseCircle className="h-3 w-3 text-amber-600" />
+                                            ) : (
+                                              <PlayCircle className="h-3 w-3 text-emerald-600" />
+                                            )}
+                                          </Button>
+                                          <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-6 w-6 text-destructive hover:text-destructive"
+                                            onClick={() => setDeleteDeptConfirm(dept)}
+                                            data-testid={`button-delete-dept-${dept.id}`}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -320,6 +500,171 @@ export default function Clients() {
             >
               {deleteMutation.isPending && <Spinner className="mr-2" />}
               Delete Client
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createOutletDialogOpen} onOpenChange={setCreateOutletDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Outlet</DialogTitle>
+            <DialogDescription>
+              Add a new outlet to {selectedClientForOutlet?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!selectedClientForOutlet) return;
+            const formData = new FormData(e.currentTarget);
+            createOutletMutation.mutate({ 
+              clientId: selectedClientForOutlet.id, 
+              name: formData.get("outletName") as string 
+            });
+          }}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="outletName">Outlet Name</Label>
+                <Input 
+                  id="outletName" 
+                  name="outletName" 
+                  placeholder="e.g., Main Branch, Downtown Location" 
+                  required 
+                  data-testid="input-outlet-name"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateOutletDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createOutletMutation.isPending} data-testid="button-submit-outlet">
+                {createOutletMutation.isPending && <Spinner className="mr-2" />}
+                Create Outlet
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createDeptDialogOpen} onOpenChange={setCreateDeptDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Department</DialogTitle>
+            <DialogDescription>
+              Add a new department to {selectedOutletForDept?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!selectedOutletForDept) return;
+            const formData = new FormData(e.currentTarget);
+            createDeptMutation.mutate({ 
+              outletId: selectedOutletForDept.id, 
+              name: formData.get("deptName") as string 
+            });
+          }}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="deptName">Department Name</Label>
+                <Input 
+                  id="deptName" 
+                  name="deptName" 
+                  placeholder="e.g., Main Bar, Kitchen, VIP Lounge" 
+                  required 
+                  data-testid="input-dept-name"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateDeptDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createDeptMutation.isPending} data-testid="button-submit-dept">
+                {createDeptMutation.isPending && <Spinner className="mr-2" />}
+                Create Department
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingDepartment} onOpenChange={() => setEditingDepartment(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Department</DialogTitle>
+            <DialogDescription>Update department information.</DialogDescription>
+          </DialogHeader>
+          {editingDepartment && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              updateDeptMutation.mutate({ 
+                id: editingDepartment.id, 
+                data: { 
+                  name: formData.get("deptEditName") as string,
+                  status: formData.get("deptStatus") as string
+                } 
+              });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="deptEditName">Department Name</Label>
+                  <Input 
+                    id="deptEditName" 
+                    name="deptEditName" 
+                    defaultValue={editingDepartment.name}
+                    required 
+                    data-testid="input-edit-dept-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="deptStatus">Status</Label>
+                  <Select name="deptStatus" defaultValue={editingDepartment.status || "active"}>
+                    <SelectTrigger data-testid="select-dept-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditingDepartment(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateDeptMutation.isPending} data-testid="button-save-dept">
+                  {updateDeptMutation.isPending && <Spinner className="mr-2" />}
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteDeptConfirm} onOpenChange={() => setDeleteDeptConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Department</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deleteDeptConfirm?.name}"? This will remove all associated data.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeleteDeptConfirm(null)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => deleteDeptConfirm && deleteDeptMutation.mutate(deleteDeptConfirm.id)}
+              disabled={deleteDeptMutation.isPending}
+              data-testid="button-confirm-delete-dept"
+            >
+              {deleteDeptMutation.isPending && <Spinner className="mr-2" />}
+              Delete Department
             </Button>
           </DialogFooter>
         </DialogContent>

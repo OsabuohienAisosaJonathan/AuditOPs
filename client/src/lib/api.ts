@@ -51,6 +51,7 @@ export interface Department {
   id: string;
   outletId: string;
   name: string;
+  status: string;
   createdAt: Date;
 }
 
