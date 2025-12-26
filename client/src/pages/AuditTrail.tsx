@@ -18,7 +18,7 @@ export default function AuditTrail() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
-  const { data: auditLogs, isLoading, refetch } = useQuery({
+  const { data: auditLogsData, isLoading, refetch } = useQuery({
     queryKey: ["audit-logs", startDate, endDate],
     queryFn: () => auditLogsApi.getAll({
       startDate: startDate || undefined,
@@ -27,7 +27,9 @@ export default function AuditTrail() {
     }),
   });
 
-  const filteredLogs = auditLogs?.filter(log => 
+  const auditLogs = auditLogsData?.logs || [];
+
+  const filteredLogs = auditLogs.filter(log => 
     log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.entity.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (log.details && log.details.toLowerCase().includes(searchTerm.toLowerCase()))

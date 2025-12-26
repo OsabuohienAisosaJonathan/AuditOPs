@@ -555,7 +555,7 @@ export const auditLogsApi = {
     if (filters?.endDate) params.append("endDate", filters.endDate);
     if (filters?.limit) params.append("limit", filters.limit.toString());
     if (filters?.offset) params.append("offset", filters.offset.toString());
-    return fetchApi<AuditLog[]>(`/audit-logs?${params}`);
+    return fetchApi<{ logs: AuditLog[]; total: number }>(`/audit-logs?${params}`);
   },
 };
 
