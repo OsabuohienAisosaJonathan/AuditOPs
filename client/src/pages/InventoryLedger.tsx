@@ -1,16 +1,16 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format, parseISO, startOfDay } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Warehouse, Store, ChefHat, Plus, Save, AlertCircle, Package } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Warehouse, Store, ChefHat, AlertCircle, Package, Settings2 } from "lucide-react";
 import { useClientContext } from "@/lib/client-context";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +75,22 @@ interface StoreIssue {
   status: string;
 }
 
+interface StoreIssueLine {
+  id: string;
+  storeIssueId: string;
+  itemId: string;
+  qtyIssued: string;
+}
+
+interface StockCount {
+  id: string;
+  clientId: string;
+  departmentId: string;
+  itemId: string;
+  date: string;
+  actualClosingQty: string | null;
+}
+
 export default function InventoryLedger() {
   const { selectedClient, clients } = useClientContext();
   const queryClient = useQueryClient();
@@ -84,6 +100,8 @@ export default function InventoryLedger() {
   const [issueItemId, setIssueItemId] = useState<string | null>(null);
   const [issueToDeptId, setIssueToDeptId] = useState<string | null>(null);
   const [issueQty, setIssueQty] = useState<string>("");
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [visibleDepts, setVisibleDepts] = useState<Set<string>>(new Set());
   
   const selectedClientId = selectedClient?.id || clients[0]?.id;
 
@@ -130,6 +148,18 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId && !!selectedInvDept,
   });
 
+  // Fetch previous day stock for opening rollforward
+  const previousDate = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
+  const { data: prevDayStock } = useQuery<StoreStock[]>({
+    queryKey: ["store-stock", selectedClientId, selectedInvDept, previousDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${previousDate}`);
+      if (!res.ok) throw new Error("Failed to fetch previous day stock");
+      return res.json();
+    },
+    enabled: !!selectedClientId && !!selectedInvDept,
+  });
+
   // Fetch store issues for selected department and date
   const { data: storeIssues } = useQuery<StoreIssue[]>({
     queryKey: ["store-issues", selectedClientId, selectedDate],
@@ -139,6 +169,24 @@ export default function InventoryLedger() {
       return res.json();
     },
     enabled: !!selectedClientId,
+  });
+
+  // Fetch issue lines for each store issue
+  const { data: issueLines } = useQuery<{ issueId: string; lines: StoreIssueLine[] }[]>({
+    queryKey: ["store-issue-lines", storeIssues?.map(i => i.id).join(",")],
+    queryFn: async () => {
+      if (!storeIssues || storeIssues.length === 0) return [];
+      const results = await Promise.all(
+        storeIssues.map(async (issue) => {
+          const res = await fetch(`/api/store-issues/${issue.id}/lines`);
+          if (!res.ok) return { issueId: issue.id, lines: [] };
+          const lines = await res.json();
+          return { issueId: issue.id, lines };
+        })
+      );
+      return results;
+    },
+    enabled: !!storeIssues && storeIssues.length > 0,
   });
 
   // Get store name by ID
@@ -154,26 +202,32 @@ export default function InventoryLedger() {
     return inventoryDepts?.filter(d => d.inventoryType === "DEPARTMENT_STORE" && d.status === "active") || [];
   }, [inventoryDepts]);
 
-  // Create stock entry for item
-  const createStockMutation = useMutation({
-    mutationFn: async (data: { itemId: string; openingQty?: number }) => {
-      const res = await fetch(`/api/clients/${selectedClientId}/store-stock`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storeDepartmentId: selectedInvDept,
-          itemId: data.itemId,
-          date: selectedDate,
-          openingQty: data.openingQty || 0,
-        }),
+  // Initialize visible depts when department stores load
+  useMemo(() => {
+    if (departmentStores.length > 0 && visibleDepts.size === 0) {
+      setVisibleDepts(new Set(departmentStores.slice(0, 5).map(d => d.id)));
+    }
+  }, [departmentStores]);
+
+  // Build issue breakdown by department and item
+  const issueBreakdown = useMemo(() => {
+    const breakdown: Record<string, Record<string, number>> = {};
+    
+    if (!storeIssues || !issueLines) return breakdown;
+    
+    storeIssues.forEach(issue => {
+      if (issue.fromDepartmentId !== selectedInvDept) return;
+      
+      const lines = issueLines.find(il => il.issueId === issue.id)?.lines || [];
+      lines.forEach(line => {
+        if (!breakdown[line.itemId]) breakdown[line.itemId] = {};
+        if (!breakdown[line.itemId][issue.toDepartmentId]) breakdown[line.itemId][issue.toDepartmentId] = 0;
+        breakdown[line.itemId][issue.toDepartmentId] += parseFloat(line.qtyIssued || "0");
       });
-      if (!res.ok) throw new Error("Failed to create stock entry");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
-    },
-  });
+    });
+    
+    return breakdown;
+  }, [storeIssues, issueLines, selectedInvDept]);
 
   // Create store issue
   const createIssueMutation = useMutation({
@@ -197,6 +251,7 @@ export default function InventoryLedger() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       queryClient.invalidateQueries({ queryKey: ["store-issues"] });
+      queryClient.invalidateQueries({ queryKey: ["store-issue-lines"] });
       setIssueDialogOpen(false);
       setIssueItemId(null);
       setIssueToDeptId(null);
@@ -204,7 +259,20 @@ export default function InventoryLedger() {
     },
   });
 
-  // Build ledger data for Main Store/Warehouse
+  // Get opening from previous day closing (rollforward)
+  const getOpeningQty = (itemId: string, currentStock?: StoreStock) => {
+    if (currentStock && parseFloat(currentStock.openingQty || "0") > 0) {
+      return parseFloat(currentStock.openingQty);
+    }
+    const prevStock = prevDayStock?.find(s => s.itemId === itemId);
+    if (prevStock) {
+      const prevClosing = parseFloat(prevStock.closingQty || "0");
+      return prevClosing;
+    }
+    return 0;
+  };
+
+  // Build ledger data for Main Store/Warehouse with Dep columns
   const mainStoreLedger = useMemo(() => {
     if (!items || !selectedDept || (selectedDept.inventoryType !== "MAIN_STORE" && selectedDept.inventoryType !== "WAREHOUSE")) {
       return [];
@@ -213,11 +281,20 @@ export default function InventoryLedger() {
     const activeItems = items.filter(i => i.status === "active");
     return activeItems.map((item, index) => {
       const stock = storeStockData?.find(s => s.itemId === item.id);
-      const opening = parseFloat(stock?.openingQty || "0");
+      const opening = getOpeningQty(item.id, stock);
       const purchase = parseFloat(stock?.addedQty || "0");
       const total = opening + purchase;
-      const issued = parseFloat(stock?.issuedQty || "0");
-      const closing = total - issued;
+      
+      const depIssues: Record<string, number> = {};
+      let totalIssued = 0;
+      
+      departmentStores.forEach(dept => {
+        const qty = issueBreakdown[item.id]?.[dept.id] || 0;
+        depIssues[dept.id] = qty;
+        totalIssued += qty;
+      });
+      
+      const closing = total - totalIssued;
       const cost = parseFloat(item.costPrice || "0");
       const value = closing * cost;
       
@@ -229,14 +306,15 @@ export default function InventoryLedger() {
         opening,
         purchase,
         total,
-        issued,
+        depIssues,
+        totalIssued,
         closing,
         cost,
         value,
         stockId: stock?.id,
       };
     });
-  }, [items, selectedDept, storeStockData]);
+  }, [items, selectedDept, storeStockData, prevDayStock, departmentStores, issueBreakdown]);
 
   // Build ledger data for Department Store
   const deptStoreLedger = useMemo(() => {
@@ -247,10 +325,12 @@ export default function InventoryLedger() {
     const activeItems = items.filter(i => i.status === "active");
     return activeItems.map((item, index) => {
       const stock = storeStockData?.find(s => s.itemId === item.id);
-      const opening = parseFloat(stock?.openingQty || "0");
+      const opening = getOpeningQty(item.id, stock);
       const added = parseFloat(stock?.addedQty || "0");
       const total = opening + added;
-      const closing = stock?.physicalClosingQty !== null ? parseFloat(stock?.physicalClosingQty || "0") : null;
+      const closing = stock?.physicalClosingQty !== null && stock?.physicalClosingQty !== undefined 
+        ? parseFloat(stock.physicalClosingQty) 
+        : null;
       const sold = closing !== null ? total - closing : null;
       
       return {
@@ -267,7 +347,7 @@ export default function InventoryLedger() {
         stockId: stock?.id,
       };
     });
-  }, [items, selectedDept, storeStockData]);
+  }, [items, selectedDept, storeStockData, prevDayStock]);
 
   const handleIssueClick = (itemId: string) => {
     setIssueItemId(itemId);
@@ -283,6 +363,16 @@ export default function InventoryLedger() {
     });
   };
 
+  const toggleDeptVisibility = (deptId: string) => {
+    const newSet = new Set(visibleDepts);
+    if (newSet.has(deptId)) {
+      newSet.delete(deptId);
+    } else {
+      newSet.add(deptId);
+    }
+    setVisibleDepts(newSet);
+  };
+
   if (!selectedClientId) {
     return (
       <div className="p-6">
@@ -294,6 +384,8 @@ export default function InventoryLedger() {
       </div>
     );
   }
+
+  const visibleDeptList = departmentStores.filter(d => visibleDepts.has(d.id));
 
   return (
     <div className="p-6 space-y-6">
@@ -349,6 +441,12 @@ export default function InventoryLedger() {
                 {selectedDept.inventoryType.replace("_", " ")}
               </Badge>
             )}
+            {(selectedDept?.inventoryType === "MAIN_STORE" || selectedDept?.inventoryType === "WAREHOUSE") && departmentStores.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => setConfigDialogOpen(true)} data-testid="button-config-deps">
+                <Settings2 className="h-4 w-4 mr-2" />
+                Configure Columns
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -369,7 +467,7 @@ export default function InventoryLedger() {
           </CardContent>
         </Card>
       ) : selectedDept?.inventoryType === "MAIN_STORE" || selectedDept?.inventoryType === "WAREHOUSE" ? (
-        /* Main Store / Warehouse Ledger */
+        /* Main Store / Warehouse Ledger with Dep Columns */
         <Card>
           <CardHeader className="px-6 py-4 border-b">
             <CardTitle className="flex items-center gap-2">
@@ -377,7 +475,7 @@ export default function InventoryLedger() {
               {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
             </CardTitle>
             <CardDescription>
-              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")}
+              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Opening auto-populated from previous day
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -385,36 +483,44 @@ export default function InventoryLedger() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[60px] text-center">S/N</TableHead>
-                    <TableHead>Item Name</TableHead>
-                    <TableHead className="w-[80px]">Unit</TableHead>
-                    <TableHead className="w-[100px] text-right">Opening</TableHead>
-                    <TableHead className="w-[100px] text-right">Purchase</TableHead>
-                    <TableHead className="w-[100px] text-right bg-muted/30">Total</TableHead>
-                    <TableHead className="w-[100px] text-right">Issued</TableHead>
-                    <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
-                    <TableHead className="w-[100px] text-right">Cost</TableHead>
-                    <TableHead className="w-[120px] text-right">Value</TableHead>
-                    <TableHead className="w-[100px]">Actions</TableHead>
+                    <TableHead className="w-[50px] text-center sticky left-0 bg-background">S/N</TableHead>
+                    <TableHead className="min-w-[150px] sticky left-[50px] bg-background">Item Name</TableHead>
+                    <TableHead className="w-[60px]">Unit</TableHead>
+                    <TableHead className="w-[80px] text-right">Opening</TableHead>
+                    <TableHead className="w-[80px] text-right">Purchase</TableHead>
+                    <TableHead className="w-[80px] text-right bg-muted/30">Total</TableHead>
+                    {visibleDeptList.map((dept, idx) => (
+                      <TableHead key={dept.id} className="w-[80px] text-right text-xs" title={getStoreNameById(dept.storeNameId)?.name}>
+                        Dep{idx + 1}
+                      </TableHead>
+                    ))}
+                    <TableHead className="w-[80px] text-right bg-muted/30">Closing</TableHead>
+                    <TableHead className="w-[80px] text-right">Cost</TableHead>
+                    <TableHead className="w-[100px] text-right">Value</TableHead>
+                    <TableHead className="w-[80px]">Issue</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {mainStoreLedger.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={11 + visibleDeptList.length} className="text-center py-8 text-muted-foreground">
                         No items found. Add items in the Inventory page first.
                       </TableCell>
                     </TableRow>
                   ) : (
                     mainStoreLedger.map((row) => (
                       <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
-                        <TableCell className="text-center">{row.sn}</TableCell>
-                        <TableCell className="font-medium">{row.itemName}</TableCell>
-                        <TableCell className="text-muted-foreground">{row.unit}</TableCell>
+                        <TableCell className="text-center sticky left-0 bg-background">{row.sn}</TableCell>
+                        <TableCell className="font-medium sticky left-[50px] bg-background">{row.itemName}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{row.unit}</TableCell>
                         <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
                         <TableCell className="text-right">{row.purchase.toFixed(2)}</TableCell>
                         <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
-                        <TableCell className="text-right text-orange-600">{row.issued.toFixed(2)}</TableCell>
+                        {visibleDeptList.map(dept => (
+                          <TableCell key={dept.id} className="text-right text-orange-600">
+                            {(row.depIssues[dept.id] || 0).toFixed(2)}
+                          </TableCell>
+                        ))}
                         <TableCell className="text-right bg-muted/30 font-medium">{row.closing.toFixed(2)}</TableCell>
                         <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
                         <TableCell className="text-right font-medium">{row.value.toFixed(2)}</TableCell>
@@ -435,6 +541,16 @@ export default function InventoryLedger() {
                 </TableBody>
               </Table>
             </div>
+            {visibleDeptList.length > 0 && (
+              <div className="px-6 py-3 border-t bg-muted/20 text-xs text-muted-foreground">
+                <strong>Column Key:</strong>{" "}
+                {visibleDeptList.map((dept, idx) => (
+                  <span key={dept.id} className="mr-3">
+                    Dep{idx + 1} = {getStoreNameById(dept.storeNameId)?.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : selectedDept?.inventoryType === "DEPARTMENT_STORE" ? (
@@ -446,7 +562,7 @@ export default function InventoryLedger() {
               {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
             </CardTitle>
             <CardDescription>
-              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")}
+              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Closing from Stock Count
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -558,6 +674,42 @@ export default function InventoryLedger() {
             >
               {createIssueMutation.isPending && <Spinner className="mr-2" />}
               Issue Stock
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configure Dep Columns Dialog */}
+      <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configure Department Columns</DialogTitle>
+            <DialogDescription>
+              Select which department columns to show in the ledger (up to 10).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4 max-h-[300px] overflow-y-auto">
+            {departmentStores.map(dept => (
+              <div key={dept.id} className="flex items-center gap-3">
+                <Checkbox 
+                  id={`dep-${dept.id}`}
+                  checked={visibleDepts.has(dept.id)}
+                  onCheckedChange={() => toggleDeptVisibility(dept.id)}
+                  disabled={!visibleDepts.has(dept.id) && visibleDepts.size >= 10}
+                  data-testid={`checkbox-dep-${dept.id}`}
+                />
+                <Label htmlFor={`dep-${dept.id}`} className="cursor-pointer">
+                  {getStoreNameById(dept.storeNameId)?.name || "Unknown"}
+                </Label>
+              </div>
+            ))}
+            {departmentStores.length === 0 && (
+              <p className="text-muted-foreground text-sm">No department stores configured yet.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setConfigDialogOpen(false)} data-testid="button-close-config">
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>
