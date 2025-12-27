@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Filter, MoreHorizontal, Building2, Trash2, Edit, Eye, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, Search, Filter, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree, ToggleLeft, ToggleRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { clientsApi, outletsApi, departmentsApi, Client, Outlet, Department } from "@/lib/api";
+import { clientsApi, outletsApi, departmentsApi, Client, Outlet, Department, OutletDepartmentLink } from "@/lib/api";
 import { format } from "date-fns";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
@@ -17,6 +17,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+
+const DEPARTMENT_MODES = [
+  { value: "inherit_only", label: "Inherit Only", description: "Uses client departments only" },
+  { value: "outlet_only", label: "Outlet Only", description: "Uses outlet-specific departments only" },
+  { value: "inherit_add", label: "Inherit + Add", description: "Uses client departments plus outlet-specific ones" },
+];
 
 export default function Clients() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -28,10 +36,16 @@ export default function Clients() {
   const [createOutletDialogOpen, setCreateOutletDialogOpen] = useState(false);
   const [selectedClientForOutlet, setSelectedClientForOutlet] = useState<Client | null>(null);
   
-  const [createDeptDialogOpen, setCreateDeptDialogOpen] = useState(false);
+  const [createClientDeptDialogOpen, setCreateClientDeptDialogOpen] = useState(false);
+  const [bulkDeptInput, setBulkDeptInput] = useState("");
+  const [selectedClientForClientDept, setSelectedClientForClientDept] = useState<Client | null>(null);
+  
+  const [createOutletDeptDialogOpen, setCreateOutletDeptDialogOpen] = useState(false);
   const [selectedOutletForDept, setSelectedOutletForDept] = useState<Outlet | null>(null);
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [deleteDeptConfirm, setDeleteDeptConfirm] = useState<Department | null>(null);
+  
+  const [activeTab, setActiveTab] = useState<string>("outlets");
 
   const queryClient = useQueryClient();
 
@@ -46,7 +60,13 @@ export default function Clients() {
     enabled: !!expandedClientId,
   });
 
-  const { data: expandedDepartments = [] } = useQuery({
+  const { data: clientDepartments = [] } = useQuery({
+    queryKey: ["client-departments", expandedClientId],
+    queryFn: () => expandedClientId ? departmentsApi.getClientDepartments(expandedClientId) : Promise.resolve([]),
+    enabled: !!expandedClientId,
+  });
+
+  const { data: allDepartments = [] } = useQuery({
     queryKey: ["departments-by-client", expandedClientId],
     queryFn: () => expandedClientId ? departmentsApi.getByClient(expandedClientId) : Promise.resolve([]),
     enabled: !!expandedClientId,
@@ -101,13 +121,52 @@ export default function Clients() {
     },
   });
 
-  const createDeptMutation = useMutation({
-    mutationFn: (data: { outletId: string; name: string }) => departmentsApi.create(data.outletId, { name: data.name }),
+  const updateOutletMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Outlet> }) => outletsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["outlets", expandedClientId] });
+      toast.success("Outlet updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update outlet");
+    },
+  });
+
+  const createClientDeptMutation = useMutation({
+    mutationFn: (data: { clientId: string; name: string }) => departmentsApi.createForClient(data.clientId, { name: data.name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-departments", expandedClientId] });
+      queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
+      setCreateClientDeptDialogOpen(false);
+      setSelectedClientForClientDept(null);
+      toast.success("Client department created successfully");
+    },
+    onError: () => {
+      toast.error("Failed to create department");
+    },
+  });
+
+  const bulkCreateDeptMutation = useMutation({
+    mutationFn: (data: { departments: string[]; clientId: string; scope: string }) => 
+      departmentsApi.createBulk(data),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["client-departments", expandedClientId] });
+      queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
+      setBulkDeptInput("");
+      toast.success(`${created.length} departments created successfully`);
+    },
+    onError: () => {
+      toast.error("Failed to create departments");
+    },
+  });
+
+  const createOutletDeptMutation = useMutation({
+    mutationFn: (data: { outletId: string; name: string }) => departmentsApi.createForOutlet(data.outletId, { name: data.name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
-      setCreateDeptDialogOpen(false);
+      setCreateOutletDeptDialogOpen(false);
       setSelectedOutletForDept(null);
-      toast.success("Department created successfully");
+      toast.success("Outlet department created successfully");
     },
     onError: () => {
       toast.error("Failed to create department");
@@ -117,6 +176,7 @@ export default function Clients() {
   const updateDeptMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Department> }) => departmentsApi.update(id, data),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-departments", expandedClientId] });
       queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
       setEditingDepartment(null);
       toast.success("Department updated successfully");
@@ -127,14 +187,33 @@ export default function Clients() {
   });
 
   const deleteDeptMutation = useMutation({
-    mutationFn: (id: string) => departmentsApi.delete(id),
+    mutationFn: async (id: string) => {
+      const result = await departmentsApi.delete(id);
+      if ('error' in result) {
+        throw new Error(result.error);
+      }
+      return result;
+    },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-departments", expandedClientId] });
       queryClient.invalidateQueries({ queryKey: ["departments-by-client", expandedClientId] });
       setDeleteDeptConfirm(null);
       toast.success("Department deleted successfully");
     },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to delete department");
+    },
+  });
+
+  const toggleDeptLinkMutation = useMutation({
+    mutationFn: ({ outletId, departmentId, isActive }: { outletId: string; departmentId: string; isActive: boolean }) => 
+      departmentsApi.toggleOutletLink(outletId, departmentId, isActive),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["outlet-dept-links"] });
+      toast.success("Department visibility updated");
+    },
     onError: () => {
-      toast.error("Failed to delete department");
+      toast.error("Failed to update department visibility");
     },
   });
 
@@ -144,10 +223,11 @@ export default function Clients() {
 
   const toggleExpand = (clientId: string) => {
     setExpandedClientId(expandedClientId === clientId ? null : clientId);
+    setActiveTab("outlets");
   };
 
-  const getDepartmentsForOutlet = (outletId: string) => {
-    return expandedDepartments.filter(d => d.outletId === outletId);
+  const getOutletDepartments = (outletId: string) => {
+    return allDepartments.filter(d => d.outletId === outletId && d.scope === "outlet");
   };
 
   if (error) {
@@ -312,6 +392,14 @@ export default function Clients() {
                               <Plus className="mr-2 h-4 w-4" />
                               Add Outlet
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedClientForClientDept(client);
+                              setExpandedClientId(client.id);
+                              setCreateClientDeptDialogOpen(true);
+                            }} data-testid={`button-add-client-dept-${client.id}`}>
+                              <FolderTree className="mr-2 h-4 w-4" />
+                              Add Client Department
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setEditingClient(client)} data-testid={`button-edit-${client.id}`}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit Client
@@ -331,110 +419,175 @@ export default function Clients() {
                     </div>
                     <CollapsibleContent>
                       <div className="border-t bg-muted/30 p-4">
-                        {expandedOutlets.length === 0 ? (
-                          <div className="text-center py-4 text-muted-foreground">
-                            <p className="text-sm">No outlets for this client.</p>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="mt-2 gap-2"
-                              onClick={() => {
-                                setSelectedClientForOutlet(client);
-                                setCreateOutletDialogOpen(true);
-                              }}
-                            >
-                              <Plus className="h-3 w-3" />
-                              Add First Outlet
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {expandedOutlets.map((outlet) => (
-                              <div key={outlet.id} className="bg-card rounded-lg border p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <Layers className="h-4 w-4 text-muted-foreground" />
-                                    <span className="font-medium text-sm">{outlet.name}</span>
-                                  </div>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className="gap-1 h-7 text-xs"
-                                    onClick={() => {
+                        <Tabs value={activeTab} onValueChange={setActiveTab}>
+                          <TabsList className="mb-4">
+                            <TabsTrigger value="outlets" className="gap-2">
+                              <Layers className="h-4 w-4" />
+                              Outlets & Departments
+                            </TabsTrigger>
+                            <TabsTrigger value="client-depts" className="gap-2">
+                              <FolderTree className="h-4 w-4" />
+                              Client Departments ({clientDepartments.length})
+                            </TabsTrigger>
+                          </TabsList>
+
+                          <TabsContent value="outlets">
+                            {expandedOutlets.length === 0 ? (
+                              <div className="text-center py-4 text-muted-foreground">
+                                <p className="text-sm">No outlets for this client.</p>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="mt-2 gap-2"
+                                  onClick={() => {
+                                    setSelectedClientForOutlet(client);
+                                    setCreateOutletDialogOpen(true);
+                                  }}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Add First Outlet
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {expandedOutlets.map((outlet) => (
+                                  <OutletCard 
+                                    key={outlet.id}
+                                    outlet={outlet}
+                                    clientDepartments={clientDepartments}
+                                    outletDepartments={getOutletDepartments(outlet.id)}
+                                    onAddDept={() => {
                                       setSelectedOutletForDept(outlet);
-                                      setCreateDeptDialogOpen(true);
+                                      setCreateOutletDeptDialogOpen(true);
                                     }}
-                                    data-testid={`button-add-dept-${outlet.id}`}
+                                    onEditDept={setEditingDepartment}
+                                    onDeleteDept={setDeleteDeptConfirm}
+                                    onUpdateDept={(id, data) => updateDeptMutation.mutate({ id, data })}
+                                    onUpdateOutlet={(id, data) => updateOutletMutation.mutate({ id, data })}
+                                    onToggleDeptLink={(departmentId, isActive) => 
+                                      toggleDeptLinkMutation.mutate({ outletId: outlet.id, departmentId, isActive })
+                                    }
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </TabsContent>
+
+                          <TabsContent value="client-depts">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm text-muted-foreground">
+                                  Client-wide departments are shared across all outlets (based on their department mode).
+                                </p>
+                                <Button 
+                                  size="sm" 
+                                  className="gap-2"
+                                  onClick={() => {
+                                    setSelectedClientForClientDept(client);
+                                    setCreateClientDeptDialogOpen(true);
+                                  }}
+                                  data-testid="button-add-client-dept"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Add Department
+                                </Button>
+                              </div>
+
+                              <div className="bg-card border rounded-lg p-3">
+                                <Label className="text-xs text-muted-foreground mb-2 block">Bulk Add (paste department names, one per line or comma-separated)</Label>
+                                <div className="flex gap-2">
+                                  <Textarea 
+                                    value={bulkDeptInput}
+                                    onChange={(e) => setBulkDeptInput(e.target.value)}
+                                    placeholder="Kitchen, Main Bar, VIP Lounge..."
+                                    className="min-h-[60px] text-sm"
+                                    data-testid="textarea-bulk-depts"
+                                  />
+                                  <Button 
+                                    size="sm"
+                                    disabled={!bulkDeptInput.trim() || bulkCreateDeptMutation.isPending}
+                                    onClick={() => {
+                                      const depts = bulkDeptInput.split(/[,\n]/).map(d => d.trim()).filter(Boolean);
+                                      if (depts.length > 0 && expandedClientId) {
+                                        bulkCreateDeptMutation.mutate({
+                                          departments: depts,
+                                          clientId: expandedClientId,
+                                          scope: "client"
+                                        });
+                                      }
+                                    }}
+                                    data-testid="button-bulk-add"
                                   >
-                                    <Plus className="h-3 w-3" />
-                                    Add Department
+                                    {bulkCreateDeptMutation.isPending ? <Spinner className="h-4 w-4" /> : "Add All"}
                                   </Button>
                                 </div>
-                                <div className="ml-6 space-y-1">
-                                  {getDepartmentsForOutlet(outlet.id).length === 0 ? (
-                                    <p className="text-xs text-muted-foreground italic">No departments yet</p>
-                                  ) : (
-                                    getDepartmentsForOutlet(outlet.id).map((dept) => (
-                                      <div 
-                                        key={dept.id} 
-                                        className="flex items-center justify-between py-1.5 px-2 rounded bg-muted/50 group hover:bg-muted"
-                                        data-testid={`row-dept-${dept.id}`}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm">{dept.name}</span>
-                                          <Badge variant="outline" className={cn(
-                                            "text-xs font-normal",
-                                            dept.status === "active" 
-                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400" 
-                                              : "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400"
-                                          )}>
-                                            {dept.status || "active"}
-                                          </Badge>
-                                        </div>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-6 w-6"
-                                            onClick={() => setEditingDepartment(dept)}
-                                            data-testid={`button-edit-dept-${dept.id}`}
-                                          >
-                                            <Edit className="h-3 w-3" />
-                                          </Button>
-                                          <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-6 w-6"
-                                            onClick={() => {
-                                              const newStatus = dept.status === "active" ? "suspended" : "active";
-                                              updateDeptMutation.mutate({ id: dept.id, data: { status: newStatus } });
-                                            }}
-                                            data-testid={`button-toggle-dept-${dept.id}`}
-                                          >
-                                            {dept.status === "active" ? (
-                                              <PauseCircle className="h-3 w-3 text-amber-600" />
-                                            ) : (
-                                              <PlayCircle className="h-3 w-3 text-emerald-600" />
-                                            )}
-                                          </Button>
-                                          <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-6 w-6 text-destructive hover:text-destructive"
-                                            onClick={() => setDeleteDeptConfirm(dept)}
-                                            data-testid={`button-delete-dept-${dept.id}`}
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
                               </div>
-                            ))}
-                          </div>
-                        )}
+
+                              {clientDepartments.length === 0 ? (
+                                <div className="text-center py-4 text-muted-foreground text-sm">
+                                  No client-wide departments yet. Add departments that will be available across all outlets.
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {clientDepartments.map((dept) => (
+                                    <div 
+                                      key={dept.id} 
+                                      className="flex items-center justify-between py-2 px-3 rounded bg-card border group hover:bg-muted/50"
+                                      data-testid={`row-client-dept-${dept.id}`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <FolderTree className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium">{dept.name}</span>
+                                        <Badge variant="outline" className={cn(
+                                          "text-xs font-normal",
+                                          dept.status === "active" 
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                            : "bg-gray-50 text-gray-500 border-gray-200"
+                                        )}>
+                                          {dept.status || "active"}
+                                        </Badge>
+                                        <Badge variant="secondary" className="text-xs">Client-wide</Badge>
+                                      </div>
+                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="h-6 w-6"
+                                          onClick={() => setEditingDepartment(dept)}
+                                        >
+                                          <Edit className="h-3 w-3" />
+                                        </Button>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="h-6 w-6"
+                                          onClick={() => {
+                                            const newStatus = dept.status === "active" ? "inactive" : "active";
+                                            updateDeptMutation.mutate({ id: dept.id, data: { status: newStatus } });
+                                          }}
+                                        >
+                                          {dept.status === "active" ? (
+                                            <PauseCircle className="h-3 w-3 text-amber-600" />
+                                          ) : (
+                                            <PlayCircle className="h-3 w-3 text-emerald-600" />
+                                          )}
+                                        </Button>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="h-6 w-6 text-destructive hover:text-destructive"
+                                          onClick={() => setDeleteDeptConfirm(dept)}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </TabsContent>
+                        </Tabs>
                       </div>
                     </CollapsibleContent>
                   </div>
@@ -445,6 +598,7 @@ export default function Clients() {
         </CardContent>
       </Card>
 
+      {/* Edit Client Dialog */}
       <Dialog open={!!editingClient} onOpenChange={() => setEditingClient(null)}>
         <DialogContent>
           <DialogHeader>
@@ -468,15 +622,12 @@ export default function Clients() {
                     name="name" 
                     defaultValue={editingClient.name}
                     required 
-                    data-testid="input-edit-client-name"
                   />
                 </div>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditingClient(null)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-client">
+                <Button type="button" variant="outline" onClick={() => setEditingClient(null)}>Cancel</Button>
+                <Button type="submit" disabled={updateMutation.isPending}>
                   {updateMutation.isPending && <Spinner className="mr-2" />}
                   Save Changes
                 </Button>
@@ -486,23 +637,21 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Client Confirm */}
       <Dialog open={!!deleteConfirmClient} onOpenChange={() => setDeleteConfirmClient(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Client</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteConfirmClient?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{deleteConfirmClient?.name}"? This will also delete all outlets and departments.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteConfirmClient(null)}>
-              Cancel
-            </Button>
+            <Button type="button" variant="outline" onClick={() => setDeleteConfirmClient(null)}>Cancel</Button>
             <Button 
               variant="destructive" 
               onClick={() => deleteConfirmClient && deleteMutation.mutate(deleteConfirmClient.id)}
               disabled={deleteMutation.isPending}
-              data-testid="button-confirm-delete"
             >
               {deleteMutation.isPending && <Spinner className="mr-2" />}
               Delete Client
@@ -511,13 +660,12 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
+      {/* Create Outlet Dialog */}
       <Dialog open={createOutletDialogOpen} onOpenChange={setCreateOutletDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Outlet</DialogTitle>
-            <DialogDescription>
-              Add a new outlet to {selectedClientForOutlet?.name}.
-            </DialogDescription>
+            <DialogDescription>Add a new outlet to {selectedClientForOutlet?.name}.</DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => {
             e.preventDefault();
@@ -531,20 +679,12 @@ export default function Clients() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="outletName">Outlet Name</Label>
-                <Input 
-                  id="outletName" 
-                  name="outletName" 
-                  placeholder="e.g., Main Branch, Downtown Location" 
-                  required 
-                  data-testid="input-outlet-name"
-                />
+                <Input id="outletName" name="outletName" placeholder="e.g., Main Branch, Downtown Location" required />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOutletDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createOutletMutation.isPending} data-testid="button-submit-outlet">
+              <Button type="button" variant="outline" onClick={() => setCreateOutletDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={createOutletMutation.isPending}>
                 {createOutletMutation.isPending && <Spinner className="mr-2" />}
                 Create Outlet
               </Button>
@@ -553,41 +693,32 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={createDeptDialogOpen} onOpenChange={setCreateDeptDialogOpen}>
+      {/* Create Client Department Dialog */}
+      <Dialog open={createClientDeptDialogOpen} onOpenChange={setCreateClientDeptDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add New Department</DialogTitle>
-            <DialogDescription>
-              Add a new department to {selectedOutletForDept?.name}.
-            </DialogDescription>
+            <DialogTitle>Add Client Department</DialogTitle>
+            <DialogDescription>Add a client-wide department that can be inherited by outlets.</DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => {
             e.preventDefault();
-            if (!selectedOutletForDept) return;
+            if (!selectedClientForClientDept && !expandedClientId) return;
             const formData = new FormData(e.currentTarget);
-            createDeptMutation.mutate({ 
-              outletId: selectedOutletForDept.id, 
+            createClientDeptMutation.mutate({ 
+              clientId: selectedClientForClientDept?.id || expandedClientId!, 
               name: formData.get("deptName") as string 
             });
           }}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="deptName">Department Name</Label>
-                <Input 
-                  id="deptName" 
-                  name="deptName" 
-                  placeholder="e.g., Main Bar, Kitchen, VIP Lounge" 
-                  required 
-                  data-testid="input-dept-name"
-                />
+                <Input id="deptName" name="deptName" placeholder="e.g., Main Bar, Kitchen, VIP Lounge" required />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateDeptDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createDeptMutation.isPending} data-testid="button-submit-dept">
-                {createDeptMutation.isPending && <Spinner className="mr-2" />}
+              <Button type="button" variant="outline" onClick={() => setCreateClientDeptDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={createClientDeptMutation.isPending}>
+                {createClientDeptMutation.isPending && <Spinner className="mr-2" />}
                 Create Department
               </Button>
             </DialogFooter>
@@ -595,6 +726,40 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
+      {/* Create Outlet Department Dialog */}
+      <Dialog open={createOutletDeptDialogOpen} onOpenChange={setCreateOutletDeptDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Outlet Department</DialogTitle>
+            <DialogDescription>Add a department specific to {selectedOutletForDept?.name}.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!selectedOutletForDept) return;
+            const formData = new FormData(e.currentTarget);
+            createOutletDeptMutation.mutate({ 
+              outletId: selectedOutletForDept.id, 
+              name: formData.get("deptName") as string 
+            });
+          }}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="outletDeptName">Department Name</Label>
+                <Input id="outletDeptName" name="deptName" placeholder="e.g., Private Dining, Rooftop Bar" required />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateOutletDeptDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={createOutletDeptMutation.isPending}>
+                {createOutletDeptMutation.isPending && <Spinner className="mr-2" />}
+                Create Department
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Department Dialog */}
       <Dialog open={!!editingDepartment} onOpenChange={() => setEditingDepartment(null)}>
         <DialogContent>
           <DialogHeader>
@@ -616,32 +781,24 @@ export default function Clients() {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="deptEditName">Department Name</Label>
-                  <Input 
-                    id="deptEditName" 
-                    name="deptEditName" 
-                    defaultValue={editingDepartment.name}
-                    required 
-                    data-testid="input-edit-dept-name"
-                  />
+                  <Input id="deptEditName" name="deptEditName" defaultValue={editingDepartment.name} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="deptStatus">Status</Label>
                   <Select name="deptStatus" defaultValue={editingDepartment.status || "active"}>
-                    <SelectTrigger data-testid="select-dept-status">
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="suspended">Suspended</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditingDepartment(null)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={updateDeptMutation.isPending} data-testid="button-save-dept">
+                <Button type="button" variant="outline" onClick={() => setEditingDepartment(null)}>Cancel</Button>
+                <Button type="submit" disabled={updateDeptMutation.isPending}>
                   {updateDeptMutation.isPending && <Spinner className="mr-2" />}
                   Save Changes
                 </Button>
@@ -651,23 +808,22 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Department Confirm */}
       <Dialog open={!!deleteDeptConfirm} onOpenChange={() => setDeleteDeptConfirm(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Department</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteDeptConfirm?.name}"? This will remove all associated data.
+              Are you sure you want to delete "{deleteDeptConfirm?.name}"? 
+              If this department has been used in any records, it will be deactivated instead of deleted.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteDeptConfirm(null)}>
-              Cancel
-            </Button>
+            <Button type="button" variant="outline" onClick={() => setDeleteDeptConfirm(null)}>Cancel</Button>
             <Button 
               variant="destructive" 
               onClick={() => deleteDeptConfirm && deleteDeptMutation.mutate(deleteDeptConfirm.id)}
               disabled={deleteDeptMutation.isPending}
-              data-testid="button-confirm-delete-dept"
             >
               {deleteDeptMutation.isPending && <Spinner className="mr-2" />}
               Delete Department
@@ -675,6 +831,182 @@ export default function Clients() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface OutletCardProps {
+  outlet: Outlet;
+  clientDepartments: Department[];
+  outletDepartments: Department[];
+  onAddDept: () => void;
+  onEditDept: (dept: Department) => void;
+  onDeleteDept: (dept: Department) => void;
+  onUpdateDept: (id: string, data: Partial<Department>) => void;
+  onUpdateOutlet: (id: string, data: Partial<Outlet>) => void;
+  onToggleDeptLink: (departmentId: string, isActive: boolean) => void;
+}
+
+function OutletCard({ 
+  outlet, 
+  clientDepartments, 
+  outletDepartments, 
+  onAddDept, 
+  onEditDept, 
+  onDeleteDept, 
+  onUpdateDept,
+  onUpdateOutlet,
+  onToggleDeptLink 
+}: OutletCardProps) {
+  const departmentMode = outlet.departmentMode || "inherit_only";
+  const showInherited = departmentMode === "inherit_only" || departmentMode === "inherit_add";
+  const showOutletDepts = departmentMode === "outlet_only" || departmentMode === "inherit_add";
+
+  const { data: deptLinks = [] } = useQuery({
+    queryKey: ["outlet-dept-links", outlet.id],
+    queryFn: () => departmentsApi.getOutletLinks(outlet.id),
+  });
+
+  const linkMap = new Map(deptLinks.map(l => [l.departmentId, l.isActive]));
+
+  return (
+    <div className="bg-card rounded-lg border p-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium text-sm">{outlet.name}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select 
+            value={departmentMode} 
+            onValueChange={(value) => onUpdateOutlet(outlet.id, { departmentMode: value })}
+          >
+            <SelectTrigger className="h-7 text-xs w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DEPARTMENT_MODES.map(mode => (
+                <SelectItem key={mode.value} value={mode.value}>
+                  <div>
+                    <div className="font-medium">{mode.label}</div>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {showOutletDepts && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="gap-1 h-7 text-xs"
+              onClick={onAddDept}
+            >
+              <Plus className="h-3 w-3" />
+              Add Dept
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="ml-6 space-y-2">
+        {showInherited && clientDepartments.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground font-medium mb-1">Inherited from Client:</p>
+            {clientDepartments.filter(d => d.status === "active").map((dept) => {
+              const isActive = linkMap.has(dept.id) ? linkMap.get(dept.id) : true;
+              return (
+                <div 
+                  key={dept.id} 
+                  className={cn(
+                    "flex items-center justify-between py-1.5 px-2 rounded group",
+                    isActive ? "bg-blue-50/50 dark:bg-blue-900/10" : "bg-gray-50 dark:bg-gray-800/50 opacity-60"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <FolderTree className="h-3 w-3 text-blue-500" />
+                    <span className="text-sm">{dept.name}</span>
+                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                      Client
+                    </Badge>
+                  </div>
+                  <Switch
+                    checked={isActive}
+                    onCheckedChange={(checked) => onToggleDeptLink(dept.id, checked)}
+                    className="h-4 w-8"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {showOutletDepts && (
+          <div className="space-y-1">
+            {(showInherited && clientDepartments.length > 0) && (
+              <p className="text-xs text-muted-foreground font-medium mb-1 mt-2">Outlet-Specific:</p>
+            )}
+            {outletDepartments.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic py-2">
+                {departmentMode === "outlet_only" 
+                  ? "No outlet departments yet. Click 'Add Dept' to create one."
+                  : "No additional outlet-specific departments."}
+              </p>
+            ) : (
+              outletDepartments.map((dept) => (
+                <div 
+                  key={dept.id} 
+                  className="flex items-center justify-between py-1.5 px-2 rounded bg-muted/50 group hover:bg-muted"
+                >
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-sm">{dept.name}</span>
+                    <Badge variant="outline" className={cn(
+                      "text-xs font-normal",
+                      dept.status === "active" 
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                        : "bg-gray-50 text-gray-500 border-gray-200"
+                    )}>
+                      {dept.status || "active"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEditDept(dept)}>
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6"
+                      onClick={() => {
+                        const newStatus = dept.status === "active" ? "inactive" : "active";
+                        onUpdateDept(dept.id, { status: newStatus });
+                      }}
+                    >
+                      {dept.status === "active" ? (
+                        <PauseCircle className="h-3 w-3 text-amber-600" />
+                      ) : (
+                        <PlayCircle className="h-3 w-3 text-emerald-600" />
+                      )}
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={() => onDeleteDept(dept)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {!showInherited && !showOutletDepts && (
+          <p className="text-xs text-muted-foreground italic">No departments configured.</p>
+        )}
+      </div>
     </div>
   );
 }
