@@ -50,11 +50,25 @@ const getRoleBadge = (role: string) => {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const [date, setDate] = useState<Date | undefined>(new Date());
   const { user, logout } = useAuth();
-  const { clients, selectedClient, selectedClientId, setSelectedClientId, isLoading: clientsLoading } = useClientContext();
+  const { 
+    clients, 
+    selectedClient, 
+    selectedClientId, 
+    setSelectedClientId, 
+    outlets,
+    selectedOutlet,
+    selectedOutletId,
+    setSelectedOutletId,
+    selectedDate,
+    setSelectedDate,
+    isLoading: clientsLoading 
+  } = useClientContext();
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [outletSearchOpen, setOutletSearchOpen] = useState(false);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
+
+  const date = selectedDate ? new Date(selectedDate + "T00:00:00") : new Date();
 
   const { data: departments = [] } = useQuery({
     queryKey: ["departments-by-client", selectedClientId],
@@ -133,6 +147,51 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Popover>
 
               {selectedClientId && (
+                <Popover open={outletSearchOpen} onOpenChange={setOutletSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={outletSearchOpen}
+                      className="w-[180px] h-9 justify-between bg-muted/30 border-dashed border-border"
+                      data-testid="select-outlet-context"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">
+                          {selectedOutlet ? selectedOutlet.name : "Select Outlet..."}
+                        </span>
+                      </div>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[240px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search outlets..." />
+                      <CommandList>
+                        <CommandEmpty>No outlets found.</CommandEmpty>
+                        <CommandGroup>
+                          {outlets.map((outlet) => (
+                            <CommandItem
+                              key={outlet.id}
+                              value={outlet.name}
+                              onSelect={() => {
+                                setSelectedOutletId(outlet.id);
+                                setOutletSearchOpen(false);
+                              }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", selectedOutletId === outlet.id ? "opacity-100" : "opacity-0")} />
+                              {outlet.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
+
+              {selectedClientId && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -189,7 +248,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <Calendar
                     mode="single"
                     selected={date}
-                    onSelect={setDate}
+                    onSelect={(newDate) => {
+                      if (newDate) {
+                        setSelectedDate(format(newDate, "yyyy-MM-dd"));
+                      }
+                    }}
                     initialFocus
                   />
                 </PopoverContent>
