@@ -4,6 +4,7 @@ import {
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
+  storeIssues, storeIssueLines, storeStock,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -17,7 +18,10 @@ import {
   type AuditContext, type InsertAuditContext,
   type Audit, type InsertAudit,
   type AuditReissuePermission, type InsertAuditReissuePermission,
-  type AuditChangeLog, type InsertAuditChangeLog
+  type AuditChangeLog, type InsertAuditChangeLog,
+  type StoreIssue, type InsertStoreIssue,
+  type StoreIssueLine, type InsertStoreIssueLine,
+  type StoreStock, type InsertStoreStock
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -216,6 +220,28 @@ export interface IStorage {
   // Audit Change Log
   createAuditChangeLog(log: InsertAuditChangeLog): Promise<AuditChangeLog>;
   getAuditChangeLogs(auditId: string): Promise<AuditChangeLog[]>;
+
+  // Store Issues
+  getStoreIssues(clientId: string, date?: Date): Promise<StoreIssue[]>;
+  getStoreIssue(id: string): Promise<StoreIssue | undefined>;
+  getStoreIssuesByDepartment(toDepartmentId: string, date?: Date): Promise<StoreIssue[]>;
+  createStoreIssue(issue: InsertStoreIssue): Promise<StoreIssue>;
+  updateStoreIssue(id: string, issue: Partial<InsertStoreIssue>): Promise<StoreIssue | undefined>;
+  deleteStoreIssue(id: string): Promise<boolean>;
+
+  // Store Issue Lines
+  getStoreIssueLines(storeIssueId: string): Promise<StoreIssueLine[]>;
+  createStoreIssueLine(line: InsertStoreIssueLine): Promise<StoreIssueLine>;
+  createStoreIssueLinesBulk(lines: InsertStoreIssueLine[]): Promise<StoreIssueLine[]>;
+  deleteStoreIssueLines(storeIssueId: string): Promise<boolean>;
+  getIssuedQtyForDepartment(departmentId: string, itemId: string, date: Date): Promise<number>;
+
+  // Store Stock
+  getStoreStock(clientId: string, storeDepartmentId: string, date?: Date): Promise<StoreStock[]>;
+  getStoreStockByItem(storeDepartmentId: string, itemId: string, date: Date): Promise<StoreStock | undefined>;
+  createStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
+  updateStoreStock(id: string, stock: Partial<InsertStoreStock>): Promise<StoreStock | undefined>;
+  upsertStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
 }
 
 export class DbStorage implements IStorage {
@@ -1342,6 +1368,183 @@ export class DbStorage implements IStorage {
 
   async getAuditChangeLogs(auditId: string): Promise<AuditChangeLog[]> {
     return db.select().from(auditChangeLog).where(eq(auditChangeLog.auditId, auditId)).orderBy(desc(auditChangeLog.createdAt));
+  }
+
+  // Store Issues
+  async getStoreIssues(clientId: string, date?: Date): Promise<StoreIssue[]> {
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      return db.select().from(storeIssues).where(
+        and(
+          eq(storeIssues.clientId, clientId),
+          gte(storeIssues.issueDate, startOfDay),
+          lte(storeIssues.issueDate, endOfDay)
+        )
+      ).orderBy(desc(storeIssues.createdAt));
+    }
+    return db.select().from(storeIssues).where(eq(storeIssues.clientId, clientId)).orderBy(desc(storeIssues.createdAt));
+  }
+
+  async getStoreIssue(id: string): Promise<StoreIssue | undefined> {
+    const [issue] = await db.select().from(storeIssues).where(eq(storeIssues.id, id));
+    return issue;
+  }
+
+  async getStoreIssuesByDepartment(toDepartmentId: string, date?: Date): Promise<StoreIssue[]> {
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      return db.select().from(storeIssues).where(
+        and(
+          eq(storeIssues.toDepartmentId, toDepartmentId),
+          gte(storeIssues.issueDate, startOfDay),
+          lte(storeIssues.issueDate, endOfDay)
+        )
+      ).orderBy(desc(storeIssues.createdAt));
+    }
+    return db.select().from(storeIssues).where(eq(storeIssues.toDepartmentId, toDepartmentId)).orderBy(desc(storeIssues.createdAt));
+  }
+
+  async createStoreIssue(insertIssue: InsertStoreIssue): Promise<StoreIssue> {
+    const [issue] = await db.insert(storeIssues).values(insertIssue).returning();
+    return issue;
+  }
+
+  async updateStoreIssue(id: string, updateData: Partial<InsertStoreIssue>): Promise<StoreIssue | undefined> {
+    const [issue] = await db.update(storeIssues).set(updateData).where(eq(storeIssues.id, id)).returning();
+    return issue;
+  }
+
+  async deleteStoreIssue(id: string): Promise<boolean> {
+    await db.delete(storeIssueLines).where(eq(storeIssueLines.storeIssueId, id));
+    await db.delete(storeIssues).where(eq(storeIssues.id, id));
+    return true;
+  }
+
+  // Store Issue Lines
+  async getStoreIssueLines(storeIssueId: string): Promise<StoreIssueLine[]> {
+    return db.select().from(storeIssueLines).where(eq(storeIssueLines.storeIssueId, storeIssueId));
+  }
+
+  async createStoreIssueLine(insertLine: InsertStoreIssueLine): Promise<StoreIssueLine> {
+    const [line] = await db.insert(storeIssueLines).values(insertLine).returning();
+    return line;
+  }
+
+  async createStoreIssueLinesBulk(insertLines: InsertStoreIssueLine[]): Promise<StoreIssueLine[]> {
+    if (insertLines.length === 0) return [];
+    return db.insert(storeIssueLines).values(insertLines).returning();
+  }
+
+  async deleteStoreIssueLines(storeIssueId: string): Promise<boolean> {
+    await db.delete(storeIssueLines).where(eq(storeIssueLines.storeIssueId, storeIssueId));
+    return true;
+  }
+
+  async getIssuedQtyForDepartment(departmentId: string, itemId: string, date: Date): Promise<number> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db
+      .select({ totalQty: sum(storeIssueLines.qtyIssued) })
+      .from(storeIssueLines)
+      .innerJoin(storeIssues, eq(storeIssueLines.storeIssueId, storeIssues.id))
+      .where(
+        and(
+          eq(storeIssues.toDepartmentId, departmentId),
+          eq(storeIssueLines.itemId, itemId),
+          gte(storeIssues.issueDate, startOfDay),
+          lte(storeIssues.issueDate, endOfDay),
+          eq(storeIssues.status, "posted")
+        )
+      );
+    
+    return parseFloat(result[0]?.totalQty || "0");
+  }
+
+  // Store Stock
+  async getStoreStock(clientId: string, storeDepartmentId: string, date?: Date): Promise<StoreStock[]> {
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      return db.select().from(storeStock).where(
+        and(
+          eq(storeStock.clientId, clientId),
+          eq(storeStock.storeDepartmentId, storeDepartmentId),
+          gte(storeStock.date, startOfDay),
+          lte(storeStock.date, endOfDay)
+        )
+      );
+    }
+    return db.select().from(storeStock).where(
+      and(
+        eq(storeStock.clientId, clientId),
+        eq(storeStock.storeDepartmentId, storeDepartmentId)
+      )
+    );
+  }
+
+  async getStoreStockByItem(storeDepartmentId: string, itemId: string, date: Date): Promise<StoreStock | undefined> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const [stock] = await db.select().from(storeStock).where(
+      and(
+        eq(storeStock.storeDepartmentId, storeDepartmentId),
+        eq(storeStock.itemId, itemId),
+        gte(storeStock.date, startOfDay),
+        lte(storeStock.date, endOfDay)
+      )
+    );
+    return stock;
+  }
+
+  async createStoreStock(insertStock: InsertStoreStock): Promise<StoreStock> {
+    const [stock] = await db.insert(storeStock).values(insertStock).returning();
+    return stock;
+  }
+
+  async updateStoreStock(id: string, updateData: Partial<InsertStoreStock>): Promise<StoreStock | undefined> {
+    const [stock] = await db.update(storeStock).set({
+      ...updateData,
+      updatedAt: new Date()
+    }).where(eq(storeStock.id, id)).returning();
+    return stock;
+  }
+
+  async upsertStoreStock(insertStock: InsertStoreStock): Promise<StoreStock> {
+    const existing = await this.getStoreStockByItem(
+      insertStock.storeDepartmentId,
+      insertStock.itemId,
+      insertStock.date
+    );
+    
+    if (existing) {
+      const [updated] = await db.update(storeStock).set({
+        openingQty: insertStock.openingQty,
+        addedQty: insertStock.addedQty,
+        issuedQty: insertStock.issuedQty,
+        closingQty: insertStock.closingQty,
+        physicalClosingQty: insertStock.physicalClosingQty,
+        varianceQty: insertStock.varianceQty,
+        costPriceSnapshot: insertStock.costPriceSnapshot,
+        updatedAt: new Date()
+      }).where(eq(storeStock.id, existing.id)).returning();
+      return updated;
+    }
+    
+    return this.createStoreStock(insertStock);
   }
 }
 
