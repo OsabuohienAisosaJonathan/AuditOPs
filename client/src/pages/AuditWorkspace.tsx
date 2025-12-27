@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
 import { AUDIT_TASKS } from "@/lib/mockData";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, ChevronRight, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale } from "lucide-react";
+import { CheckCircle2, Circle, ChevronRight, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, CalendarDays, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,18 +14,105 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useClientContext } from "@/lib/client-context";
-import { paymentDeclarationsApi, reconciliationHintApi, salesEntriesApi, type ReconciliationHint, type SupportingDocument, type SalesEntry, type SalesSummary } from "@/lib/api";
+import { paymentDeclarationsApi, reconciliationHintApi, salesEntriesApi, clientsApi, departmentsApi, type ReconciliationHint, type SupportingDocument, type SalesEntry, type SalesSummary } from "@/lib/api";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+
+type AuditPeriod = "daily" | "weekly" | "monthly" | "custom";
+
+const periodLabels: Record<AuditPeriod, string> = {
+  daily: "Daily Audit",
+  weekly: "Weekly Audit",
+  monthly: "Monthly Audit",
+  custom: "Custom Range Audit",
+};
 
 export default function AuditWorkspace() {
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  
+  const urlClientId = params.get("clientId");
+  const urlDepartmentId = params.get("departmentId");
+  const urlPeriod = (params.get("period") as AuditPeriod) || "daily";
+  const urlStartDate = params.get("startDate") || format(new Date(), "yyyy-MM-dd");
+  const urlEndDate = params.get("endDate") || format(new Date(), "yyyy-MM-dd");
+
+  const { setSelectedClientId, setSelectedDepartmentId, setSelectedDate, clients } = useClientContext();
+
+  useEffect(() => {
+    if (urlClientId) {
+      setSelectedClientId(urlClientId);
+    }
+    if (urlDepartmentId) {
+      setSelectedDepartmentId(urlDepartmentId);
+    }
+    if (urlStartDate) {
+      setSelectedDate(urlStartDate);
+    }
+  }, [urlClientId, urlDepartmentId, urlStartDate]);
+
+  const { data: auditClient } = useQuery({
+    queryKey: ["client", urlClientId],
+    queryFn: () => urlClientId ? clientsApi.get(urlClientId) : Promise.resolve(null),
+    enabled: !!urlClientId,
+  });
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ["departments", urlClientId],
+    queryFn: () => urlClientId ? departmentsApi.getByClient(urlClientId) : Promise.resolve([]),
+    enabled: !!urlClientId,
+  });
+
+  const auditDepartment = departments.find(d => d.id === urlDepartmentId);
+
+  const formatDateRange = () => {
+    if (urlPeriod === "daily") {
+      return format(parseISO(urlStartDate), "MMM d, yyyy");
+    }
+    const start = format(parseISO(urlStartDate), "MMM d");
+    const end = format(parseISO(urlEndDate), "MMM d, yyyy");
+    return `${start} – ${end}`;
+  };
+
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-6">
+    <div className="flex flex-col h-[calc(100vh-8rem)] gap-4">
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5 text-primary" />
+            <div>
+              <Badge variant="secondary" className="text-xs font-medium">
+                {periodLabels[urlPeriod]}
+              </Badge>
+              <p className="text-sm font-medium mt-0.5">{formatDateRange()}</p>
+            </div>
+          </div>
+          <Separator orientation="vertical" className="h-10" />
+          <div className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">Client</p>
+              <p className="text-sm font-medium">{auditClient?.name || "Loading..."}</p>
+            </div>
+          </div>
+          {auditDepartment && (
+            <>
+              <Separator orientation="vertical" className="h-10" />
+              <div>
+                <p className="text-xs text-muted-foreground">Department</p>
+                <p className="text-sm font-medium">{auditDepartment.name}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-1 gap-6 min-h-0">
       <aside className="w-80 shrink-0 flex flex-col gap-4">
         <Card className="h-full border-none shadow-none bg-transparent">
           <CardHeader className="px-0 pt-0">
-            <CardTitle>Daily Audit Checklist</CardTitle>
+            <CardTitle>{periodLabels[urlPeriod]} Checklist</CardTitle>
             <CardDescription>Step-by-step workflow</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
@@ -101,6 +189,7 @@ export default function AuditWorkspace() {
             </TabsContent>
           </div>
         </Tabs>
+      </div>
       </div>
     </div>
   );
