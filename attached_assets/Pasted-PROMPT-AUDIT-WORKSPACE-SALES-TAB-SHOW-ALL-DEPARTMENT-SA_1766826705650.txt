@@ -1,0 +1,108 @@
+PROMPT — AUDIT WORKSPACE (SALES TAB): SHOW ALL DEPARTMENT SALES FOR THE DAY + DAILY TOTAL SUMMARY
+
+You are fixing Audit Workspace → Sales tab in Miemploya AuditOps. Requirement: when viewing the Sales tab for a selected Client and Date, the page must display all departmental sales posted for that day, not only one department. The same page must also show a daily summary total across all departments (Cash, POS, Transfer, Voids/Comp, Grand Total).
+
+1) Data Loading Rules
+
+The Sales tab must fetch sales records by:
+
+clientId (required)
+
+date (required)
+
+departmentId (optional; only apply if user intentionally filters to one department)
+
+Default behavior:
+
+If the department dropdown is “All Departments” (default), load sales for every department for that client and date.
+
+The table must render grouped by department (recommended):
+
+Department name header row
+
+Entries under each department (shift + amounts)
+OR render as one table with a Department column.
+
+2) UI Requirements
+2.1 Department filter
+
+Add a department dropdown with:
+
+“All Departments” (default)
+
+each department
+
+Selecting a single department filters the list and summary accordingly.
+
+2.2 Daily summary (must be DB-driven)
+
+Add a “Daily Summary (All Departments)” panel that shows totals for the selected client + date:
+
+Total Cash
+
+Total POS
+
+Total Transfer
+
+Total Voids/Comp
+
+Grand Total
+
+(optional) Department count and number of entries
+
+This summary must update when:
+
+a new sale is posted
+
+an entry is edited/deleted
+
+department filter changes
+
+date changes
+
+3) Backend/API Requirements
+
+Ensure the Sales tab uses real DB endpoints:
+
+3.1 Sales list endpoint
+
+GET /api/sales?clientId=...&date=...&departmentId=...
+
+If departmentId is omitted, return all departments for that date.
+
+3.2 Summary endpoint
+
+GET /api/sales/summary?clientId=...&date=...&departmentId=...
+
+If departmentId is omitted, totals must be across all departments.
+
+Both endpoints must:
+
+use the same sales table as Sales Capture page
+
+return consistent JSON
+
+handle empty results gracefully
+
+4) Sync With Sales Capture
+
+Sales Capture posts per department. Audit Workspace Sales tab must immediately reflect:
+
+all departmental sales for the day
+
+updated totals
+Ensure both pages write to and read from the same DB source.
+
+5) Acceptance Tests (must pass)
+
+Post sales in Sales Capture for 3 departments (Main Bar, Kitchen, Restaurant) on the same date.
+
+Open Audit Workspace → Sales tab (All Departments).
+
+All 3 departments’ sales entries must display.
+
+Daily Summary must equal the combined totals of all 3 departments.
+
+Switch filter to “Kitchen” only → list and summary update to only Kitchen totals.
+
+Edit/delete a sales entry → totals update immediately.
