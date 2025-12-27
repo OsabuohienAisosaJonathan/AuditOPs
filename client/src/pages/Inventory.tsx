@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Filter, Search, Package, Users, Truck } from "lucide-react";
+import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { clientsApi, itemsApi, suppliersApi, Item, Supplier } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
@@ -20,6 +22,13 @@ import { useClientContext } from "@/lib/client-context";
 export default function Inventory() {
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
+  const [editItemOpen, setEditItemOpen] = useState(false);
+  const [editSupplierOpen, setEditSupplierOpen] = useState(false);
+  const [deleteItemOpen, setDeleteItemOpen] = useState(false);
+  const [deleteSupplierOpen, setDeleteSupplierOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  
   const queryClient = useQueryClient();
   const { clients, selectedClientId: contextClientId, selectedClient } = useClientContext();
 
@@ -49,6 +58,32 @@ export default function Inventory() {
     },
   });
 
+  const updateItemMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Item> }) => itemsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+      setEditItemOpen(false);
+      setSelectedItem(null);
+      toast.success("Item updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update item");
+    },
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: (id: string) => itemsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+      setDeleteItemOpen(false);
+      setSelectedItem(null);
+      toast.success("Item deleted successfully");
+    },
+    onError: () => {
+      toast.error("Failed to delete item");
+    },
+  });
+
   const createSupplierMutation = useMutation({
     mutationFn: (data: Partial<Supplier>) => suppliersApi.create({ ...data, clientId: selectedClientId }),
     onSuccess: () => {
@@ -60,6 +95,52 @@ export default function Inventory() {
       toast.error("Failed to create supplier");
     },
   });
+
+  const updateSupplierMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Supplier> }) => suppliersApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      setEditSupplierOpen(false);
+      setSelectedSupplier(null);
+      toast.success("Supplier updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update supplier");
+    },
+  });
+
+  const deleteSupplierMutation = useMutation({
+    mutationFn: (id: string) => suppliersApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      setDeleteSupplierOpen(false);
+      setSelectedSupplier(null);
+      toast.success("Supplier deleted successfully");
+    },
+    onError: () => {
+      toast.error("Failed to delete supplier");
+    },
+  });
+
+  const handleEditItem = (item: Item) => {
+    setSelectedItem(item);
+    setEditItemOpen(true);
+  };
+
+  const handleDeleteItem = (item: Item) => {
+    setSelectedItem(item);
+    setDeleteItemOpen(true);
+  };
+
+  const handleEditSupplier = (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setEditSupplierOpen(true);
+  };
+
+  const handleDeleteSupplier = (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setDeleteSupplierOpen(true);
+  };
 
   if (!clients || clients.length === 0) {
     return (
@@ -219,6 +300,7 @@ export default function Inventory() {
                       <TableHead className="text-right">Cost Price</TableHead>
                       <TableHead className="text-right">Selling Price</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="w-[80px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -238,6 +320,29 @@ export default function Inventory() {
                           )} data-testid={`badge-item-status-${item.id}`}>
                             {item.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-item-actions-${item.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid={`button-edit-item-${item.id}`}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleDeleteItem(item)} 
+                                className="text-red-600"
+                                data-testid={`button-delete-item-${item.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -347,6 +452,7 @@ export default function Inventory() {
                       <TableHead>Phone</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="w-[80px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -365,6 +471,29 @@ export default function Inventory() {
                             {supplier.status}
                           </Badge>
                         </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-supplier-actions-${supplier.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditSupplier(supplier)} data-testid={`button-edit-supplier-${supplier.id}`}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleDeleteSupplier(supplier)} 
+                                className="text-red-600"
+                                data-testid={`button-delete-supplier-${supplier.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -374,6 +503,178 @@ export default function Inventory() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Item Dialog */}
+      <Dialog open={editItemOpen} onOpenChange={setEditItemOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Item</DialogTitle>
+            <DialogDescription>Update the inventory item details.</DialogDescription>
+          </DialogHeader>
+          {selectedItem && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              updateItemMutation.mutate({
+                id: selectedItem.id,
+                data: {
+                  name: formData.get("name") as string,
+                  sku: formData.get("sku") as string || null,
+                  category: formData.get("category") as string,
+                  unit: formData.get("unit") as string,
+                  costPrice: formData.get("costPrice") as string,
+                  sellingPrice: formData.get("sellingPrice") as string,
+                  reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
+                },
+              });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-name">Item Name</Label>
+                    <Input id="edit-name" name="name" defaultValue={selectedItem.name} required data-testid="input-edit-item-name" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-sku">SKU</Label>
+                    <Input id="edit-sku" name="sku" defaultValue={selectedItem.sku || ""} data-testid="input-edit-item-sku" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-category">Category</Label>
+                    <Input id="edit-category" name="category" defaultValue={selectedItem.category} required data-testid="input-edit-item-category" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-unit">Unit</Label>
+                    <Input id="edit-unit" name="unit" defaultValue={selectedItem.unit} required data-testid="input-edit-item-unit" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-costPrice">Cost Price</Label>
+                    <Input id="edit-costPrice" name="costPrice" type="number" step="0.01" defaultValue={selectedItem.costPrice} required data-testid="input-edit-item-cost" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-sellingPrice">Selling Price</Label>
+                    <Input id="edit-sellingPrice" name="sellingPrice" type="number" step="0.01" defaultValue={selectedItem.sellingPrice} required data-testid="input-edit-item-price" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-reorderLevel">Reorder Level</Label>
+                  <Input id="edit-reorderLevel" name="reorderLevel" type="number" defaultValue={selectedItem.reorderLevel || 0} data-testid="input-edit-item-reorder" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditItemOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateItemMutation.isPending} data-testid="button-save-item">
+                  {updateItemMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Item Dialog */}
+      <AlertDialog open={deleteItemOpen} onOpenChange={setDeleteItemOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedItem?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => selectedItem && deleteItemMutation.mutate(selectedItem.id)}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete-item"
+            >
+              {deleteItemMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Supplier Dialog */}
+      <Dialog open={editSupplierOpen} onOpenChange={setEditSupplierOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Supplier</DialogTitle>
+            <DialogDescription>Update the supplier details.</DialogDescription>
+          </DialogHeader>
+          {selectedSupplier && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              updateSupplierMutation.mutate({
+                id: selectedSupplier.id,
+                data: {
+                  name: formData.get("name") as string,
+                  contactPerson: formData.get("contactPerson") as string || null,
+                  phone: formData.get("phone") as string || null,
+                  email: formData.get("email") as string || null,
+                  address: formData.get("address") as string || null,
+                },
+              });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-supplierName">Supplier Name</Label>
+                  <Input id="edit-supplierName" name="name" defaultValue={selectedSupplier.name} required data-testid="input-edit-supplier-name" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-contactPerson">Contact Person</Label>
+                  <Input id="edit-contactPerson" name="contactPerson" defaultValue={selectedSupplier.contactPerson || ""} data-testid="input-edit-supplier-contact" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-phone">Phone</Label>
+                    <Input id="edit-phone" name="phone" defaultValue={selectedSupplier.phone || ""} data-testid="input-edit-supplier-phone" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-email">Email</Label>
+                    <Input id="edit-email" name="email" type="email" defaultValue={selectedSupplier.email || ""} data-testid="input-edit-supplier-email" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-address">Address</Label>
+                  <Input id="edit-address" name="address" defaultValue={selectedSupplier.address || ""} data-testid="input-edit-supplier-address" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditSupplierOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateSupplierMutation.isPending} data-testid="button-save-supplier">
+                  {updateSupplierMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Supplier Dialog */}
+      <AlertDialog open={deleteSupplierOpen} onOpenChange={setDeleteSupplierOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Supplier</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedSupplier?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => selectedSupplier && deleteSupplierMutation.mutate(selectedSupplier.id)}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete-supplier"
+            >
+              {deleteSupplierMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
