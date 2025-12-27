@@ -364,6 +364,8 @@ export default function AuditWorkspace() {
               <TabsContent value="recon" className="mt-0">
                 <ReconTab 
                   reconciliations={reconciliations}
+                  stockCounts={stockCounts}
+                  items={items}
                   salesTotal={salesSummary?.grandTotal || 0}
                   purchasesTotal={totalPurchases}
                   varianceTotal={totalVariance}
@@ -1354,8 +1356,10 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
   );
 }
 
-function ReconTab({ reconciliations, salesTotal, purchasesTotal, varianceTotal, departmentId, dateStr, onRunReconciliation }: {
+function ReconTab({ reconciliations, stockCounts, items, salesTotal, purchasesTotal, varianceTotal, departmentId, dateStr, onRunReconciliation }: {
   reconciliations: Reconciliation[];
+  stockCounts: StockCount[];
+  items: Item[];
   salesTotal: number;
   purchasesTotal: number;
   varianceTotal: number;
@@ -1366,13 +1370,42 @@ function ReconTab({ reconciliations, salesTotal, purchasesTotal, varianceTotal, 
   const latestRecon = reconciliations[0];
   const isSubmitted = latestRecon?.status === "approved" || latestRecon?.status === "submitted";
 
+  const ssrvSummary = useMemo(() => {
+    let openingValue = 0;
+    let addedValue = 0;
+    let soldValue = 0;
+    let expectedValue = 0;
+    let actualValue = 0;
+
+    stockCounts.forEach(count => {
+      const item = items.find(i => i.id === count.itemId);
+      const costPrice = Number(item?.costPrice || 0);
+      const sellingPrice = Number(item?.sellingPrice || 0);
+      
+      const opening = Number(count.openingQty || 0);
+      const added = Number((count as any).addedQty || 0);
+      const sold = Number(count.soldQty || 0);
+      const expected = Number(count.expectedClosingQty || 0);
+      const actual = Number(count.actualClosingQty || 0);
+
+      openingValue += opening * costPrice;
+      addedValue += added * costPrice;
+      soldValue += sold * sellingPrice;
+      expectedValue += expected * costPrice;
+      actualValue += actual * costPrice;
+    });
+
+    const varianceValue = actualValue - expectedValue;
+    return { openingValue, addedValue, soldValue, expectedValue, actualValue, varianceValue };
+  }, [stockCounts, items]);
+
   return (
     <Card className="border-none shadow-none">
       <CardHeader className="px-0 pt-0 pb-4">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Reconciliation Summary</CardTitle>
-            <CardDescription>Final audit review and submission</CardDescription>
+            <CardDescription>SSRV-based reconciliation: Opening + Added - Sold = Expected vs Actual</CardDescription>
           </div>
           <Button 
             onClick={onRunReconciliation} 
@@ -1389,28 +1422,58 @@ function ReconTab({ reconciliations, salesTotal, purchasesTotal, varianceTotal, 
         <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Total Sales</CardDescription>
+              <CardDescription>Department Sales</CardDescription>
               <CardTitle className="text-2xl font-mono">₦ {salesTotal.toLocaleString()}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Total Purchases</CardDescription>
-              <CardTitle className="text-2xl font-mono">₦ {purchasesTotal.toLocaleString()}</CardTitle>
+              <CardDescription>Stock Count Value</CardDescription>
+              <CardTitle className="text-2xl font-mono">₦ {ssrvSummary.actualValue.toLocaleString()}</CardTitle>
             </CardHeader>
           </Card>
-          <Card className={cn(varianceTotal !== 0 && "border-amber-500")}>
+          <Card className={cn(ssrvSummary.varianceValue !== 0 && "border-amber-500")}>
             <CardHeader className="pb-2">
-              <CardDescription>Stock Variance</CardDescription>
+              <CardDescription>Stock Variance Value</CardDescription>
               <CardTitle className={cn(
                 "text-2xl font-mono",
-                varianceTotal < 0 ? "text-red-600" : varianceTotal > 0 ? "text-amber-600" : "text-emerald-600"
+                ssrvSummary.varianceValue < 0 ? "text-red-600" : ssrvSummary.varianceValue > 0 ? "text-amber-600" : "text-emerald-600"
               )}>
-                {varianceTotal > 0 ? "+" : ""}{varianceTotal} units
+                ₦ {ssrvSummary.varianceValue > 0 ? "+" : ""}{ssrvSummary.varianceValue.toLocaleString()}
               </CardTitle>
             </CardHeader>
           </Card>
         </div>
+
+        <Card className="bg-muted/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">SSRV Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-5 gap-4 text-center">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Opening Stock</p>
+                <p className="font-mono text-lg">₦ {ssrvSummary.openingValue.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1 text-emerald-700">+ Added (Store Issues)</p>
+                <p className="font-mono text-lg text-emerald-600">₦ {ssrvSummary.addedValue.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1 text-red-700">- Sold</p>
+                <p className="font-mono text-lg text-red-600">₦ {ssrvSummary.soldValue.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">= Expected</p>
+                <p className="font-mono text-lg">₦ {ssrvSummary.expectedValue.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Actual Count</p>
+                <p className="font-mono text-lg font-bold">₦ {ssrvSummary.actualValue.toLocaleString()}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {latestRecon && (
           <Card className="bg-muted/30">
