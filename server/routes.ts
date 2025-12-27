@@ -875,6 +875,378 @@ export async function registerRoutes(
     }
   });
 
+  // ============== USER-CLIENT ACCESS ==============
+  
+  app.get("/api/user-client-access/user/:userId", requireSuperAdmin, async (req, res) => {
+    try {
+      const accessList = await storage.getUserClientAccessList(req.params.userId);
+      res.json(accessList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/user-client-access/client/:clientId", requireSuperAdmin, async (req, res) => {
+    try {
+      const accessList = await storage.getClientUserAccessList(req.params.clientId);
+      res.json(accessList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/user-client-access/:userId/:clientId", requireAuth, async (req, res) => {
+    try {
+      const access = await storage.getUserClientAccess(req.params.userId, req.params.clientId);
+      res.json(access || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/user-client-access", requireSuperAdmin, async (req, res) => {
+    try {
+      const { userId, clientId, status, notes } = req.body;
+      
+      const existing = await storage.getUserClientAccess(userId, clientId);
+      if (existing) {
+        const updated = await storage.updateUserClientAccess(existing.id, { 
+          status, 
+          notes,
+          assignedBy: req.session.userId! 
+        });
+        
+        await storage.createAdminActivityLog({
+          actorId: req.session.userId!,
+          targetUserId: userId,
+          actionType: `client_access_${status}`,
+          beforeState: { status: existing.status },
+          afterState: { status },
+          reason: notes,
+          ipAddress: req.ip || "Unknown",
+        });
+        
+        return res.json(updated);
+      }
+      
+      const access = await storage.createUserClientAccess({
+        userId,
+        clientId,
+        status: status || "assigned",
+        assignedBy: req.session.userId!,
+        notes,
+      });
+      
+      await storage.createAdminActivityLog({
+        actorId: req.session.userId!,
+        targetUserId: userId,
+        actionType: "client_access_assigned",
+        afterState: { clientId, status: access.status },
+        reason: notes,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.status(201).json(access);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/user-client-access/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const { status, notes, suspendReason } = req.body;
+      
+      const updated = await storage.updateUserClientAccess(req.params.id, { 
+        status, 
+        notes,
+        suspendReason: status === "suspended" ? suspendReason : null,
+      });
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Access record not found" });
+      }
+      
+      await storage.createAdminActivityLog({
+        actorId: req.session.userId!,
+        targetUserId: updated.userId,
+        actionType: `client_access_${status}`,
+        afterState: { clientId: updated.clientId, status },
+        reason: notes || suspendReason,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/user-client-access/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      await storage.deleteUserClientAccess(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== AUDIT CONTEXT ==============
+
+  app.get("/api/audit-context", requireAuth, async (req, res) => {
+    try {
+      const context = await storage.getActiveAuditContext(req.session.userId!);
+      res.json(context || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audit-context", requireAuth, async (req, res) => {
+    try {
+      const { clientId, departmentId, period, startDate, endDate } = req.body;
+      
+      if (!clientId || !startDate || !endDate) {
+        return res.status(400).json({ error: "clientId, startDate, and endDate are required" });
+      }
+      
+      const context = await storage.createAuditContext({
+        userId: req.session.userId!,
+        clientId,
+        departmentId,
+        period: period || "daily",
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        status: "active",
+      });
+      
+      res.status(201).json(context);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/audit-context", requireAuth, async (req, res) => {
+    try {
+      await storage.clearAuditContext(req.session.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== AUDITS ==============
+
+  app.get("/api/audits", requireAuth, async (req, res) => {
+    try {
+      const { clientId, departmentId, status } = req.query;
+      const audits = await storage.getAudits({
+        clientId: clientId as string,
+        departmentId: departmentId as string,
+        status: status as string,
+      });
+      res.json(audits);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/audits/:id", requireAuth, async (req, res) => {
+    try {
+      const audit = await storage.getAudit(req.params.id);
+      if (!audit) {
+        return res.status(404).json({ error: "Audit not found" });
+      }
+      res.json(audit);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audits", requireAuth, async (req, res) => {
+    try {
+      const { clientId, departmentId, period, startDate, endDate, notes } = req.body;
+      
+      const existingAudit = await storage.getAuditByPeriod(
+        clientId, 
+        departmentId, 
+        new Date(startDate), 
+        new Date(endDate)
+      );
+      
+      if (existingAudit) {
+        return res.json(existingAudit);
+      }
+      
+      const audit = await storage.createAudit({
+        clientId,
+        departmentId,
+        period: period || "daily",
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        status: "draft",
+        notes,
+        createdBy: req.session.userId!,
+      });
+      
+      res.status(201).json(audit);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/audits/:id", requireAuth, async (req, res) => {
+    try {
+      const audit = await storage.getAudit(req.params.id);
+      if (!audit) {
+        return res.status(404).json({ error: "Audit not found" });
+      }
+      
+      const user = await storage.getUser(req.session.userId!);
+      
+      if (audit.status !== "draft" && user?.role !== "super_admin") {
+        const hasReissuePermission = await storage.getAuditReissuePermission(audit.id, req.session.userId!);
+        if (!hasReissuePermission) {
+          return res.status(403).json({ error: "Cannot edit submitted audit without reissue permission" });
+        }
+      }
+      
+      const updated = await storage.updateAudit(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audits/:id/submit", requireAuth, async (req, res) => {
+    try {
+      const audit = await storage.getAudit(req.params.id);
+      if (!audit) {
+        return res.status(404).json({ error: "Audit not found" });
+      }
+      
+      if (audit.status !== "draft") {
+        return res.status(400).json({ error: "Audit has already been submitted" });
+      }
+      
+      const submitted = await storage.submitAudit(req.params.id, req.session.userId!);
+      
+      await storage.createAuditChangeLog({
+        auditId: audit.id,
+        userId: req.session.userId!,
+        clientId: audit.clientId,
+        departmentId: audit.departmentId,
+        actionType: "audit_submitted",
+        entityType: "audit",
+        entityId: audit.id,
+        beforeState: { status: "draft" },
+        afterState: { status: "submitted" },
+      });
+      
+      res.json(submitted);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audits/:id/lock", requireSuperAdmin, async (req, res) => {
+    try {
+      const audit = await storage.getAudit(req.params.id);
+      if (!audit) {
+        return res.status(404).json({ error: "Audit not found" });
+      }
+      
+      const locked = await storage.lockAudit(req.params.id, req.session.userId!);
+      
+      await storage.createAuditChangeLog({
+        auditId: audit.id,
+        userId: req.session.userId!,
+        clientId: audit.clientId,
+        departmentId: audit.departmentId,
+        actionType: "audit_locked",
+        entityType: "audit",
+        entityId: audit.id,
+        beforeState: { status: audit.status },
+        afterState: { status: "locked" },
+      });
+      
+      res.json(locked);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== AUDIT REISSUE PERMISSIONS ==============
+
+  app.get("/api/audits/:id/reissue-permissions", requireSuperAdmin, async (req, res) => {
+    try {
+      const permissions = await storage.getAuditReissuePermissions(req.params.id);
+      res.json(permissions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audits/:id/reissue-permissions", requireSuperAdmin, async (req, res) => {
+    try {
+      const { grantedTo, expiresAt, scope, reason } = req.body;
+      
+      const permission = await storage.createAuditReissuePermission({
+        auditId: req.params.id,
+        grantedTo,
+        grantedBy: req.session.userId!,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        scope: scope || "edit_after_submission",
+        reason,
+      });
+      
+      const audit = await storage.getAudit(req.params.id);
+      
+      await storage.createAuditChangeLog({
+        auditId: req.params.id,
+        userId: req.session.userId!,
+        clientId: audit?.clientId,
+        departmentId: audit?.departmentId,
+        actionType: "reissue_permission_granted",
+        entityType: "audit_reissue_permission",
+        entityId: permission.id,
+        afterState: { grantedTo, scope, reason },
+      });
+      
+      res.status(201).json(permission);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/audits/:id/reissue-permissions/:permissionId", requireSuperAdmin, async (req, res) => {
+    try {
+      await storage.revokeAuditReissuePermission(req.params.permissionId);
+      
+      await storage.createAuditChangeLog({
+        auditId: req.params.id,
+        userId: req.session.userId!,
+        actionType: "reissue_permission_revoked",
+        entityType: "audit_reissue_permission",
+        entityId: req.params.permissionId,
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== AUDIT CHANGE LOG ==============
+
+  app.get("/api/audits/:id/change-log", requireAuth, async (req, res) => {
+    try {
+      const logs = await storage.getAuditChangeLogs(req.params.id);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============== CLIENTS ==============
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {
