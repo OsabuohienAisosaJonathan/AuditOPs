@@ -232,6 +232,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   try {
     const response = await fetch(`${API_BASE}${url}`, {
       ...options,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
