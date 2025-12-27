@@ -16,7 +16,6 @@ import { salesEntriesApi, SalesEntry, SalesSummary } from "@/lib/api";
 import { useClientContext } from "@/lib/client-context";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
-import { AuditContextGate, AuditContextBanner } from "@/components/AuditContextGate";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -229,9 +228,7 @@ export default function SalesCapture() {
   const contextReady = !!selectedClientId && !!selectedDepartmentId;
 
   return (
-    <AuditContextGate pageName="Sales Capture">
     <div className="space-y-6 max-w-[1600px] mx-auto">
-      <AuditContextBanner />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Sales Capture</h1>
@@ -690,6 +687,5 @@ export default function SalesCapture() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-    </AuditContextGate>
   );
 }
