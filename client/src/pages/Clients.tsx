@@ -135,7 +135,7 @@ export default function Clients() {
   });
 
   const updateDeptMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Department> }) => departmentsApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; categoryId?: string | null; status?: string } }) => departmentsApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["departments", expandedClientId] });
       setEditingDepartment(null);
@@ -195,7 +195,7 @@ export default function Clients() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Spinner size="lg" />
+        <Spinner className="h-8 w-8" />
       </div>
     );
   }
@@ -586,12 +586,12 @@ export default function Clients() {
               {expandedCategories.length > 0 && (
                 <div className="space-y-2">
                   <Label>Category (Optional)</Label>
-                  <Select value={selectedCategoryForDept || ""} onValueChange={(v) => setSelectedCategoryForDept(v || null)}>
+                  <Select value={selectedCategoryForDept || "none"} onValueChange={(v) => setSelectedCategoryForDept(v === "none" ? null : v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a category..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No Category</SelectItem>
+                      <SelectItem value="none">No Category</SelectItem>
                       {expandedCategories.map((cat) => (
                         <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                       ))}
