@@ -1035,8 +1035,8 @@ function ReconTab({ reconciliations, salesTotal, purchasesTotal, varianceTotal, 
         {!latestRecon && (
           <div className="text-center py-12 border-2 border-dashed rounded-lg">
             <Scale className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No reconciliation computed yet.</p>
-            <p className="text-sm text-muted-foreground mt-1">Complete all steps above, then click "Run Reconciliation"</p>
+            <span className="block text-muted-foreground">No reconciliation computed yet.</span>
+            <span className="block text-sm text-muted-foreground mt-1">Complete all steps above, then click "Run Reconciliation"</span>
           </div>
         )}
       </CardContent>
@@ -1058,11 +1058,13 @@ function RunReconciliationDialog({ open, onOpenChange, onCreateException, onProc
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             Submit Audit & Run Reconciliation
           </AlertDialogTitle>
-          <AlertDialogDescription className="text-left space-y-2">
-            <p>Before final submission, do you want to create an Exception case for any discrepancy found?</p>
-            <p className="text-sm text-muted-foreground">
-              Creating exceptions helps track and resolve variances. You can always add exceptions later.
-            </p>
+          <AlertDialogDescription asChild>
+            <div className="text-left space-y-2">
+              <span className="block">Before final submission, do you want to create an Exception case for any discrepancy found?</span>
+              <span className="block text-sm text-muted-foreground">
+                Creating exceptions helps track and resolve variances. You can always add exceptions later.
+              </span>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="flex-col sm:flex-row gap-2">
