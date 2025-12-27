@@ -107,7 +107,7 @@ export default function AuditWorkspace() {
 }
 
 function SalesCapture() {
-  const { selectedClientId, selectedOutletId, selectedDate } = useClientContext();
+  const { selectedClientId, selectedDepartmentId, selectedDate } = useClientContext();
   const queryClient = useQueryClient();
   
   const [reportedCash, setReportedCash] = useState("");
@@ -120,15 +120,15 @@ function SalesCapture() {
   const dateStr = selectedDate || format(new Date(), "yyyy-MM-dd");
 
   const { data: reconciliationHint, isLoading: isLoadingHint, refetch: refetchHint } = useQuery({
-    queryKey: ["reconciliation-hint", selectedOutletId, dateStr],
-    queryFn: () => selectedOutletId ? reconciliationHintApi.get(selectedOutletId, dateStr) : Promise.resolve(null),
-    enabled: !!selectedOutletId,
+    queryKey: ["reconciliation-hint", selectedDepartmentId, dateStr],
+    queryFn: () => selectedDepartmentId ? reconciliationHintApi.get(selectedDepartmentId, dateStr) : Promise.resolve(null),
+    enabled: !!selectedDepartmentId,
   });
 
   const saveDeclarationMutation = useMutation({
     mutationFn: async (data: {
       clientId: string;
-      outletId: string;
+      departmentId: string;
       date: string;
       reportedCash: string;
       reportedPosSettlement: string;
@@ -149,8 +149,8 @@ function SalesCapture() {
   });
 
   const handleSaveDeclaration = async () => {
-    if (!selectedClientId || !selectedOutletId) {
-      toast.error("Please select a client and outlet first");
+    if (!selectedClientId || !selectedDepartmentId) {
+      toast.error("Please select a client and department first");
       return;
     }
     
@@ -158,7 +158,7 @@ function SalesCapture() {
     try {
       await saveDeclarationMutation.mutateAsync({
         clientId: selectedClientId,
-        outletId: selectedOutletId,
+        departmentId: selectedDepartmentId,
         date: dateStr,
         reportedCash: reportedCash || "0",
         reportedPosSettlement: reportedPos || "0",
@@ -387,7 +387,7 @@ function SalesCapture() {
               <div className="flex justify-end">
                 <Button 
                   onClick={handleSaveDeclaration}
-                  disabled={isSaving || !selectedClientId || !selectedOutletId}
+                  disabled={isSaving || !selectedClientId || !selectedDepartmentId}
                   className="gap-2"
                   data-testid="button-save-declaration"
                 >
@@ -424,9 +424,9 @@ function SalesCapture() {
                        <div className="flex items-center justify-center py-4">
                          <Spinner className="h-6 w-6" />
                        </div>
-                     ) : !selectedOutletId ? (
+                     ) : !selectedDepartmentId ? (
                        <p className="text-sm text-muted-foreground text-center py-4">
-                         Select an outlet to see reconciliation
+                         Select a department to see reconciliation
                        </p>
                      ) : (
                        <>

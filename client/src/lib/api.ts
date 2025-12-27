@@ -9,7 +9,7 @@ export interface User {
   status?: string;
   lastLoginAt?: Date | null;
   createdAt?: Date;
-  accessScope?: { clientIds?: string[]; outletIds?: string[]; global?: boolean } | null;
+  accessScope?: { clientIds?: string[]; departmentIds?: string[]; global?: boolean } | null;
   phone?: string | null;
   mustChangePassword?: boolean;
 }
@@ -40,35 +40,23 @@ export interface Client {
   createdAt: Date;
 }
 
-export interface Outlet {
+export interface Category {
   id: string;
   clientId: string;
   name: string;
-  departmentMode: string;
+  status: string;
+  createdBy: string | null;
   createdAt: Date;
 }
 
 export interface Department {
   id: string;
-  clientId: string | null;
-  outletId: string | null;
-  scope: string;
+  clientId: string;
+  categoryId: string | null;
   name: string;
   status: string;
-  deactivationReason: string | null;
-  createdAt: Date;
-}
-
-export interface EffectiveDepartment extends Department {
-  source: 'client' | 'outlet';
-  isActive: boolean;
-}
-
-export interface OutletDepartmentLink {
-  id: string;
-  outletId: string;
-  departmentId: string;
-  isActive: boolean;
+  suspendReason: string | null;
+  createdBy: string | null;
   createdAt: Date;
 }
 
@@ -81,7 +69,7 @@ export interface SupportingDocument {
 export interface PaymentDeclaration {
   id: string;
   clientId: string;
-  outletId: string;
+  departmentId: string;
   date: string;
   reportedCash: string | null;
   reportedPosSettlement: string | null;
@@ -174,6 +162,7 @@ export interface StockCount {
 
 export interface SalesEntry {
   id: string;
+  clientId: string;
   departmentId: string;
   date: Date;
   shift: string | null;
@@ -191,7 +180,8 @@ export interface SalesEntry {
 
 export interface Purchase {
   id: string;
-  outletId: string;
+  clientId: string;
+  departmentId: string;
   supplierName: string;
   invoiceRef: string;
   invoiceDate: Date;
@@ -204,7 +194,8 @@ export interface Purchase {
 
 export interface StockMovement {
   id: string;
-  outletId: string;
+  clientId: string;
+  departmentId: string;
   movementType: string;
   sourceLocation: string | null;
   destinationLocation: string | null;
@@ -217,6 +208,7 @@ export interface StockMovement {
 
 export interface Reconciliation {
   id: string;
+  clientId: string;
   departmentId: string;
   date: Date;
   openingStock: any;
@@ -235,8 +227,8 @@ export interface Reconciliation {
 export interface Exception {
   id: string;
   caseNumber: string;
-  outletId: string;
-  departmentId: string | null;
+  clientId: string;
+  departmentId: string;
   summary: string;
   description: string | null;
   impact: string | null;
@@ -270,7 +262,7 @@ export interface AuditLog {
 
 export interface DashboardSummary {
   totalClients: number;
-  activeOutlets: number;
+  totalDepartments: number;
   totalSalesToday: number;
   totalPurchasesToday: number;
   totalSales: number;
@@ -372,6 +364,7 @@ export const authApi = {
 
 export interface DashboardFilters {
   clientId?: string;
+  categoryId?: string;
   departmentId?: string;
   date?: string;
 }
@@ -380,6 +373,7 @@ export const dashboardApi = {
   getSummary: (filters?: DashboardFilters) => {
     const params = new URLSearchParams();
     if (filters?.clientId) params.set("clientId", filters.clientId);
+    if (filters?.categoryId) params.set("categoryId", filters.categoryId);
     if (filters?.departmentId) params.set("departmentId", filters.departmentId);
     if (filters?.date) params.set("date", filters.date);
     const queryString = params.toString();
@@ -387,31 +381,44 @@ export const dashboardApi = {
   },
 };
 
+export const categoriesApi = {
+  getAll: () => fetchApi<Category[]>("/categories"),
+  getByClient: (clientId: string) => fetchApi<Category[]>(`/clients/${clientId}/categories`),
+  get: (id: string) => fetchApi<Category>(`/categories/${id}`),
+  create: (data: { clientId: string; name: string }) =>
+    fetchApi<Category>("/categories", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<{ name: string; status: string }>) =>
+    fetchApi<Category>(`/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/categories/${id}`, {
+      method: "DELETE",
+    }),
+};
+
 export const departmentsApi = {
   getAll: () => fetchApi<Department[]>("/departments"),
-  getByClient: (clientId: string) => fetchApi<Department[]>(`/departments/by-client/${clientId}`),
-  getClientDepartments: (clientId: string) => fetchApi<Department[]>(`/clients/${clientId}/departments`),
-  getByOutlet: (outletId: string) => fetchApi<Department[]>(`/outlets/${outletId}/departments`),
-  getEffectiveForOutlet: (outletId: string) => fetchApi<EffectiveDepartment[]>(`/outlets/${outletId}/effective-departments`),
+  getByClient: (clientId: string) => fetchApi<Department[]>(`/clients/${clientId}/departments`),
+  getByCategory: (categoryId: string) => fetchApi<Department[]>(`/categories/${categoryId}/departments`),
   get: (id: string) => fetchApi<Department>(`/departments/${id}`),
   checkUsage: (id: string) => fetchApi<{ isUsed: boolean }>(`/departments/${id}/usage`),
   
-  createForClient: (clientId: string, data: any) =>
+  create: (clientId: string, data: { name: string; categoryId?: string }) =>
     fetchApi<Department>(`/clients/${clientId}/departments`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  createForOutlet: (outletId: string, data: any) =>
-    fetchApi<Department>(`/outlets/${outletId}/departments`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  createBulk: (data: { departments: string[]; clientId?: string; outletId?: string; scope: string }) =>
+  createBulk: (data: { departments: string[]; clientId: string; categoryId?: string }) =>
     fetchApi<Department[]>("/departments/bulk", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Partial<{ name: string; categoryId: string | null; status: string; suspendReason: string }>) =>
     fetchApi<Department>(`/departments/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
@@ -420,24 +427,17 @@ export const departmentsApi = {
     fetchApi<{ success: boolean } | { error: string }>(`/departments/${id}`, {
       method: "DELETE",
     }),
-    
-  getOutletLinks: (outletId: string) => fetchApi<OutletDepartmentLink[]>(`/outlets/${outletId}/department-links`),
-  toggleOutletLink: (outletId: string, departmentId: string, isActive: boolean) =>
-    fetchApi<OutletDepartmentLink>(`/outlets/${outletId}/department-links`, {
-      method: "POST",
-      body: JSON.stringify({ departmentId, isActive }),
-    }),
 };
 
 export const clientsApi = {
   getAll: () => fetchApi<Client[]>("/clients"),
   get: (id: string) => fetchApi<Client>(`/clients/${id}`),
-  create: (data: any) =>
+  create: (data: { name: string; varianceThreshold?: string }) =>
     fetchApi<Client>("/clients", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Partial<{ name: string; status: string; varianceThreshold: string }>) =>
     fetchApi<Client>(`/clients/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
@@ -448,38 +448,19 @@ export const clientsApi = {
     }),
 };
 
-export const outletsApi = {
-  getByClient: (clientId: string) => fetchApi<Outlet[]>(`/outlets?clientId=${clientId}`),
-  get: (id: string) => fetchApi<Outlet>(`/outlets/${id}`),
-  create: (data: any) =>
-    fetchApi<Outlet>("/outlets", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: any) =>
-    fetchApi<Outlet>(`/outlets/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-  delete: (id: string) =>
-    fetchApi<void>(`/outlets/${id}`, {
-      method: "DELETE",
-    }),
-};
-
 export const paymentDeclarationsApi = {
-  getByOutlet: (outletId: string, startDate?: string, endDate?: string) => {
+  getByDepartment: (departmentId: string, startDate?: string, endDate?: string) => {
     const params = new URLSearchParams();
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     const queryString = params.toString();
-    return fetchApi<PaymentDeclaration[]>(`/payment-declarations/${outletId}${queryString ? `?${queryString}` : ""}`);
+    return fetchApi<PaymentDeclaration[]>(`/payment-declarations/${departmentId}${queryString ? `?${queryString}` : ""}`);
   },
-  get: (clientId: string, outletId: string, date: string) => 
-    fetchApi<PaymentDeclaration>(`/payment-declarations/${clientId}/${outletId}/${date}`),
+  get: (clientId: string, departmentId: string, date: string) => 
+    fetchApi<PaymentDeclaration>(`/payment-declarations/${clientId}/${departmentId}/${date}`),
   create: (data: {
     clientId: string;
-    outletId: string;
+    departmentId: string;
     date: string;
     reportedCash?: string;
     reportedPosSettlement?: string;
@@ -509,8 +490,8 @@ export const paymentDeclarationsApi = {
 };
 
 export const reconciliationHintApi = {
-  get: (outletId: string, date: string) => 
-    fetchApi<ReconciliationHint>(`/reconciliation-hint/${outletId}/${date}`),
+  get: (departmentId: string, date: string) => 
+    fetchApi<ReconciliationHint>(`/reconciliation-hint/${departmentId}/${date}`),
 };
 
 export const suppliersApi = {
@@ -552,7 +533,12 @@ export const itemsApi = {
 };
 
 export const purchasesApi = {
-  getAll: (outletId?: string) => fetchApi<Purchase[]>(`/purchases${outletId ? `?outletId=${outletId}` : ""}`),
+  getAll: (clientId?: string, departmentId?: string) => {
+    const params = new URLSearchParams();
+    if (clientId) params.append("clientId", clientId);
+    if (departmentId) params.append("departmentId", departmentId);
+    return fetchApi<Purchase[]>(`/purchases${params.toString() ? `?${params}` : ""}`);
+  },
   get: (id: string) => fetchApi<Purchase>(`/purchases/${id}`),
   getLines: (id: string) => fetchApi<PurchaseLine[]>(`/purchases/${id}/lines`),
   create: (data: any) =>
@@ -649,9 +635,10 @@ export const reconciliationsApi = {
 };
 
 export const exceptionsApi = {
-  getAll: (filters?: { outletId?: string; status?: string; severity?: string }) => {
+  getAll: (filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string }) => {
     const params = new URLSearchParams();
-    if (filters?.outletId) params.append("outletId", filters.outletId);
+    if (filters?.clientId) params.append("clientId", filters.clientId);
+    if (filters?.departmentId) params.append("departmentId", filters.departmentId);
     if (filters?.status) params.append("status", filters.status);
     if (filters?.severity) params.append("severity", filters.severity);
     return fetchApi<Exception[]>(`/exceptions${params.toString() ? `?${params}` : ""}`);
@@ -756,51 +743,27 @@ export const usersApi = {
 };
 
 export const adminActivityLogsApi = {
-  getAll: (filters?: { actorId?: string; targetUserId?: string; actionType?: string; startDate?: string; endDate?: string }) => {
+  getAll: (filters?: {
+    actorId?: string;
+    targetUserId?: string;
+    actionType?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.actorId) params.append("actorId", filters.actorId);
     if (filters?.targetUserId) params.append("targetUserId", filters.targetUserId);
     if (filters?.actionType) params.append("actionType", filters.actionType);
     if (filters?.startDate) params.append("startDate", filters.startDate);
     if (filters?.endDate) params.append("endDate", filters.endDate);
-    const query = params.toString() ? `?${params.toString()}` : "";
-    return fetchApi<AdminActivityLog[]>(`/admin-activity-logs${query}`);
+    return fetchApi<AdminActivityLog[]>(`/admin-activity-logs?${params}`);
   },
 };
 
-export const changePasswordApi = {
+export const passwordApi = {
   change: (currentPassword: string, newPassword: string) =>
     fetchApi<{ success: boolean; message: string }>("/auth/change-password", {
       method: "POST",
       body: JSON.stringify({ currentPassword, newPassword }),
-    }),
-};
-
-export const movementsApi = {
-  getByOutlet: (outletId: string) => fetchApi<StockMovement[]>(`/outlets/${outletId}/movements`),
-  create: (data: Partial<StockMovement>) =>
-    fetchApi<StockMovement>("/movements", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-};
-
-export const salesApi = {
-  getByDepartment: (departmentId: string, startDate?: string, endDate?: string) => {
-    const params = new URLSearchParams();
-    if (startDate) params.append("startDate", startDate);
-    if (endDate) params.append("endDate", endDate);
-    const query = params.toString() ? `?${params.toString()}` : "";
-    return fetchApi<SalesEntry[]>(`/departments/${departmentId}/sales${query}`);
-  },
-  create: (data: Partial<SalesEntry>) =>
-    fetchApi<SalesEntry>("/sales", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: Partial<SalesEntry>) =>
-    fetchApi<SalesEntry>(`/sales/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
     }),
 };

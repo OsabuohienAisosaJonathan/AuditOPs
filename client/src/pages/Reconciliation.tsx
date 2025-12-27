@@ -134,7 +134,7 @@ export default function ReconciliationPage() {
                   </EmptyMedia>
                   <EmptyHeader>
                     <EmptyTitle>No departments available</EmptyTitle>
-                    <EmptyDescription>Create outlets and departments first to run reconciliations.</EmptyDescription>
+                    <EmptyDescription>Create departments first to run reconciliations.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               ) : !reconciliations || reconciliations.length === 0 ? (

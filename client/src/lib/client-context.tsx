@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { clientsApi, outletsApi, Client, Outlet } from "@/lib/api";
+import { clientsApi, categoriesApi, departmentsApi, Client, Category, Department } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { format } from "date-fns";
 
@@ -11,11 +11,17 @@ interface ClientContextType {
   clients: Client[];
   isLoading: boolean;
   
-  selectedOutlet: Outlet | null;
-  selectedOutletId: string | null;
-  setSelectedOutletId: (outletId: string | null) => void;
-  outlets: Outlet[];
-  isLoadingOutlets: boolean;
+  selectedCategory: Category | null;
+  selectedCategoryId: string | null;
+  setSelectedCategoryId: (categoryId: string | null) => void;
+  categories: Category[];
+  isLoadingCategories: boolean;
+  
+  selectedDepartment: Department | null;
+  selectedDepartmentId: string | null;
+  setSelectedDepartmentId: (departmentId: string | null) => void;
+  departments: Department[];
+  isLoadingDepartments: boolean;
   
   selectedDate: string;
   setSelectedDate: (date: string) => void;
@@ -32,9 +38,16 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     return null;
   });
   
-  const [selectedOutletId, setSelectedOutletIdState] = useState<string | null>(() => {
+  const [selectedCategoryId, setSelectedCategoryIdState] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("selectedOutletId") || null;
+      return localStorage.getItem("selectedCategoryId") || null;
+    }
+    return null;
+  });
+  
+  const [selectedDepartmentId, setSelectedDepartmentIdState] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("selectedDepartmentId") || null;
     }
     return null;
   });
@@ -54,35 +67,57 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     enabled: !!user,
   });
 
-  const { data: outlets = [], isLoading: isLoadingOutlets } = useQuery({
-    queryKey: ["outlets", selectedClientId],
-    queryFn: () => selectedClientId ? outletsApi.getByClient(selectedClientId) : Promise.resolve([]),
+  const { data: categories = [], isLoading: isLoadingCategories } = useQuery({
+    queryKey: ["categories", selectedClientId],
+    queryFn: () => selectedClientId ? categoriesApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!user && !!selectedClientId,
+  });
+
+  const { data: departments = [], isLoading: isLoadingDepartments } = useQuery({
+    queryKey: ["departments", selectedClientId],
+    queryFn: () => selectedClientId ? departmentsApi.getByClient(selectedClientId) : Promise.resolve([]),
     enabled: !!user && !!selectedClientId,
   });
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) || null;
-  const selectedOutlet = outlets.find((o) => o.id === selectedOutletId) || null;
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId) || null;
+  const selectedDepartment = departments.find((d) => d.id === selectedDepartmentId) || null;
 
   const setSelectedClientId = (clientId: string | null) => {
     setSelectedClientIdState(clientId);
-    setSelectedOutletIdState(null);
+    setSelectedCategoryIdState(null);
+    setSelectedDepartmentIdState(null);
     if (typeof window !== "undefined") {
       if (clientId) {
         localStorage.setItem("selectedClientId", clientId);
       } else {
         localStorage.removeItem("selectedClientId");
       }
-      localStorage.removeItem("selectedOutletId");
+      localStorage.removeItem("selectedCategoryId");
+      localStorage.removeItem("selectedDepartmentId");
     }
   };
 
-  const setSelectedOutletId = (outletId: string | null) => {
-    setSelectedOutletIdState(outletId);
+  const setSelectedCategoryId = (categoryId: string | null) => {
+    setSelectedCategoryIdState(categoryId);
+    setSelectedDepartmentIdState(null);
     if (typeof window !== "undefined") {
-      if (outletId) {
-        localStorage.setItem("selectedOutletId", outletId);
+      if (categoryId) {
+        localStorage.setItem("selectedCategoryId", categoryId);
       } else {
-        localStorage.removeItem("selectedOutletId");
+        localStorage.removeItem("selectedCategoryId");
+      }
+      localStorage.removeItem("selectedDepartmentId");
+    }
+  };
+
+  const setSelectedDepartmentId = (departmentId: string | null) => {
+    setSelectedDepartmentIdState(departmentId);
+    if (typeof window !== "undefined") {
+      if (departmentId) {
+        localStorage.setItem("selectedDepartmentId", departmentId);
+      } else {
+        localStorage.removeItem("selectedDepartmentId");
       }
     }
   };
@@ -101,10 +136,16 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   }, [selectedClientId, clients]);
 
   useEffect(() => {
-    if (selectedOutletId && outlets.length > 0 && !outlets.find((o) => o.id === selectedOutletId)) {
-      setSelectedOutletId(null);
+    if (selectedCategoryId && categories.length > 0 && !categories.find((c) => c.id === selectedCategoryId)) {
+      setSelectedCategoryId(null);
     }
-  }, [selectedOutletId, outlets]);
+  }, [selectedCategoryId, categories]);
+
+  useEffect(() => {
+    if (selectedDepartmentId && departments.length > 0 && !departments.find((d) => d.id === selectedDepartmentId)) {
+      setSelectedDepartmentId(null);
+    }
+  }, [selectedDepartmentId, departments]);
 
   return (
     <ClientContext.Provider
@@ -114,11 +155,16 @@ export function ClientProvider({ children }: { children: ReactNode }) {
         setSelectedClientId,
         clients,
         isLoading,
-        selectedOutlet,
-        selectedOutletId,
-        setSelectedOutletId,
-        outlets,
-        isLoadingOutlets,
+        selectedCategory,
+        selectedCategoryId,
+        setSelectedCategoryId,
+        categories,
+        isLoadingCategories,
+        selectedDepartment,
+        selectedDepartmentId,
+        setSelectedDepartmentId,
+        departments,
+        isLoadingDepartments,
         selectedDate,
         setSelectedDate,
       }}

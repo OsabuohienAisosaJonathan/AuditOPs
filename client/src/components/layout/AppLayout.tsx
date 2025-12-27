@@ -14,8 +14,6 @@ import { useClientContext } from "@/lib/client-context";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { useQuery } from "@tanstack/react-query";
-import { departmentsApi, Department } from "@/lib/api";
 
 const MAIN_NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -56,28 +54,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     selectedClient, 
     selectedClientId, 
     setSelectedClientId, 
-    outlets,
-    selectedOutlet,
-    selectedOutletId,
-    setSelectedOutletId,
+    departments,
+    selectedDepartment,
+    selectedDepartmentId,
+    setSelectedDepartmentId,
     selectedDate,
     setSelectedDate,
     isLoading: clientsLoading 
   } = useClientContext();
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
-  const [outletSearchOpen, setOutletSearchOpen] = useState(false);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
+  const [departmentSearchOpen, setDepartmentSearchOpen] = useState(false);
 
   const date = selectedDate ? new Date(selectedDate + "T00:00:00") : new Date();
-
-  const { data: departments = [] } = useQuery({
-    queryKey: ["departments-by-client", selectedClientId],
-    queryFn: () => selectedClientId ? departmentsApi.getByClient(selectedClientId) : Promise.resolve([]),
-    enabled: !!selectedClientId,
-    staleTime: 0,
-  });
-
-  const selectedDepartment = departments.find((d: Department) => d.id === selectedDepartmentId);
 
   if (location === "/" || location === "/setup") return <>{children}</>;
 
@@ -119,7 +107,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           value="all-clients"
                           onSelect={() => {
                             setSelectedClientId(null);
-                            setSelectedDepartmentId("");
                             setClientSearchOpen(false);
                           }}
                         >
@@ -132,7 +119,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             value={client.name}
                             onSelect={() => {
                               setSelectedClientId(client.id);
-                              setSelectedDepartmentId("");
                               setClientSearchOpen(false);
                             }}
                           >
@@ -146,42 +132,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </PopoverContent>
               </Popover>
 
-              {selectedClientId && (
-                <Popover open={outletSearchOpen} onOpenChange={setOutletSearchOpen}>
+              {selectedClientId && departments.length > 0 && (
+                <Popover open={departmentSearchOpen} onOpenChange={setDepartmentSearchOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       role="combobox"
-                      aria-expanded={outletSearchOpen}
-                      className="w-[180px] h-9 justify-between bg-muted/30 border-dashed border-border"
-                      data-testid="select-outlet-context"
+                      aria-expanded={departmentSearchOpen}
+                      className="w-[200px] h-9 justify-between bg-muted/30 border-dashed border-border"
+                      data-testid="select-department-context"
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span className="truncate">
-                          {selectedOutlet ? selectedOutlet.name : "Select Outlet..."}
+                          {selectedDepartment ? selectedDepartment.name : "Select Department..."}
                         </span>
                       </div>
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[240px] p-0" align="start">
+                  <PopoverContent className="w-[260px] p-0" align="start">
                     <Command>
-                      <CommandInput placeholder="Search outlets..." />
+                      <CommandInput placeholder="Search departments..." />
                       <CommandList>
-                        <CommandEmpty>No outlets found.</CommandEmpty>
+                        <CommandEmpty>No departments found.</CommandEmpty>
                         <CommandGroup>
-                          {outlets.map((outlet) => (
+                          <CommandItem
+                            value="all-departments"
+                            onSelect={() => {
+                              setSelectedDepartmentId(null);
+                              setDepartmentSearchOpen(false);
+                            }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", !selectedDepartmentId ? "opacity-100" : "opacity-0")} />
+                            All Departments
+                          </CommandItem>
+                          {departments.filter(d => d.status === "active").map((dept) => (
                             <CommandItem
-                              key={outlet.id}
-                              value={outlet.name}
+                              key={dept.id}
+                              value={dept.name}
                               onSelect={() => {
-                                setSelectedOutletId(outlet.id);
-                                setOutletSearchOpen(false);
+                                setSelectedDepartmentId(dept.id);
+                                setDepartmentSearchOpen(false);
                               }}
                             >
-                              <Check className={cn("mr-2 h-4 w-4", selectedOutletId === outlet.id ? "opacity-100" : "opacity-0")} />
-                              {outlet.name}
+                              <Check className={cn("mr-2 h-4 w-4", selectedDepartmentId === dept.id ? "opacity-100" : "opacity-0")} />
+                              {dept.name}
                             </CommandItem>
                           ))}
                         </CommandGroup>
@@ -190,100 +186,51 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   </PopoverContent>
                 </Popover>
               )}
-
-              {selectedClientId && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-[180px] h-9 justify-between bg-muted/30 border-dashed border-border"
-                      data-testid="select-department-context"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate">
-                          {selectedDepartment ? selectedDepartment.name : "All Departments"}
-                        </span>
-                      </div>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-[200px]">
-                    <DropdownMenuItem onClick={() => setSelectedDepartmentId("")}>
-                      <Check className={cn("mr-2 h-4 w-4", !selectedDepartmentId ? "opacity-100" : "opacity-0")} />
-                      All Departments
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {departments.filter((d: Department) => d.status === "active").map((dept: Department) => (
-                      <DropdownMenuItem key={dept.id} onClick={() => setSelectedDepartmentId(dept.id)}>
-                        <Check className={cn("mr-2 h-4 w-4", selectedDepartmentId === dept.id ? "opacity-100" : "opacity-0")} />
-                        {dept.name}
-                      </DropdownMenuItem>
-                    ))}
-                    {departments.filter((d: Department) => d.status === "active").length === 0 && (
-                      <DropdownMenuItem disabled className="text-muted-foreground text-sm">
-                        No active departments
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
+              
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-[180px] h-9 justify-start text-left font-normal bg-muted/30 border-dashed border-border shadow-none",
-                      !date && "text-muted-foreground"
-                    )}
-                    data-testid="button-date-picker"
+                    variant="outline"
+                    className="h-9 justify-start text-left font-normal bg-muted/30 border-dashed border-border min-w-[130px]"
+                    data-testid="select-date"
                   >
-                    <span className="truncate">
-                      {date ? format(date, "MMM d, yyyy") : <span>Pick a date</span>}
-                    </span>
+                    {format(date, "MMM d, yyyy")}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
                     selected={date}
-                    onSelect={(newDate) => {
-                      if (newDate) {
-                        setSelectedDate(format(newDate, "yyyy-MM-dd"));
-                      }
-                    }}
+                    onSelect={(d) => d && setSelectedDate(format(d, "yyyy-MM-dd"))}
                     initialFocus
                   />
                 </PopoverContent>
               </Popover>
-
-              {selectedClient && (
-                <div className="hidden md:flex items-center gap-2 ml-2 px-3 py-1 rounded-md bg-primary/10 text-primary text-sm">
-                  <Building2 className="h-3.5 w-3.5" />
-                  <span className="font-medium">{selectedClient.name}</span>
-                </div>
-              )}
             </div>
-
-            <div className="flex items-center gap-4 ml-4">
-              <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground" data-testid="button-notifications">
+            
+            <div className="flex items-center gap-3 ml-auto">
+              <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
-                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-destructive border-2 border-background" />
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">3</span>
               </Button>
               
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <div className="flex items-center gap-2 cursor-pointer" data-testid="button-user-menu">
-                    <Avatar className="h-8 w-8 border border-border">
-                      <AvatarFallback>{user?.fullName?.split(" ").map(n => n[0]).join("") || "U"}</AvatarFallback>
+                  <Button variant="ghost" className="flex items-center gap-2 h-9 px-2">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                        {user?.fullName?.split(" ").map(n => n[0]).join("").toUpperCase() || "U"}
+                      </AvatarFallback>
                     </Avatar>
-                    {user && (
-                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5", getRoleBadge(user.role).color)}>
-                        {getRoleBadge(user.role).label}
-                      </Badge>
-                    )}
-                  </div>
+                    <div className="hidden md:flex flex-col items-start">
+                      <span className="text-sm font-medium">{user?.fullName}</span>
+                      {user?.role && (
+                        <Badge variant="outline" className={cn("text-[10px] h-4 px-1", getRoleBadge(user.role).color)}>
+                          {getRoleBadge(user.role).label}
+                        </Badge>
+                      )}
+                    </div>
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <div className="px-2 py-1.5">
@@ -291,14 +238,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                   </div>
                   <DropdownMenuSeparator />
-                  <Link href="/settings">
-                    <DropdownMenuItem className="cursor-pointer">
-                      <Settings className="h-4 w-4 mr-2" /> Settings
-                    </DropdownMenuItem>
-                  </Link>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="text-destructive cursor-pointer" data-testid="button-logout">
-                    <LogOut className="h-4 w-4 mr-2" /> Sign Out
+                  <DropdownMenuItem onClick={logout} className="text-red-600 focus:text-red-600">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -315,95 +257,78 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 function AppSidebar({ location, user, onLogout }: { location: string; user: any; onLogout: () => void }) {
-  const isSuperAdmin = user?.role === "super_admin";
-
+  const isAdmin = user?.role === "super_admin";
+  
   return (
-    <Sidebar className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground" collapsible="icon">
-      <SidebarHeader className="h-16 flex items-center justify-center border-b border-sidebar-border/50 px-4">
-        <div className="flex items-center gap-2 font-display font-bold text-lg text-sidebar-primary-foreground">
-          <img src={logoImage} alt="Miemploya" className="h-10 object-contain group-data-[collapsible=icon]:h-8" />
+    <Sidebar className="border-r border-border/40">
+      <SidebarHeader className="border-b border-border/40 px-4 py-4">
+        <div className="flex items-center gap-3">
+          <img 
+            src={logoImage}
+            alt="Miemploya Logo" 
+            className="h-10 w-10 rounded-lg object-cover"
+          />
+          <div>
+            <h1 className="font-bold text-lg tracking-tight text-primary">Miemploya</h1>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">AuditOps</p>
+          </div>
         </div>
       </SidebarHeader>
       
-      <SidebarContent className="px-2 py-4">
+      <SidebarContent className="px-2">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase tracking-wider text-[10px] font-semibold mb-2 px-2">Main Menu</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1">
+            Main Menu
+          </SidebarGroupLabel>
           <SidebarMenu>
             {MAIN_NAV_ITEMS.map((item) => (
               <SidebarMenuItem key={item.href}>
-                <Link href={item.href}>
-                  <SidebarMenuButton 
-                    isActive={location === item.href}
-                    tooltip={item.label}
-                    className="h-10 data-[active=true]:bg-primary data-[active=true]:text-white hover:bg-sidebar-accent hover:text-white transition-all duration-200"
-                    data-testid={`nav-${item.href.replace("/", "")}`}
-                  >
-                    <item.icon className="h-5 w-5" />
+                <SidebarMenuButton 
+                  asChild 
+                  isActive={location === item.href}
+                  className="transition-colors"
+                >
+                  <Link href={item.href}>
+                    <item.icon className="h-4 w-4" />
                     <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </Link>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
         </SidebarGroup>
-
-        {isSuperAdmin && (
-          <SidebarGroup className="mt-4">
-            <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase tracking-wider text-[10px] font-semibold mb-2 px-2">Administration</SidebarGroupLabel>
+        
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1">
+              Administration
+            </SidebarGroupLabel>
             <SidebarMenu>
               {ADMIN_NAV_ITEMS.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <Link href={item.href}>
-                    <SidebarMenuButton 
-                      isActive={location === item.href}
-                      tooltip={item.label}
-                      className="h-10 data-[active=true]:bg-primary data-[active=true]:text-white hover:bg-sidebar-accent hover:text-white transition-all duration-200"
-                      data-testid={`nav-${item.href.replace("/", "")}`}
-                    >
-                      <item.icon className="h-5 w-5" />
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={location === item.href}
+                    className="transition-colors"
+                  >
+                    <Link href={item.href}>
+                      <item.icon className="h-4 w-4" />
                       <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </Link>
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
           </SidebarGroup>
         )}
-
-        {!isSuperAdmin && (
-          <SidebarGroup className="mt-4">
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <Link href="/settings">
-                  <SidebarMenuButton 
-                    isActive={location === "/settings"}
-                    tooltip="Settings"
-                    className="h-10 data-[active=true]:bg-primary data-[active=true]:text-white hover:bg-sidebar-accent hover:text-white transition-all duration-200"
-                    data-testid="nav-settings"
-                  >
-                    <Settings className="h-5 w-5" />
-                    <span>Settings</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
       </SidebarContent>
-
-      <SidebarFooter className="border-t border-sidebar-border/50 p-4">
-        <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-          <Avatar className="h-9 w-9 border border-sidebar-border/50 bg-sidebar-accent">
-            <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">
-              {user?.fullName?.split(" ").map((n: string) => n[0]).join("") || "U"}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-medium text-sidebar-foreground">{user?.fullName || "User"}</span>
-            <span className="text-xs text-sidebar-foreground/50">{getRoleBadge(user?.role || "").label}</span>
-          </div>
+      
+      <SidebarFooter className="border-t border-border/40 p-4">
+        <div className="text-xs text-muted-foreground text-center">
+          v1.0.0 - Miemploya AuditOps
         </div>
       </SidebarFooter>
+      
       <SidebarRail />
     </Sidebar>
   );

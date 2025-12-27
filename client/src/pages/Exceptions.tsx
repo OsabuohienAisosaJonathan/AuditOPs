@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { exceptionsApi, outletsApi, Exception } from "@/lib/api";
+import { exceptionsApi, departmentsApi, Exception } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { toast } from "sonner";
@@ -30,13 +30,13 @@ export default function Exceptions() {
     queryFn: () => exceptionsApi.getAll(statusFilter !== "all" ? { status: statusFilter } : undefined),
   });
 
-  const { data: outlets } = useQuery({
-    queryKey: ["outlets-for-exceptions"],
+  const { data: departments } = useQuery({
+    queryKey: ["departments-for-exceptions"],
     queryFn: async () => {
       const { clientsApi } = await import("@/lib/api");
       const clients = await clientsApi.getAll();
       if (clients.length === 0) return [];
-      return outletsApi.getByClient(clients[0].id);
+      return departmentsApi.getByClient(clients[0].id);
     },
   });
 
@@ -91,7 +91,7 @@ export default function Exceptions() {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               createMutation.mutate({
-                outletId: formData.get("outletId") as string,
+                departmentId: formData.get("departmentId") as string,
                 summary: formData.get("summary") as string,
                 description: formData.get("description") as string || null,
                 severity: formData.get("severity") as string,
@@ -100,14 +100,14 @@ export default function Exceptions() {
             }}>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="outletId">Outlet</Label>
-                  <Select name="outletId" required>
-                    <SelectTrigger data-testid="select-exception-outlet">
-                      <SelectValue placeholder="Select outlet" />
+                  <Label htmlFor="departmentId">Department</Label>
+                  <Select name="departmentId" required>
+                    <SelectTrigger data-testid="select-exception-department">
+                      <SelectValue placeholder="Select department" />
                     </SelectTrigger>
                     <SelectContent>
-                      {outlets?.map((outlet) => (
-                        <SelectItem key={outlet.id} value={outlet.id}>{outlet.name}</SelectItem>
+                      {departments?.filter(d => d.status === "active").map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -194,7 +194,7 @@ export default function Exceptions() {
                     : "Great news! No audit exceptions have been raised yet."}
                 </EmptyDescription>
               </EmptyHeader>
-              {outlets && outlets.length > 0 && (
+              {departments && departments.length > 0 && (
                 <Button className="gap-2" onClick={() => setCreateDialogOpen(true)} data-testid="button-raise-first">
                   <AlertOctagon className="h-4 w-4" /> Raise Exception
                 </Button>

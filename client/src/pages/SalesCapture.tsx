@@ -204,7 +204,7 @@ export default function SalesCapture() {
                   </EmptyMedia>
                   <EmptyHeader>
                     <EmptyTitle>No departments available</EmptyTitle>
-                    <EmptyDescription>Create outlets and departments first to record sales.</EmptyDescription>
+                    <EmptyDescription>Create departments first to record sales.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               ) : !salesEntries || salesEntries.length === 0 ? (
