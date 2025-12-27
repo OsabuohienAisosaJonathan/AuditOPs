@@ -1,0 +1,212 @@
+### ONE-PIECE PROMPT — CLIENT ASSIGNMENT (ASSIGN/SUSPEND/REMOVE) + “START AUDIT” GATEKEEPING + DRAFT VS SUBMITTED PERMISSIONS
+
+You are building **Miemploya AuditOps**. Implement three things end-to-end:
+(A) Admin can assign users to clients with Assign/Suspend/Remove actions and correct access behavior.
+(B) “Start Audit” must set the working audit context (date or range) and gate access to Sales Capture / Inventory & Purchases / Reconciliation until the user sets it.
+(C) Enforce role-based edit permissions: Draft vs Submitted, and Super Admin override + reissue permissions.
+
+---
+
+## A) USER ↔ CLIENT ASSIGNMENT (ASSIGN / SUSPEND / REMOVE)
+
+### A1. Data model
+
+Create a `user_client_access` table (or equivalent) with:
+
+* id
+* userId
+* clientId
+* status: `ASSIGNED | SUSPENDED | REMOVED`
+* assignedBy (admin userId)
+* assignedAt
+* updatedAt
+* notes/reason (nullable)
+
+Rules:
+
+1. A user can be linked to many clients.
+2. Each user+client pair is unique (one active record).
+3. “REMOVED” means user must not see the client at all.
+4. “SUSPENDED” means user can see client data in read-only mode (no posting, no edits, no submissions).
+
+### A2. Admin UI
+
+Add an admin section: **Client Access / Assignments**
+
+* Search users
+* Select a user → show:
+
+  * Assigned clients list with status badges
+  * Action buttons per client: Assign / Suspend / Remove
+  * History log per client assignment (optional)
+* Also allow assigning from Client page: “Assign Users”
+
+### A3. Access behavior
+
+1. ASSIGNED:
+
+* User can view and perform allowed actions for their role (Auditor/Supervisor) within that client.
+
+2. SUSPENDED:
+
+* User can view all client data (read-only)
+* Must be blocked from:
+
+  * creating/editing/deleting any audit records
+  * saving drafts
+  * submitting audits
+  * uploading evidence
+  * importing POS data
+  * changing reconciliation status
+* UI must disable buttons and show “Access Suspended” message.
+
+3. REMOVED:
+
+* Client must not appear in client dropdown/list for that user
+* Direct URL access must return 403/Not found.
+
+### A4. Backend enforcement (mandatory)
+
+Every client-scoped API request must check:
+
+* user is authenticated
+* user is assigned to that client
+* if status = SUSPENDED → allow GET only; block POST/PUT/DELETE
+* if status = REMOVED or no record → block all access
+
+---
+
+## B) “START AUDIT” CONTEXT + ACCESS GATING TO SALES/INVENTORY/RECON
+
+### B1. Audit Context definition
+
+Create an `audit_context` concept stored per user session (and optionally persisted):
+
+* clientId (required)
+* departmentId (optional if your workflow allows “all departments”, but must still be consistent)
+* auditPeriod: Daily | Weekly | Monthly | CustomRange
+* dateStart
+* dateEnd
+* createdAt
+* createdBy (userId)
+* status: `ACTIVE | CLEARED`
+
+### B2. Start Audit alignment with header (not dashboard overview)
+
+* “Start Audit” must use the **header selections** (Client, Department if applicable) and the **date control**.
+* The dashboard overview cards must not control Start Audit.
+* When Start Audit is confirmed, update the header date display to match:
+
+  * Daily: single date
+  * Weekly/Monthly/Custom: date range shown in header
+
+### B3. Gatekeeping rule (mandatory)
+
+Users must be denied access to:
+
+* Sales Capture
+* Inventory & Purchases
+* Reconciliation
+  unless they have a valid ACTIVE audit context (dateStart/dateEnd set) for the selected client (and department if required).
+
+Implementation details:
+
+1. If user tries to open those pages without setting Start Audit:
+
+* show a clear blocking screen:
+  “You must Start Audit and set the audit date/range before using this page.”
+* provide button: “Start Audit Now” → opens Start Audit modal
+
+2. The header date must always reflect the active audit context once set.
+3. If user changes client/department in header, the audit context becomes invalid until Start Audit is set again (prompt user to re-start audit).
+
+### B4. Server-side enforcement
+
+Even if user bypasses UI:
+
+* All API endpoints for sales/purchases/inventory/recon must require an ACTIVE audit context (clientId + date range) or must receive dateStart/dateEnd and validate it against the user’s active context.
+* If no valid context: return 403 with message “Start Audit required”.
+
+---
+
+## C) DRAFT VS SUBMITTED PERMISSIONS + SUPER ADMIN OVERRIDE + REISSUE PERMISSION
+
+### C1. Audit record lifecycle
+
+For all audit-related records (sales capture batch, purchases batch, stock counts, recon, final report), implement statuses:
+
+* `DRAFT`
+* `SUBMITTED`
+* `LOCKED` (optional if needed)
+
+Rules:
+
+1. Draft = editable by authorized roles
+2. Submitted = locked (view/export/print only) except Super Admin
+3. Edits after submission require Super Admin or explicit reissue permission
+
+### C2. Role permissions
+
+Assume roles: Super Admin, Audit Supervisor, Auditor
+
+1. Auditor / Audit Supervisor:
+
+* Can create, edit, delete within DRAFT mode (subject to client assignment status)
+* Can save drafts
+* Can submit audit (if allowed by workflow)
+* After SUBMITTED:
+
+  * Can only view, export, print
+  * Cannot edit figures, cannot post new entries for that submitted audit period
+
+2. Super Admin:
+
+* Can edit audit figures even after submission
+* Can unlock/reissue permissions to a user for a specific submitted audit
+
+### C3. Reissue permission (must implement)
+
+Create `audit_reissue_permissions` table:
+
+* id
+* auditId (or auditPeriodKey: clientId+dateStart+dateEnd+departmentId)
+* userId
+* grantedBy (superAdminId)
+* grantedAt
+* expiresAt (optional)
+* scope: `EDIT_AFTER_SUBMISSION` (and optionally which modules)
+
+Behavior:
+
+* If a submitted audit exists, and user has active reissue permission:
+
+  * allow editing those submitted records within scope
+  * log every change with before/after values and reason
+
+### C4. Audit Trail / Change log (mandatory)
+
+Every create/edit/delete/submit/unlock action must write to Audit Trail with:
+
+* who
+* clientId
+* departmentId (if applicable)
+* date range
+* action type
+* before/after snapshots for edits
+* timestamp
+* reason (required for post-submission edits)
+
+---
+
+## Acceptance tests (must demonstrate)
+
+1. Admin assigns Auditor A to Client X (ASSIGNED) → Auditor sees Client X.
+2. Admin suspends Auditor A on Client X → Auditor can view Client X but cannot post/edit; buttons disabled; API blocks writes.
+3. Admin removes Auditor A from Client X → Client X disappears and direct URL access is denied.
+4. User opens Sales Capture without Start Audit → blocked screen appears.
+5. User starts audit (Weekly range) → header date updates to range; Sales Capture/Inventory/Recon become accessible and filtered to that range.
+6. User submits audit → audit becomes locked for Auditor/Supervisor (view/export/print only).
+7. Super Admin edits submitted audit figures → allowed and logged.
+8. Super Admin grants “reissue permission” to Auditor/Supervisor → they can edit submitted audit within scope; all edits logged.
+
+---

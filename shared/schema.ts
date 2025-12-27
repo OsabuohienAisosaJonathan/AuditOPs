@@ -251,6 +251,109 @@ export const paymentDeclarations = pgTable("payment_declarations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ============================================================
+// USER-CLIENT ACCESS CONTROL
+// ============================================================
+
+export const ACCESS_STATUS = ["assigned", "suspended", "removed"] as const;
+export type AccessStatus = typeof ACCESS_STATUS[number];
+
+export const userClientAccess = pgTable("user_client_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("assigned"),
+  assignedBy: varchar("assigned_by").notNull().references(() => users.id),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  suspendReason: text("suspend_reason"),
+  notes: text("notes"),
+});
+
+// ============================================================
+// AUDIT CONTEXT (Session-based audit period tracking)
+// ============================================================
+
+export const AUDIT_PERIOD = ["daily", "weekly", "monthly", "custom"] as const;
+export type AuditPeriod = typeof AUDIT_PERIOD[number];
+
+export const AUDIT_CONTEXT_STATUS = ["active", "cleared"] as const;
+export type AuditContextStatus = typeof AUDIT_CONTEXT_STATUS[number];
+
+export const auditContexts = pgTable("audit_contexts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").references(() => departments.id, { onDelete: "cascade" }),
+  period: text("period").notNull().default("daily"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// AUDIT LIFECYCLE (Draft/Submitted/Locked status tracking)
+// ============================================================
+
+export const AUDIT_STATUS = ["draft", "submitted", "locked"] as const;
+export type AuditStatus = typeof AUDIT_STATUS[number];
+
+export const audits = pgTable("audits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  period: text("period").notNull().default("daily"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  status: text("status").notNull().default("draft"),
+  submittedBy: varchar("submitted_by").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  lockedBy: varchar("locked_by").references(() => users.id),
+  lockedAt: timestamp("locked_at"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// AUDIT REISSUE PERMISSIONS (Super Admin grants for editing submitted audits)
+// ============================================================
+
+export const auditReissuePermissions = pgTable("audit_reissue_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  auditId: varchar("audit_id").notNull().references(() => audits.id, { onDelete: "cascade" }),
+  grantedTo: varchar("granted_to").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedBy: varchar("granted_by").notNull().references(() => users.id),
+  grantedAt: timestamp("granted_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+  scope: text("scope").notNull().default("edit_after_submission"),
+  reason: text("reason"),
+  active: boolean("active").default(true),
+});
+
+// ============================================================
+// ENHANCED AUDIT TRAIL (for state changes with before/after snapshots)
+// ============================================================
+
+export const auditChangeLog = pgTable("audit_change_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  auditId: varchar("audit_id").references(() => audits.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  clientId: varchar("client_id").references(() => clients.id),
+  departmentId: varchar("department_id").references(() => departments.id),
+  actionType: text("action_type").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: varchar("entity_id"),
+  beforeState: jsonb("before_state"),
+  afterState: jsonb("after_state"),
+  reason: text("reason"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
@@ -269,6 +372,11 @@ export const insertExceptionCommentSchema = createInsertSchema(exceptionComments
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 export const insertAdminActivityLogSchema = createInsertSchema(adminActivityLogs).omit({ id: true, createdAt: true });
 export const insertPaymentDeclarationSchema = createInsertSchema(paymentDeclarations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserClientAccessSchema = createInsertSchema(userClientAccess).omit({ id: true, assignedAt: true, updatedAt: true });
+export const insertAuditContextSchema = createInsertSchema(auditContexts).omit({ id: true, createdAt: true, lastActiveAt: true });
+export const insertAuditSchema = createInsertSchema(audits).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAuditReissuePermissionSchema = createInsertSchema(auditReissuePermissions).omit({ id: true, grantedAt: true });
+export const insertAuditChangeLogSchema = createInsertSchema(auditChangeLog).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -305,3 +413,13 @@ export type InsertAdminActivityLog = z.infer<typeof insertAdminActivityLogSchema
 export type AdminActivityLog = typeof adminActivityLogs.$inferSelect;
 export type InsertPaymentDeclaration = z.infer<typeof insertPaymentDeclarationSchema>;
 export type PaymentDeclaration = typeof paymentDeclarations.$inferSelect;
+export type InsertUserClientAccess = z.infer<typeof insertUserClientAccessSchema>;
+export type UserClientAccess = typeof userClientAccess.$inferSelect;
+export type InsertAuditContext = z.infer<typeof insertAuditContextSchema>;
+export type AuditContext = typeof auditContexts.$inferSelect;
+export type InsertAudit = z.infer<typeof insertAuditSchema>;
+export type Audit = typeof audits.$inferSelect;
+export type InsertAuditReissuePermission = z.infer<typeof insertAuditReissuePermissionSchema>;
+export type AuditReissuePermission = typeof auditReissuePermissions.$inferSelect;
+export type InsertAuditChangeLog = z.infer<typeof insertAuditChangeLogSchema>;
+export type AuditChangeLog = typeof auditChangeLog.$inferSelect;
