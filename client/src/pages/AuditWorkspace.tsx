@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useClientContext } from "@/lib/client-context";
-import { paymentDeclarationsApi, reconciliationHintApi, type ReconciliationHint, type SupportingDocument } from "@/lib/api";
+import { paymentDeclarationsApi, reconciliationHintApi, salesEntriesApi, type ReconciliationHint, type SupportingDocument, type SalesEntry, type SalesSummary } from "@/lib/api";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { format } from "date-fns";
@@ -107,7 +107,7 @@ export default function AuditWorkspace() {
 }
 
 function SalesCapture() {
-  const { selectedClientId, selectedDepartmentId, selectedDate } = useClientContext();
+  const { selectedClientId, selectedDepartmentId, selectedDepartment, selectedDate } = useClientContext();
   const queryClient = useQueryClient();
   
   const [reportedCash, setReportedCash] = useState("");
@@ -118,6 +118,29 @@ function SalesCapture() {
   const [isSaving, setIsSaving] = useState(false);
 
   const dateStr = selectedDate || format(new Date(), "yyyy-MM-dd");
+
+  const queryKey = ["sales-entries", selectedClientId, selectedDepartmentId, dateStr];
+  const summaryQueryKey = ["sales-summary", selectedDepartmentId, dateStr];
+
+  const { data: salesEntries = [], isLoading: isLoadingSales } = useQuery({
+    queryKey,
+    queryFn: () => salesEntriesApi.getAll({
+      clientId: selectedClientId || undefined,
+      departmentId: selectedDepartmentId || undefined,
+      date: dateStr,
+    }),
+    enabled: !!selectedClientId && !!selectedDepartmentId,
+  });
+
+  const { data: salesSummary } = useQuery({
+    queryKey: summaryQueryKey,
+    queryFn: () => salesEntriesApi.getSummary({
+      clientId: selectedClientId!,
+      departmentId: selectedDepartmentId!,
+      date: dateStr,
+    }),
+    enabled: !!selectedClientId && !!selectedDepartmentId,
+  });
 
   const { data: reconciliationHint, isLoading: isLoadingHint, refetch: refetchHint } = useQuery({
     queryKey: ["reconciliation-hint", selectedDepartmentId, dateStr],
@@ -240,7 +263,7 @@ function SalesCapture() {
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow>
-                  <TableHead className="w-[180px]">Department</TableHead>
+                  <TableHead>Time</TableHead>
                   <TableHead>Shift</TableHead>
                   <TableHead className="text-right">Cash (₦)</TableHead>
                   <TableHead className="text-right">POS (₦)</TableHead>
@@ -250,33 +273,67 @@ function SalesCapture() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {["Main Bar", "VIP Lounge", "Kitchen"].map((dept) => (
-                  <TableRow key={dept} className="group hover:bg-muted/30">
-                    <TableCell className="font-medium">{dept}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-normal">Full Day</Badge>
+                {isLoadingSales ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <Spinner className="h-6 w-6 mx-auto" />
                     </TableCell>
-                    <TableCell><Input className="text-right h-8 w-28 ml-auto font-mono" placeholder="0.00" data-testid={`input-cash-${dept}`} /></TableCell>
-                    <TableCell><Input className="text-right h-8 w-28 ml-auto font-mono" placeholder="0.00" data-testid={`input-pos-${dept}`} /></TableCell>
-                    <TableCell><Input className="text-right h-8 w-28 ml-auto font-mono" placeholder="0.00" data-testid={`input-transfer-${dept}`} /></TableCell>
-                    <TableCell><Input className="text-right h-8 w-28 ml-auto font-mono text-destructive" placeholder="0.00" data-testid={`input-voids-${dept}`} /></TableCell>
-                    <TableCell className="text-right font-bold font-mono">0.00</TableCell>
                   </TableRow>
-                ))}
+                ) : !selectedClientId || !selectedDepartmentId ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      Select a client and department to view sales entries
+                    </TableCell>
+                  </TableRow>
+                ) : salesEntries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No sales entries recorded for {selectedDepartment?.name} on {dateStr}. Add entries from the Sales Capture page.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  salesEntries.map((entry) => (
+                    <TableRow key={entry.id} className="group hover:bg-muted/30" data-testid={`row-audit-sales-${entry.id}`}>
+                      <TableCell className="font-medium">
+                        {format(new Date(entry.createdAt), "HH:mm")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-normal capitalize">
+                          {entry.shift === "full" ? "Full Day" : entry.shift || "Full Day"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {Number(entry.cashAmount || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {Number(entry.posAmount || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {Number(entry.transferAmount || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground">
+                        {Number(entry.voidsAmount || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-bold font-mono">
+                        {Number(entry.totalSales || 0).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
             <div className="bg-muted/30 p-4 flex justify-end gap-8 border-t">
                  <div className="text-sm">
                     <span className="text-muted-foreground mr-2">Total Cash:</span>
-                    <span className="font-mono font-medium">₦ 0.00</span>
+                    <span className="font-mono font-medium">₦ {(salesSummary?.totalCash || 0).toLocaleString()}</span>
                  </div>
                  <div className="text-sm">
                     <span className="text-muted-foreground mr-2">Total POS:</span>
-                    <span className="font-mono font-medium">₦ 0.00</span>
+                    <span className="font-mono font-medium">₦ {(salesSummary?.totalPos || 0).toLocaleString()}</span>
                  </div>
                  <div className="text-sm">
                     <span className="text-muted-foreground mr-2">Total Sales:</span>
-                    <span className="font-mono font-bold text-lg">₦ 0.00</span>
+                    <span className="font-mono font-bold text-lg">₦ {(salesSummary?.grandTotal || 0).toLocaleString()}</span>
                  </div>
             </div>
           </div>

@@ -557,20 +557,60 @@ export const purchasesApi = {
     }),
 };
 
+export interface SalesSummary {
+  totalCash: number;
+  totalPos: number;
+  totalTransfer: number;
+  totalVoids: number;
+  grandTotal: number;
+  entriesCount: number;
+  avgPerEntry: number;
+}
+
 export const salesEntriesApi = {
-  getAll: (departmentId?: string, date?: string) => {
-    const params = new URLSearchParams();
-    if (departmentId) params.append("departmentId", departmentId);
-    if (date) params.append("date", date);
-    return fetchApi<SalesEntry[]>(`/sales-entries${params.toString() ? `?${params}` : ""}`);
+  getAll: (params?: { clientId?: string; departmentId?: string; date?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.clientId) searchParams.append("clientId", params.clientId);
+    if (params?.departmentId) searchParams.append("departmentId", params.departmentId);
+    if (params?.date) searchParams.append("date", params.date);
+    return fetchApi<SalesEntry[]>(`/sales-entries${searchParams.toString() ? `?${searchParams}` : ""}`);
+  },
+  getSummary: (params: { clientId: string; departmentId: string; date: string }) => {
+    const searchParams = new URLSearchParams();
+    searchParams.append("clientId", params.clientId);
+    searchParams.append("departmentId", params.departmentId);
+    searchParams.append("date", params.date);
+    return fetchApi<SalesSummary>(`/sales-entries/summary?${searchParams}`);
   },
   get: (id: string) => fetchApi<SalesEntry>(`/sales-entries/${id}`),
-  create: (data: any) =>
+  create: (data: {
+    clientId: string;
+    departmentId: string;
+    date: string;
+    shift: string;
+    cashAmount: string;
+    posAmount: string;
+    transferAmount: string;
+    voidsAmount?: string;
+    discountsAmount?: string;
+    totalSales: string;
+    mode?: string;
+    notes?: string;
+  }) =>
     fetchApi<SalesEntry>("/sales-entries", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Partial<{
+    shift: string;
+    cashAmount: string;
+    posAmount: string;
+    transferAmount: string;
+    voidsAmount: string;
+    discountsAmount: string;
+    totalSales: string;
+    notes: string;
+  }>) =>
     fetchApi<SalesEntry>(`/sales-entries/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

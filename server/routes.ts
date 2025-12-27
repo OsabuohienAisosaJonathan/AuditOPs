@@ -1478,19 +1478,84 @@ export async function registerRoutes(
   // ============== SALES ENTRIES ==============
   app.get("/api/sales-entries", requireAuth, async (req, res) => {
     try {
-      const { departmentId, startDate, endDate } = req.query;
+      const { clientId, departmentId, date, startDate, endDate } = req.query;
       
       if (departmentId) {
+        // If a specific date is provided, use it as both start and end
+        const dateFilter = date ? new Date(date as string) : undefined;
+        const start = dateFilter || (startDate ? new Date(startDate as string) : undefined);
+        const end = dateFilter || (endDate ? new Date(endDate as string) : undefined);
+        
         const sales = await storage.getSalesEntries(
           departmentId as string,
-          startDate ? new Date(startDate as string) : undefined,
-          endDate ? new Date(endDate as string) : undefined
+          start,
+          end
+        );
+        return res.json(sales);
+      }
+      
+      if (clientId) {
+        const dateFilter = date ? new Date(date as string) : undefined;
+        const start = dateFilter || (startDate ? new Date(startDate as string) : undefined);
+        const end = dateFilter || (endDate ? new Date(endDate as string) : undefined);
+        
+        const sales = await storage.getSalesEntriesByClient(
+          clientId as string,
+          start,
+          end
         );
         return res.json(sales);
       }
       
       const sales = await storage.getAllSalesEntries();
       res.json(sales);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Sales summary endpoint
+  app.get("/api/sales-entries/summary", requireAuth, async (req, res) => {
+    try {
+      const { clientId, departmentId, date } = req.query;
+      
+      if (!clientId || !departmentId || !date) {
+        return res.json({
+          totalCash: 0,
+          totalPos: 0,
+          totalTransfer: 0,
+          totalVoids: 0,
+          grandTotal: 0,
+          entriesCount: 0,
+          avgPerEntry: 0
+        });
+      }
+      
+      const dateObj = new Date(date as string);
+      
+      // Get entries filtered by both clientId and departmentId
+      const entries = await storage.getSalesEntries(departmentId as string, dateObj, dateObj);
+      
+      // Additional filter by clientId to ensure context isolation
+      const filteredEntries = entries.filter(e => e.clientId === clientId);
+      
+      // Calculate summary from filtered entries
+      const totalCash = filteredEntries.reduce((sum, e) => sum + parseFloat(e.cashAmount || "0"), 0);
+      const totalPos = filteredEntries.reduce((sum, e) => sum + parseFloat(e.posAmount || "0"), 0);
+      const totalTransfer = filteredEntries.reduce((sum, e) => sum + parseFloat(e.transferAmount || "0"), 0);
+      const totalVoids = filteredEntries.reduce((sum, e) => sum + parseFloat(e.voidsAmount || "0"), 0);
+      const grandTotal = filteredEntries.reduce((sum, e) => sum + parseFloat(e.totalSales || "0"), 0);
+      const entriesCount = filteredEntries.length;
+      
+      res.json({
+        totalCash,
+        totalPos,
+        totalTransfer,
+        totalVoids,
+        grandTotal,
+        entriesCount,
+        avgPerEntry: entriesCount > 0 ? Math.round(grandTotal / entriesCount) : 0
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1924,9 +1989,10 @@ export async function registerRoutes(
   // ============== EXCEPTIONS ==============
   app.get("/api/exceptions", requireAuth, async (req, res) => {
     try {
-      const { outletId, status, severity } = req.query;
+      const { clientId, departmentId, status, severity } = req.query;
       const exceptions = await storage.getExceptions({
-        outletId: outletId as string | undefined,
+        clientId: clientId as string | undefined,
+        departmentId: departmentId as string | undefined,
         status: status as string | undefined,
         severity: severity as string | undefined,
       });
