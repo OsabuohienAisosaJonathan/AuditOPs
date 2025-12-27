@@ -354,6 +354,7 @@ export default function AuditWorkspace() {
                 <CountsTab 
                   stockCounts={stockCounts}
                   items={items}
+                  clientId={clientId}
                   departmentId={departmentId}
                   dateStr={dateStr}
                   totalVariance={totalVariance}
@@ -1153,15 +1154,35 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   );
 }
 
-function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }: {
+function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalVariance }: {
   stockCounts: StockCount[];
   items: Item[];
+  clientId: string | null;
   departmentId: string | null;
   dateStr: string;
   totalVariance: number;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string>("");
   const queryClient = useQueryClient();
+
+  const { data: storeIssues = [] } = useQuery({
+    queryKey: ["store-issues", clientId, dateStr],
+    queryFn: () => clientId ? storeIssuesApi.getAll(clientId, dateStr) : Promise.resolve([]),
+    enabled: !!clientId,
+  });
+
+  const issuedQtyByItem = useMemo(() => {
+    const map: Record<string, number> = {};
+    storeIssues.forEach((issue: StoreIssue & { lines?: StoreIssueLine[] }) => {
+      if (issue.toDepartmentId === departmentId && issue.lines) {
+        issue.lines.forEach((line) => {
+          map[line.itemId] = (map[line.itemId] || 0) + Number(line.qtyIssued || 0);
+        });
+      }
+    });
+    return map;
+  }, [storeIssues, departmentId]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => stockCountsApi.create(data),
@@ -1176,15 +1197,19 @@ function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }:
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const expected = Number(formData.get("expectedQty")) || 0;
+    const opening = Number(formData.get("openingQty")) || 0;
+    const added = issuedQtyByItem[selectedItemId] || 0;
+    const sold = Number(formData.get("soldQty")) || 0;
+    const expected = opening + added - sold;
     const actual = Number(formData.get("actualQty")) || 0;
     createMutation.mutate({
+      clientId,
       departmentId,
-      itemId: formData.get("itemId"),
+      itemId: selectedItemId,
       date: dateStr,
-      openingQty: formData.get("openingQty") || "0",
-      receivedQty: "0",
-      soldQty: "0",
+      openingQty: String(opening),
+      addedQty: String(added),
+      soldQty: String(sold),
       expectedClosingQty: String(expected),
       actualClosingQty: String(actual),
       varianceQty: String(actual - expected),
@@ -1211,6 +1236,8 @@ function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }:
               <TableRow>
                 <TableHead>Item</TableHead>
                 <TableHead className="text-right">Opening</TableHead>
+                <TableHead className="text-right text-emerald-700">+ Added</TableHead>
+                <TableHead className="text-right text-red-700">- Sold</TableHead>
                 <TableHead className="text-right">Expected</TableHead>
                 <TableHead className="text-right">Actual</TableHead>
                 <TableHead className="text-right">Variance</TableHead>
@@ -1220,7 +1247,7 @@ function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }:
             <TableBody>
               {stockCounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No stock counts recorded. Click "Add Count" to begin.
                   </TableCell>
                 </TableRow>
@@ -1228,10 +1255,14 @@ function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }:
                 stockCounts.map((count) => {
                   const item = items.find(i => i.id === count.itemId);
                   const variance = Number(count.varianceQty || 0);
+                  const addedQty = Number((count as any).addedQty || 0);
+                  const soldQty = Number(count.soldQty || 0);
                   return (
                     <TableRow key={count.id} data-testid={`row-count-${count.id}`}>
                       <TableCell className="font-medium">{item?.name || count.itemId}</TableCell>
                       <TableCell className="text-right font-mono">{count.openingQty}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-600">+{addedQty}</TableCell>
+                      <TableCell className="text-right font-mono text-red-600">-{soldQty}</TableCell>
                       <TableCell className="text-right font-mono">{count.expectedClosingQty}</TableCell>
                       <TableCell className="text-right font-mono">{count.actualClosingQty || "-"}</TableCell>
                       <TableCell className={cn(
@@ -1265,17 +1296,17 @@ function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }:
         </div>
       </CardContent>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setSelectedItemId(""); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Stock Count</DialogTitle>
-            <DialogDescription>Record physical count for an item</DialogDescription>
+            <DialogDescription>Record physical count using SSRV formula: Opening + Added - Sold = Expected</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="itemId">Item</Label>
-                <Select name="itemId">
+                <Select name="itemId" value={selectedItemId} onValueChange={setSelectedItemId}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
                     {items.map(item => (
@@ -1284,24 +1315,34 @@ function CountsTab({ stockCounts, items, departmentId, dateStr, totalVariance }:
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="openingQty">Opening Qty</Label>
-                  <Input id="openingQty" name="openingQty" type="number" placeholder="0" />
+                  <Input id="openingQty" name="openingQty" type="number" step="0.01" placeholder="0" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expectedQty">Expected Qty</Label>
-                  <Input id="expectedQty" name="expectedQty" type="number" placeholder="0" required />
+                  <Label htmlFor="addedQty" className="text-emerald-700">+ Added (from Store)</Label>
+                  <Input 
+                    id="addedQty" 
+                    value={selectedItemId ? (issuedQtyByItem[selectedItemId] || 0) : 0} 
+                    className="bg-emerald-50 text-emerald-700 font-mono" 
+                    disabled 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="soldQty" className="text-red-700">- Sold</Label>
+                  <Input id="soldQty" name="soldQty" type="number" step="0.01" placeholder="0" />
                 </div>
               </div>
+              <Separator />
               <div className="space-y-2">
-                <Label htmlFor="actualQty">Actual Count</Label>
-                <Input id="actualQty" name="actualQty" type="number" placeholder="0" required />
+                <Label htmlFor="actualQty">Actual Physical Count</Label>
+                <Input id="actualQty" name="actualQty" type="number" step="0.01" placeholder="0" required />
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={createMutation.isPending}>
+              <Button type="submit" disabled={createMutation.isPending || !selectedItemId}>
                 {createMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
                 Save Count
               </Button>
