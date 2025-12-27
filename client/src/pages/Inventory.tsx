@@ -15,18 +15,15 @@ import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useClientContext } from "@/lib/client-context";
 
 export default function Inventory() {
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { clients, selectedClientId: contextClientId, selectedClient } = useClientContext();
 
-  const { data: clients } = useQuery({
-    queryKey: ["clients"],
-    queryFn: clientsApi.getAll,
-  });
-
-  const selectedClientId = clients?.[0]?.id;
+  const selectedClientId = contextClientId || clients?.[0]?.id;
 
   const { data: items, isLoading: itemsLoading } = useQuery({
     queryKey: ["items", selectedClientId],
@@ -91,7 +88,7 @@ export default function Inventory() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Inventory Management</h1>
-          <p className="text-muted-foreground">Manage items and suppliers for {clients[0]?.name}</p>
+          <p className="text-muted-foreground">Manage items and suppliers for {selectedClient?.name || clients[0]?.name || "All Clients"}</p>
         </div>
       </div>
 

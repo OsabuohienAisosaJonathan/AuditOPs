@@ -71,6 +71,10 @@ export async function registerRoutes(
 ): Promise<Server> {
   const PgStore = connectPgSimple(session);
   
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+  }
+  
   app.use(
     session({
       store: new PgStore({
@@ -81,10 +85,11 @@ export async function registerRoutes(
       secret: process.env.SESSION_SECRET || "audit-ops-secret-key-change-in-production",
       resave: false,
       saveUninitialized: false,
+      proxy: process.env.NODE_ENV === "production",
       cookie: {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        sameSite: "lax",
         maxAge: 24 * 60 * 60 * 1000,
       },
     })

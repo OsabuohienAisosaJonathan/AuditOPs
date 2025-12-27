@@ -151,14 +151,20 @@ export default function Clients() {
   };
 
   if (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const isAuthError = errorMessage.includes("401") || errorMessage.includes("Unauthorized") || errorMessage.includes("Session expired");
     return (
       <Empty className="min-h-[400px] border" data-testid="error-clients">
         <EmptyMedia variant="icon">
           <Building2 className="h-6 w-6 text-destructive" />
         </EmptyMedia>
         <EmptyHeader>
-          <EmptyTitle>Failed to load clients</EmptyTitle>
-          <EmptyDescription>Please try refreshing the page.</EmptyDescription>
+          <EmptyTitle>{isAuthError ? "Session expired" : "Failed to load clients"}</EmptyTitle>
+          <EmptyDescription>
+            {isAuthError 
+              ? "Your session has expired. Please log in again." 
+              : `Error: ${errorMessage}. Please try refreshing the page.`}
+          </EmptyDescription>
         </EmptyHeader>
       </Empty>
     );

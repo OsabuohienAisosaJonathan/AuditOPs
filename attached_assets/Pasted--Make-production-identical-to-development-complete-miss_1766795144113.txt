@@ -1,0 +1,98 @@
+“Make production identical to development + complete missing modules”
+
+Use this exactly with your AI builder:
+
+✅ ONE-PIECE PROMPT: FIX PRODUCTION “FAILED TO LOAD” + COMPLETE INVENTORY/DEPARTMENT + LINK ALL BUTTONS
+
+You are maintaining Miemploya AuditOps. The app works in development/preview, but after publishing (production), the Clients page and Dashboard show “Failed to load”. Also, users cannot add departments, cannot add inventory, the inventory module is incomplete, and multiple buttons are not linked.
+
+Your goal is to make the app production-ready, ensuring production behaves exactly like development, and to complete the missing modules.
+
+PHASE 1 — Fix Production vs Development mismatch (Critical)
+
+Identify why production shows “Failed to load” while development works.
+
+Add a visible diagnostics log (only in dev/admin) to reveal:
+a. API base URL being used
+b. whether backend is reachable
+c. the exact failing request + status code
+
+Confirm production environment variables are correctly configured:
+a. DATABASE_URL (or equivalent)
+b. JWT/auth secret(s)
+c. API_BASE_URL (if used)
+d. file storage keys (if evidence uploads exist)
+
+Confirm database migrations run in production. If tables are missing, automatically run migrations on deploy.
+
+Ensure production uses the correct API route prefix and does not point to localhost/dev endpoints.
+
+Fix CORS and cookie/session settings for production:
+a. correct domain
+b. secure cookies in https
+c. correct SameSite settings
+
+Add robust error handling: if API fails, show the true error (“Unauthorized”, “DB not reachable”, “Missing env var”) instead of generic “Failed to load”.
+
+Acceptance test: In production, Dashboard and Clients load without errors, and the Network tab shows 200 responses (not 401/500).
+
+PHASE 2 — Replace any mock/dev data with real persisted DB data
+
+Ensure client dropdowns, client lists, and dashboard metrics use real DB queries in both dev and production.
+
+Remove hardcoded demo arrays or in-memory lists that break in production.
+
+If production DB has no data, provide a safe “Create sample client data” admin-only action.
+
+PHASE 3 — Implement Departments properly (unlimited) and link to client setup
+
+On Add Client / Client Setup page:
+a. allow adding unlimited departments per client
+b. allow editing and deleting departments (with safety checks)
+
+Ensure departments appear instantly in dashboard department dropdown for the selected client.
+
+PHASE 4 — Complete Inventory & Purchases module (must be usable)
+
+Implement Inventory core features end-to-end:
+a. Items/SKU management (add/edit/archive)
+b. Supplier management
+c. Purchases + GRN with attachments
+d. Stock movements: transfers, wastage/spoilage, staff consumption, complimentary
+e. Stock count interface
+
+Ensure “Add inventory/item” actually saves and reflects in lists.
+
+Ensure all buttons on inventory pages are linked and functional (no dead buttons).
+
+Add clean empty states when there is no data.
+
+PHASE 5 — Fix routing + button linking across the app
+
+Verify every sidebar menu route works in production.
+
+Fix any broken links, missing routes, or mismatched paths.
+
+Ensure “Start Daily Audit”, “Import POS Data”, “View All Exceptions”, and “Generate Report” work and preserve selected client/outlet/department/date context.
+
+PHASE 6 — Verification checklist (must be demonstrated)
+
+In production (published), demonstrate these steps:
+
+Login as Super Admin
+
+Create a new client
+
+Add 5 departments to the client
+
+Add 10 inventory items and 1 supplier
+
+Record 1 purchase/GRN
+
+Confirm dashboard dropdown includes the new client and departments
+
+Confirm Dashboard metrics update based on All Clients vs selected client
+
+Confirm no “Failed to load” on Dashboard/Clients
+
+Confirm all actions appear in Audit Trail
