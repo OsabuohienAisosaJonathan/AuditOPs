@@ -72,6 +72,53 @@ export interface OutletDepartmentLink {
   createdAt: Date;
 }
 
+export interface SupportingDocument {
+  name: string;
+  url: string;
+  type: string;
+}
+
+export interface PaymentDeclaration {
+  id: string;
+  clientId: string;
+  outletId: string;
+  date: string;
+  reportedCash: string | null;
+  reportedPosSettlement: string | null;
+  reportedTransfers: string | null;
+  totalReported: string | null;
+  notes: string | null;
+  supportingDocuments: SupportingDocument[] | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ReconciliationHint {
+  captured: {
+    totalCash: number;
+    totalPos: number;
+    totalTransfer: number;
+    totalSales: number;
+  };
+  reported: {
+    cash: number;
+    pos: number;
+    transfers: number;
+    total: number;
+    notes: string | null;
+    documents: SupportingDocument[] | null;
+  } | null;
+  difference: {
+    cash: number;
+    pos: number;
+    transfers: number;
+    total: number;
+  };
+  hasDeclaration: boolean;
+  status: 'balanced' | 'over_declared' | 'under_declared';
+}
+
 export interface Supplier {
   id: string;
   clientId: string;
@@ -420,6 +467,51 @@ export const outletsApi = {
     }),
 };
 
+export const paymentDeclarationsApi = {
+  getByOutlet: (outletId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    const queryString = params.toString();
+    return fetchApi<PaymentDeclaration[]>(`/payment-declarations/${outletId}${queryString ? `?${queryString}` : ""}`);
+  },
+  get: (clientId: string, outletId: string, date: string) => 
+    fetchApi<PaymentDeclaration>(`/payment-declarations/${clientId}/${outletId}/${date}`),
+  create: (data: {
+    clientId: string;
+    outletId: string;
+    date: string;
+    reportedCash?: string;
+    reportedPosSettlement?: string;
+    reportedTransfers?: string;
+    notes?: string;
+    supportingDocuments?: SupportingDocument[];
+  }) =>
+    fetchApi<PaymentDeclaration>("/payment-declarations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<{
+    reportedCash: string;
+    reportedPosSettlement: string;
+    reportedTransfers: string;
+    notes: string;
+    supportingDocuments: SupportingDocument[];
+  }>) =>
+    fetchApi<PaymentDeclaration>(`/payment-declarations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/payment-declarations/${id}`, {
+      method: "DELETE",
+    }),
+};
+
+export const reconciliationHintApi = {
+  get: (outletId: string, date: string) => 
+    fetchApi<ReconciliationHint>(`/reconciliation-hint/${outletId}/${date}`),
+};
 
 export const suppliersApi = {
   getByClient: (clientId: string) => fetchApi<Supplier[]>(`/suppliers?clientId=${clientId}`),
