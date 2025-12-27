@@ -649,9 +649,38 @@ export const stockCountsApi = {
     }),
 };
 
+export const stockMovementsApi = {
+  getAll: (filters?: { clientId?: string; departmentId?: string; date?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.clientId) params.append("clientId", filters.clientId);
+    if (filters?.departmentId) params.append("departmentId", filters.departmentId);
+    if (filters?.date) params.append("date", filters.date);
+    return fetchApi<StockMovement[]>(`/stock-movements${params.toString() ? `?${params}` : ""}`);
+  },
+  get: (id: string) => fetchApi<StockMovement>(`/stock-movements/${id}`),
+  create: (data: any) =>
+    fetchApi<StockMovement>("/stock-movements", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: any) =>
+    fetchApi<StockMovement>(`/stock-movements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<void>(`/stock-movements/${id}`, {
+      method: "DELETE",
+    }),
+};
+
 export const reconciliationsApi = {
-  getAll: (departmentId?: string) =>
-    fetchApi<Reconciliation[]>(`/reconciliations${departmentId ? `?departmentId=${departmentId}` : ""}`),
+  getAll: (departmentId?: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (departmentId) params.append("departmentId", departmentId);
+    if (date) params.append("date", date);
+    return fetchApi<Reconciliation[]>(`/reconciliations${params.toString() ? `?${params}` : ""}`);
+  },
   get: (id: string) => fetchApi<Reconciliation>(`/reconciliations/${id}`),
   create: (data: any) =>
     fetchApi<Reconciliation>("/reconciliations", {

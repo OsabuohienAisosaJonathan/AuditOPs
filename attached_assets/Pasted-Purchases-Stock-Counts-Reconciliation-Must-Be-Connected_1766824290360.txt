@@ -1,0 +1,86 @@
+Purchases / Stock Counts / Reconciliation Must Be Connected to DB
+
+For each tab, implement real CRUD and DB persistence using shared endpoints with the standalone pages.
+
+4.1 Shared data source (must sync)
+
+Audit Workspace tabs must use the same backend endpoints/tables as:
+
+Sales tab ↔ Sales Capture page
+
+Purchases + Stock ↔ Inventory & Purchases page
+
+Recon ↔ Reconciliation page
+
+If a user records purchases in Inventory & Purchases page, the Audit Workspace Purchases tab must show it (same client/department/date/range). And vice versa.
+
+4.2 Purchases tab requirements
+
+Must allow:
+
+record purchases (supplier, items, qty, unit cost, total)
+
+attach evidence (invoice/GRN)
+
+show purchases list filtered to audit context
+
+totals summary
+
+4.3 Counts tab requirements
+
+Must allow:
+
+stock count entry (by item, expected qty, counted qty)
+
+variance calculation
+
+evidence upload (optional)
+
+save and update totals
+
+4.4 Recon tab requirements
+
+Must display:
+
+captured sales totals
+
+reported payments totals (if applicable)
+
+purchases totals
+
+stock usage/variance summary
+
+reconciliation status and difference
+Must allow:
+
+run reconciliation (final submission flow above)
+
+generate reconciliation report after submission
+
+5) Step Status Must Reflect Activity From Main Pages
+
+If the user performs tasks in standalone pages, the Audit Workspace checklist must update automatically.
+
+Rules:
+
+If sales exists for the audit context, Sales step becomes “In progress/Completed” depending on completion flag.
+
+If purchases exist, Purchases step updates.
+
+If stock counts exist, Counts step updates.
+
+If reconciliation exists and audit is submitted, Recon step updates.
+
+Implement automatic status detection:
+
+step complete flags stored in audit session
+
+plus DB checks for required data presence
+
+6) Error handling and production behavior
+
+Remove placeholders or broken routes that cause missing tabs to render blank.
+
+Fix any “Failed to load” errors by ensuring API routes are correct and work in production.
+
+Display meaningful errors and keep the user in draft mode if submission fails.

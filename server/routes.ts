@@ -2236,12 +2236,45 @@ export async function registerRoutes(
   });
 
   // ============== STOCK MOVEMENTS ==============
+  app.get("/api/stock-movements", requireAuth, async (req, res) => {
+    try {
+      const { clientId, departmentId } = req.query;
+      
+      if (departmentId) {
+        const movements = await storage.getStockMovementsByDepartment(departmentId as string);
+        return res.json(movements);
+      }
+      
+      if (clientId) {
+        const movements = await storage.getStockMovements(clientId as string);
+        return res.json(movements);
+      }
+      
+      res.json([]);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/outlets/:outletId/movements", requireAuth, async (req, res) => {
     try {
       const movements = await storage.getStockMovements(req.params.outletId);
       res.json(movements);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/stock-movements", requireAuth, async (req, res) => {
+    try {
+      const data = insertStockMovementSchema.parse({
+        ...req.body,
+        createdBy: req.session.userId!,
+      });
+      const movement = await storage.createStockMovement(data);
+      res.json(movement);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
     }
   });
 
