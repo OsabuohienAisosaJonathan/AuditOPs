@@ -4,7 +4,7 @@ import {
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
-  storeIssues, storeIssueLines, storeStock,
+  storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -21,7 +21,9 @@ import {
   type AuditChangeLog, type InsertAuditChangeLog,
   type StoreIssue, type InsertStoreIssue,
   type StoreIssueLine, type InsertStoreIssueLine,
-  type StoreStock, type InsertStoreStock
+  type StoreStock, type InsertStoreStock,
+  type StoreName, type InsertStoreName,
+  type InventoryDepartment, type InsertInventoryDepartment
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -242,6 +244,23 @@ export interface IStorage {
   createStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
   updateStoreStock(id: string, stock: Partial<InsertStoreStock>): Promise<StoreStock | undefined>;
   upsertStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
+
+  // Store Names
+  getStoreNames(): Promise<StoreName[]>;
+  getStoreName(id: string): Promise<StoreName | undefined>;
+  getStoreNameByName(name: string): Promise<StoreName | undefined>;
+  createStoreName(storeName: InsertStoreName): Promise<StoreName>;
+  updateStoreName(id: string, storeName: Partial<InsertStoreName>): Promise<StoreName | undefined>;
+  deleteStoreName(id: string): Promise<boolean>;
+
+  // Inventory Departments
+  getInventoryDepartments(clientId: string): Promise<InventoryDepartment[]>;
+  getInventoryDepartment(id: string): Promise<InventoryDepartment | undefined>;
+  getInventoryDepartmentByType(clientId: string, inventoryType: string): Promise<InventoryDepartment | undefined>;
+  checkInventoryDepartmentDuplicate(clientId: string, storeNameId: string, inventoryType: string, excludeId?: string): Promise<boolean>;
+  createInventoryDepartment(dept: InsertInventoryDepartment): Promise<InventoryDepartment>;
+  updateInventoryDepartment(id: string, dept: Partial<InsertInventoryDepartment>): Promise<InventoryDepartment | undefined>;
+  deleteInventoryDepartment(id: string): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -1545,6 +1564,89 @@ export class DbStorage implements IStorage {
     }
     
     return this.createStoreStock(insertStock);
+  }
+
+  // Store Names
+  async getStoreNames(): Promise<StoreName[]> {
+    return db.select().from(storeNames).orderBy(storeNames.name);
+  }
+
+  async getStoreName(id: string): Promise<StoreName | undefined> {
+    const [storeName] = await db.select().from(storeNames).where(eq(storeNames.id, id));
+    return storeName;
+  }
+
+  async getStoreNameByName(name: string): Promise<StoreName | undefined> {
+    const [storeName] = await db.select().from(storeNames).where(eq(storeNames.name, name));
+    return storeName;
+  }
+
+  async createStoreName(insertStoreName: InsertStoreName): Promise<StoreName> {
+    const [storeName] = await db.insert(storeNames).values(insertStoreName).returning();
+    return storeName;
+  }
+
+  async updateStoreName(id: string, updateData: Partial<InsertStoreName>): Promise<StoreName | undefined> {
+    const [storeName] = await db.update(storeNames).set(updateData).where(eq(storeNames.id, id)).returning();
+    return storeName;
+  }
+
+  async deleteStoreName(id: string): Promise<boolean> {
+    await db.delete(storeNames).where(eq(storeNames.id, id));
+    return true;
+  }
+
+  // Inventory Departments
+  async getInventoryDepartments(clientId: string): Promise<InventoryDepartment[]> {
+    return db.select().from(inventoryDepartments).where(eq(inventoryDepartments.clientId, clientId));
+  }
+
+  async getInventoryDepartment(id: string): Promise<InventoryDepartment | undefined> {
+    const [dept] = await db.select().from(inventoryDepartments).where(eq(inventoryDepartments.id, id));
+    return dept;
+  }
+
+  async getInventoryDepartmentByType(clientId: string, inventoryType: string): Promise<InventoryDepartment | undefined> {
+    const [dept] = await db.select().from(inventoryDepartments).where(
+      and(
+        eq(inventoryDepartments.clientId, clientId),
+        eq(inventoryDepartments.inventoryType, inventoryType)
+      )
+    );
+    return dept;
+  }
+
+  async checkInventoryDepartmentDuplicate(clientId: string, storeNameId: string, inventoryType: string, excludeId?: string): Promise<boolean> {
+    let conditions = [
+      eq(inventoryDepartments.clientId, clientId),
+      eq(inventoryDepartments.storeNameId, storeNameId),
+      eq(inventoryDepartments.inventoryType, inventoryType)
+    ];
+    
+    if (excludeId) {
+      const result = await db.select().from(inventoryDepartments).where(
+        and(...conditions, sql`${inventoryDepartments.id} != ${excludeId}`)
+      );
+      return result.length > 0;
+    }
+    
+    const result = await db.select().from(inventoryDepartments).where(and(...conditions));
+    return result.length > 0;
+  }
+
+  async createInventoryDepartment(insertDept: InsertInventoryDepartment): Promise<InventoryDepartment> {
+    const [dept] = await db.insert(inventoryDepartments).values(insertDept).returning();
+    return dept;
+  }
+
+  async updateInventoryDepartment(id: string, updateData: Partial<InsertInventoryDepartment>): Promise<InventoryDepartment | undefined> {
+    const [dept] = await db.update(inventoryDepartments).set(updateData).where(eq(inventoryDepartments.id, id)).returning();
+    return dept;
+  }
+
+  async deleteInventoryDepartment(id: string): Promise<boolean> {
+    await db.delete(inventoryDepartments).where(eq(inventoryDepartments.id, id));
+    return true;
   }
 }
 

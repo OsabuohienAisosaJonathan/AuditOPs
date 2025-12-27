@@ -11,6 +11,7 @@ import {
   insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
   insertPaymentDeclarationSchema, insertStoreIssueSchema, insertStoreIssueLineSchema, insertStoreStockSchema,
+  insertStoreNameSchema, insertInventoryDepartmentSchema, INVENTORY_TYPES,
   type UserRole 
 } from "@shared/schema";
 import { randomBytes } from "crypto";
@@ -2099,6 +2100,182 @@ export async function registerRoutes(
       res.json(stock);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== STORE NAMES ==============
+  app.get("/api/store-names", requireAuth, async (req, res) => {
+    try {
+      const storeNames = await storage.getStoreNames();
+      res.json(storeNames);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/store-names/:id", requireAuth, async (req, res) => {
+    try {
+      const storeName = await storage.getStoreName(req.params.id);
+      if (!storeName) {
+        return res.status(404).json({ error: "Store name not found" });
+      }
+      res.json(storeName);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/store-names", requireAuth, async (req, res) => {
+    try {
+      const data = insertStoreNameSchema.parse(req.body);
+      
+      const existing = await storage.getStoreNameByName(data.name);
+      if (existing) {
+        return res.status(409).json({ error: "Store name already exists" });
+      }
+      
+      const storeName = await storage.createStoreName(data);
+      res.status(201).json(storeName);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/store-names/:id", requireAuth, async (req, res) => {
+    try {
+      const data = insertStoreNameSchema.partial().parse(req.body);
+      
+      if (data.name) {
+        const existing = await storage.getStoreNameByName(data.name);
+        if (existing && existing.id !== req.params.id) {
+          return res.status(409).json({ error: "Store name already exists" });
+        }
+      }
+      
+      const storeName = await storage.updateStoreName(req.params.id, data);
+      if (!storeName) {
+        return res.status(404).json({ error: "Store name not found" });
+      }
+      res.json(storeName);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/store-names/:id", requireAuth, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      await storage.deleteStoreName(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.message?.includes("violates foreign key")) {
+        return res.status(400).json({ error: "Cannot delete store name - it is linked to inventory departments" });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== INVENTORY DEPARTMENTS ==============
+  app.get("/api/clients/:clientId/inventory-departments", requireAuth, async (req, res) => {
+    try {
+      const inventoryDepts = await storage.getInventoryDepartments(req.params.clientId);
+      res.json(inventoryDepts);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/inventory-departments/:id", requireAuth, async (req, res) => {
+    try {
+      const dept = await storage.getInventoryDepartment(req.params.id);
+      if (!dept) {
+        return res.status(404).json({ error: "Inventory department not found" });
+      }
+      res.json(dept);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/inventory-departments", requireAuth, async (req, res) => {
+    try {
+      const clientId = req.params.clientId;
+      const data = insertInventoryDepartmentSchema.parse({
+        ...req.body,
+        clientId
+      });
+      
+      if (!INVENTORY_TYPES.includes(data.inventoryType as any)) {
+        return res.status(400).json({ error: "Invalid inventory type" });
+      }
+      
+      if (data.inventoryType === "MAIN_STORE" || data.inventoryType === "WAREHOUSE") {
+        const existing = await storage.getInventoryDepartmentByType(clientId, data.inventoryType);
+        if (existing) {
+          return res.status(409).json({ 
+            error: `Only one ${data.inventoryType.replace("_", " ").toLowerCase()} is allowed per client` 
+          });
+        }
+      }
+      
+      const isDuplicate = await storage.checkInventoryDepartmentDuplicate(
+        clientId, 
+        data.storeNameId, 
+        data.inventoryType
+      );
+      if (isDuplicate) {
+        return res.status(409).json({ error: "This store name is already linked with this inventory type" });
+      }
+      
+      const dept = await storage.createInventoryDepartment(data);
+      res.status(201).json(dept);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/inventory-departments/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getInventoryDepartment(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Inventory department not found" });
+      }
+      
+      const data = insertInventoryDepartmentSchema.partial().parse(req.body);
+      
+      if (data.inventoryType && (data.inventoryType === "MAIN_STORE" || data.inventoryType === "WAREHOUSE")) {
+        const typeExists = await storage.getInventoryDepartmentByType(existing.clientId, data.inventoryType);
+        if (typeExists && typeExists.id !== req.params.id) {
+          return res.status(409).json({ 
+            error: `Only one ${data.inventoryType.replace("_", " ").toLowerCase()} is allowed per client` 
+          });
+        }
+      }
+      
+      if (data.storeNameId || data.inventoryType) {
+        const isDuplicate = await storage.checkInventoryDepartmentDuplicate(
+          existing.clientId,
+          data.storeNameId || existing.storeNameId,
+          data.inventoryType || existing.inventoryType,
+          req.params.id
+        );
+        if (isDuplicate) {
+          return res.status(409).json({ error: "This store name is already linked with this inventory type" });
+        }
+      }
+      
+      const dept = await storage.updateInventoryDepartment(req.params.id, data);
+      res.json(dept);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/inventory-departments/:id", requireAuth, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      await storage.deleteInventoryDepartment(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

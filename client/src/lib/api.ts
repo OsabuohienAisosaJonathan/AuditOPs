@@ -1092,3 +1092,57 @@ export const auditsApi = {
     }),
   getChangeLog: (auditId: string) => fetchApi<AuditChangeLog[]>(`/audits/${auditId}/change-log`),
 };
+
+export interface StoreName {
+  id: string;
+  name: string;
+  status: string;
+  createdAt: Date;
+}
+
+export interface InventoryDepartment {
+  id: string;
+  clientId: string;
+  storeNameId: string;
+  inventoryType: "MAIN_STORE" | "WAREHOUSE" | "DEPARTMENT_STORE";
+  status: string;
+  createdAt: Date;
+}
+
+export const storeNamesApi = {
+  getAll: () => fetchApi<StoreName[]>("/store-names"),
+  get: (id: string) => fetchApi<StoreName>(`/store-names/${id}`),
+  create: (data: { name: string; status?: string }) =>
+    fetchApi<StoreName>("/store-names", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { name?: string; status?: string }) =>
+    fetchApi<StoreName>(`/store-names/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/store-names/${id}`, {
+      method: "DELETE",
+    }),
+};
+
+export const inventoryDepartmentsApi = {
+  getByClient: (clientId: string) => fetchApi<InventoryDepartment[]>(`/clients/${clientId}/inventory-departments`),
+  get: (id: string) => fetchApi<InventoryDepartment>(`/inventory-departments/${id}`),
+  create: (clientId: string, data: { storeNameId: string; inventoryType: string; status?: string }) =>
+    fetchApi<InventoryDepartment>(`/clients/${clientId}/inventory-departments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { storeNameId?: string; inventoryType?: string; status?: string }) =>
+    fetchApi<InventoryDepartment>(`/inventory-departments/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/inventory-departments/${id}`, {
+      method: "DELETE",
+    }),
+};

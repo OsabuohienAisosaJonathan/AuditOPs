@@ -7,12 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal, Warehouse, Building } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { clientsApi, itemsApi, suppliersApi, Item, Supplier } from "@/lib/api";
+import { clientsApi, itemsApi, suppliersApi, storeNamesApi, inventoryDepartmentsApi, Item, Supplier, StoreName, InventoryDepartment } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { toast } from "sonner";
@@ -28,6 +28,16 @@ export default function Inventory() {
   const [deleteSupplierOpen, setDeleteSupplierOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  
+  const [createStoreNameOpen, setCreateStoreNameOpen] = useState(false);
+  const [editStoreNameOpen, setEditStoreNameOpen] = useState(false);
+  const [deleteStoreNameOpen, setDeleteStoreNameOpen] = useState(false);
+  const [selectedStoreName, setSelectedStoreName] = useState<StoreName | null>(null);
+  
+  const [createInvDeptOpen, setCreateInvDeptOpen] = useState(false);
+  const [editInvDeptOpen, setEditInvDeptOpen] = useState(false);
+  const [deleteInvDeptOpen, setDeleteInvDeptOpen] = useState(false);
+  const [selectedInvDept, setSelectedInvDept] = useState<InventoryDepartment | null>(null);
   
   const queryClient = useQueryClient();
   const { clients, selectedClientId: contextClientId, selectedClient } = useClientContext();
@@ -122,6 +132,97 @@ export default function Inventory() {
     },
   });
 
+  const { data: storeNames, isLoading: storeNamesLoading } = useQuery({
+    queryKey: ["store-names"],
+    queryFn: () => storeNamesApi.getAll(),
+  });
+
+  const { data: inventoryDepts, isLoading: invDeptsLoading } = useQuery({
+    queryKey: ["inventory-departments", selectedClientId],
+    queryFn: () => selectedClientId ? inventoryDepartmentsApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!selectedClientId,
+  });
+
+  const createStoreNameMutation = useMutation({
+    mutationFn: (data: { name: string }) => storeNamesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-names"] });
+      setCreateStoreNameOpen(false);
+      toast.success("Store name created successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to create store name");
+    },
+  });
+
+  const updateStoreNameMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; status?: string } }) => storeNamesApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-names"] });
+      setEditStoreNameOpen(false);
+      setSelectedStoreName(null);
+      toast.success("Store name updated successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to update store name");
+    },
+  });
+
+  const deleteStoreNameMutation = useMutation({
+    mutationFn: (id: string) => storeNamesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-names"] });
+      setDeleteStoreNameOpen(false);
+      setSelectedStoreName(null);
+      toast.success("Store name deleted successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to delete store name");
+    },
+  });
+
+  const createInvDeptMutation = useMutation({
+    mutationFn: (data: { storeNameId: string; inventoryType: string }) => 
+      inventoryDepartmentsApi.create(selectedClientId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inventory-departments"] });
+      setCreateInvDeptOpen(false);
+      toast.success("Inventory department created successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to create inventory department");
+    },
+  });
+
+  const updateInvDeptMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { storeNameId?: string; inventoryType?: string; status?: string } }) => 
+      inventoryDepartmentsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inventory-departments"] });
+      setEditInvDeptOpen(false);
+      setSelectedInvDept(null);
+      toast.success("Inventory department updated successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to update inventory department");
+    },
+  });
+
+  const deleteInvDeptMutation = useMutation({
+    mutationFn: (id: string) => inventoryDepartmentsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inventory-departments"] });
+      setDeleteInvDeptOpen(false);
+      setSelectedInvDept(null);
+      toast.success("Inventory department deleted successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to delete inventory department");
+    },
+  });
+
+  const getStoreNameById = (id: string) => storeNames?.find(sn => sn.id === id);
+
   const handleEditItem = (item: Item) => {
     setSelectedItem(item);
     setEditItemOpen(true);
@@ -174,7 +275,7 @@ export default function Inventory() {
       </div>
 
       <Tabs defaultValue="items" className="w-full">
-        <TabsList className="grid w-full max-w-[400px] grid-cols-2">
+        <TabsList className="grid w-full max-w-[600px] grid-cols-4">
           <TabsTrigger value="items" data-testid="tab-items">
             <Package className="h-4 w-4 mr-2" />
             Items
@@ -182,6 +283,14 @@ export default function Inventory() {
           <TabsTrigger value="suppliers" data-testid="tab-suppliers">
             <Truck className="h-4 w-4 mr-2" />
             Suppliers
+          </TabsTrigger>
+          <TabsTrigger value="store-names" data-testid="tab-store-names">
+            <Building className="h-4 w-4 mr-2" />
+            Store Names
+          </TabsTrigger>
+          <TabsTrigger value="inv-departments" data-testid="tab-inv-departments">
+            <Warehouse className="h-4 w-4 mr-2" />
+            Inv. Depts
           </TabsTrigger>
         </TabsList>
 
@@ -502,6 +611,282 @@ export default function Inventory() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Store Names Tab */}
+        <TabsContent value="store-names" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader className="px-6 py-4 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4 items-center flex-1">
+                  <div className="relative w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input className="pl-9 bg-muted/30" placeholder="Search store names..." data-testid="input-search-store-names" />
+                  </div>
+                </div>
+                <Dialog open={createStoreNameOpen} onOpenChange={setCreateStoreNameOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2" data-testid="button-add-store-name">
+                      <Plus className="h-4 w-4" /> Add Store Name
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create Store Name</DialogTitle>
+                      <DialogDescription>Add a new store name to the master list.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      createStoreNameMutation.mutate({
+                        name: formData.get("name") as string,
+                      });
+                    }}>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="storeName">Store Name</Label>
+                          <Input id="storeName" name="name" required placeholder="e.g., Main Kitchen, Bar Area" data-testid="input-store-name" />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setCreateStoreNameOpen(false)}>Cancel</Button>
+                        <Button type="submit" disabled={createStoreNameMutation.isPending} data-testid="button-submit-store-name">
+                          {createStoreNameMutation.isPending && <Spinner className="mr-2" />}
+                          Create Store Name
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {storeNamesLoading ? (
+                <div className="flex items-center justify-center py-12" data-testid="loading-store-names">
+                  <Spinner className="h-8 w-8" />
+                </div>
+              ) : !storeNames || storeNames.length === 0 ? (
+                <Empty className="py-12" data-testid="empty-store-names">
+                  <EmptyMedia variant="icon">
+                    <Building className="h-6 w-6" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>No store names yet</EmptyTitle>
+                    <EmptyDescription>Add store names to link with inventory departments.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button className="gap-2" onClick={() => setCreateStoreNameOpen(true)} data-testid="button-add-first-store-name">
+                    <Plus className="h-4 w-4" /> Add First Store Name
+                  </Button>
+                </Empty>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[80px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {storeNames.map((sn) => (
+                      <TableRow key={sn.id} data-testid={`row-store-name-${sn.id}`}>
+                        <TableCell className="font-medium" data-testid={`text-store-name-${sn.id}`}>{sn.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(
+                            sn.status === "active" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-muted text-muted-foreground"
+                          )} data-testid={`badge-store-name-status-${sn.id}`}>
+                            {sn.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-store-name-actions-${sn.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => { setSelectedStoreName(sn); setEditStoreNameOpen(true); }} data-testid={`button-edit-store-name-${sn.id}`}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => { setSelectedStoreName(sn); setDeleteStoreNameOpen(true); }} 
+                                className="text-red-600"
+                                data-testid={`button-delete-store-name-${sn.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Inventory Departments Tab */}
+        <TabsContent value="inv-departments" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader className="px-6 py-4 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4 items-center flex-1">
+                  <CardDescription>
+                    Inventory departments for: <strong>{selectedClient?.name || clients[0]?.name}</strong>
+                  </CardDescription>
+                </div>
+                <Dialog open={createInvDeptOpen} onOpenChange={setCreateInvDeptOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2" data-testid="button-add-inv-dept">
+                      <Plus className="h-4 w-4" /> Add Inventory Dept
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create Inventory Department</DialogTitle>
+                      <DialogDescription>Link a store name to this client with an inventory type.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      createInvDeptMutation.mutate({
+                        storeNameId: formData.get("storeNameId") as string,
+                        inventoryType: formData.get("inventoryType") as string,
+                      });
+                    }}>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="storeNameId">Store Name</Label>
+                          <Select name="storeNameId" required>
+                            <SelectTrigger data-testid="select-store-name">
+                              <SelectValue placeholder="Select a store name" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {storeNames?.filter(sn => sn.status === "active").map(sn => (
+                                <SelectItem key={sn.id} value={sn.id}>{sn.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">Create store names in the Store Names tab first.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="inventoryType">Inventory Type</Label>
+                          <Select name="inventoryType" required>
+                            <SelectTrigger data-testid="select-inventory-type">
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="MAIN_STORE">Main Store</SelectItem>
+                              <SelectItem value="WAREHOUSE">Warehouse</SelectItem>
+                              <SelectItem value="DEPARTMENT_STORE">Department Store</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">Only one Main Store and one Warehouse allowed per client.</p>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setCreateInvDeptOpen(false)}>Cancel</Button>
+                        <Button type="submit" disabled={createInvDeptMutation.isPending} data-testid="button-submit-inv-dept">
+                          {createInvDeptMutation.isPending && <Spinner className="mr-2" />}
+                          Create Department
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {invDeptsLoading ? (
+                <div className="flex items-center justify-center py-12" data-testid="loading-inv-depts">
+                  <Spinner className="h-8 w-8" />
+                </div>
+              ) : !inventoryDepts || inventoryDepts.length === 0 ? (
+                <Empty className="py-12" data-testid="empty-inv-depts">
+                  <EmptyMedia variant="icon">
+                    <Warehouse className="h-6 w-6" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>No inventory departments yet</EmptyTitle>
+                    <EmptyDescription>Link store names to create inventory departments.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button className="gap-2" onClick={() => setCreateInvDeptOpen(true)} data-testid="button-add-first-inv-dept">
+                    <Plus className="h-4 w-4" /> Add First Department
+                  </Button>
+                </Empty>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Store Name</TableHead>
+                      <TableHead>Inventory Type</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[80px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inventoryDepts.map((dept) => (
+                      <TableRow key={dept.id} data-testid={`row-inv-dept-${dept.id}`}>
+                        <TableCell className="font-medium" data-testid={`text-inv-dept-name-${dept.id}`}>
+                          {getStoreNameById(dept.storeNameId)?.name || "Unknown"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(
+                            dept.inventoryType === "MAIN_STORE" 
+                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                              : dept.inventoryType === "WAREHOUSE"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          )} data-testid={`badge-inv-dept-type-${dept.id}`}>
+                            {dept.inventoryType.replace("_", " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(
+                            dept.status === "active" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-muted text-muted-foreground"
+                          )} data-testid={`badge-inv-dept-status-${dept.id}`}>
+                            {dept.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-inv-dept-actions-${dept.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => { setSelectedInvDept(dept); setEditInvDeptOpen(true); }} data-testid={`button-edit-inv-dept-${dept.id}`}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => { setSelectedInvDept(dept); setDeleteInvDeptOpen(true); }} 
+                                className="text-red-600"
+                                data-testid={`button-delete-inv-dept-${dept.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Edit Item Dialog */}
@@ -671,6 +1056,143 @@ export default function Inventory() {
               data-testid="button-confirm-delete-supplier"
             >
               {deleteSupplierMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Store Name Dialog */}
+      <Dialog open={editStoreNameOpen} onOpenChange={setEditStoreNameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Store Name</DialogTitle>
+            <DialogDescription>Update the store name.</DialogDescription>
+          </DialogHeader>
+          {selectedStoreName && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              updateStoreNameMutation.mutate({
+                id: selectedStoreName.id,
+                data: {
+                  name: formData.get("name") as string,
+                },
+              });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-storeName">Store Name</Label>
+                  <Input id="edit-storeName" name="name" defaultValue={selectedStoreName.name} required data-testid="input-edit-store-name" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditStoreNameOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateStoreNameMutation.isPending} data-testid="button-save-store-name">
+                  {updateStoreNameMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Store Name Dialog */}
+      <AlertDialog open={deleteStoreNameOpen} onOpenChange={setDeleteStoreNameOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Store Name</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedStoreName?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => selectedStoreName && deleteStoreNameMutation.mutate(selectedStoreName.id)}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete-store-name"
+            >
+              {deleteStoreNameMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Inventory Department Dialog */}
+      <Dialog open={editInvDeptOpen} onOpenChange={setEditInvDeptOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Inventory Department</DialogTitle>
+            <DialogDescription>Update the inventory department.</DialogDescription>
+          </DialogHeader>
+          {selectedInvDept && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              updateInvDeptMutation.mutate({
+                id: selectedInvDept.id,
+                data: {
+                  storeNameId: formData.get("storeNameId") as string,
+                  inventoryType: formData.get("inventoryType") as string,
+                },
+              });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-storeNameId">Store Name</Label>
+                  <Select name="storeNameId" defaultValue={selectedInvDept.storeNameId}>
+                    <SelectTrigger data-testid="select-edit-store-name">
+                      <SelectValue placeholder="Select a store name" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {storeNames?.filter(sn => sn.status === "active").map(sn => (
+                        <SelectItem key={sn.id} value={sn.id}>{sn.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-inventoryType">Inventory Type</Label>
+                  <Select name="inventoryType" defaultValue={selectedInvDept.inventoryType}>
+                    <SelectTrigger data-testid="select-edit-inventory-type">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MAIN_STORE">Main Store</SelectItem>
+                      <SelectItem value="WAREHOUSE">Warehouse</SelectItem>
+                      <SelectItem value="DEPARTMENT_STORE">Department Store</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditInvDeptOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateInvDeptMutation.isPending} data-testid="button-save-inv-dept">
+                  {updateInvDeptMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Inventory Department Dialog */}
+      <AlertDialog open={deleteInvDeptOpen} onOpenChange={setDeleteInvDeptOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Inventory Department</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this inventory department? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => selectedInvDept && deleteInvDeptMutation.mutate(selectedInvDept.id)}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete-inv-dept"
+            >
+              {deleteInvDeptMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
