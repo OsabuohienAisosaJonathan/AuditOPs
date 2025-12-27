@@ -121,6 +121,61 @@ export async function registerRoutes(
   const requireSuperAdmin = requireRole("super_admin");
   const requireSupervisorOrAbove = requireRole("super_admin", "supervisor");
 
+  const requireClientAccess = (clientIdParam: string = "clientId") => {
+    return async (req: Request, res: Response, next: NextFunction) => {
+      if (!req.session?.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const user = await storage.getUser(req.session.userId);
+      if (user?.role === "super_admin") {
+        return next();
+      }
+      
+      const clientId = req.params[clientIdParam] || req.body.clientId || req.query.clientId;
+      if (!clientId) {
+        return next();
+      }
+      
+      const access = await storage.getUserClientAccess(req.session.userId, clientId as string);
+      
+      if (!access) {
+        return res.status(403).json({ error: "You do not have access to this client" });
+      }
+      
+      if (access.status === "removed") {
+        return res.status(403).json({ error: "Your access to this client has been removed" });
+      }
+      
+      if (access.status === "suspended") {
+        if (req.method !== "GET") {
+          return res.status(403).json({ error: "Your access to this client is suspended (read-only)" });
+        }
+      }
+      
+      (req as any).clientAccess = access;
+      next();
+    };
+  };
+
+  const requireAuditContext = async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    const context = await storage.getActiveAuditContext(req.session.userId);
+    if (!context) {
+      return res.status(400).json({ 
+        error: "No active audit context", 
+        code: "NO_AUDIT_CONTEXT",
+        message: "Please select an audit period before accessing this resource" 
+      });
+    }
+    
+    (req as any).auditContext = context;
+    next();
+  };
+
   // ============== BOOTSTRAP SETUP ==============
   app.get("/api/setup/status", async (req, res) => {
     try {
