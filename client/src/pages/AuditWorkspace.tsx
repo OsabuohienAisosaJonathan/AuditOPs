@@ -423,6 +423,65 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
 }) {
   const queryClient = useQueryClient();
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>("all");
+  const [declareDialogOpen, setDeclareDialogOpen] = useState(false);
+  const [declareDeptId, setDeclareDeptId] = useState<string>("");
+  const [declaredCash, setDeclaredCash] = useState<string>("");
+  const [declaredPos, setDeclaredPos] = useState<string>("");
+  const [declaredTransfer, setDeclaredTransfer] = useState<string>("");
+  const [declareNotes, setDeclareNotes] = useState<string>("");
+
+  const createDeclarationMutation = useMutation({
+    mutationFn: (data: { departmentId: string; cash: string; pos: string; transfer: string; notes: string }) => 
+      paymentDeclarationsApi.create({
+        clientId: clientId!,
+        departmentId: data.departmentId,
+        date: dateStr,
+        reportedCash: data.cash,
+        reportedPosSettlement: data.pos,
+        reportedTransfers: data.transfer,
+        notes: data.notes || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payment-declarations"] });
+      setDeclareDialogOpen(false);
+      resetDeclareForm();
+      toast.success("Payment declaration saved successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to save declaration");
+    },
+  });
+
+  const resetDeclareForm = () => {
+    setDeclareDeptId("");
+    setDeclaredCash("");
+    setDeclaredPos("");
+    setDeclaredTransfer("");
+    setDeclareNotes("");
+  };
+
+  const handleOpenDeclareDialog = (deptId?: string) => {
+    if (deptId) {
+      setDeclareDeptId(deptId);
+    } else if (departments.length > 0) {
+      setDeclareDeptId(departments[0].id);
+    }
+    setDeclareDialogOpen(true);
+  };
+
+  const handleSaveDeclaration = () => {
+    if (!declareDeptId) {
+      toast.error("Please select a department");
+      return;
+    }
+    createDeclarationMutation.mutate({
+      departmentId: declareDeptId,
+      cash: declaredCash || "0",
+      pos: declaredPos || "0",
+      transfer: declaredTransfer || "0",
+      notes: declareNotes,
+    });
+  };
 
   const filteredEntries = useMemo(() => {
     if (selectedDeptFilter === "all") return salesEntries;
@@ -499,9 +558,9 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
       
       const declaration = paymentDeclarations.find((d: any) => d.departmentId === department.id);
       const hasDeclaration = !!declaration;
-      const declaredCash = Number(declaration?.cashDeclared || 0);
-      const declaredPos = Number(declaration?.posDeclared || 0);
-      const declaredTransfer = Number(declaration?.transferDeclared || 0);
+      const declaredCash = Number(declaration?.reportedCash || 0);
+      const declaredPos = Number(declaration?.reportedPosSettlement || 0);
+      const declaredTransfer = Number(declaration?.reportedTransfers || 0);
       const totalDeclared = declaredCash + declaredPos + declaredTransfer;
       
       const variance = hasDeclaration ? totalDeclared - totalCaptured : 0;
@@ -591,9 +650,20 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
         <Card className="bg-muted/20">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg">Reported Payments Summary</CardTitle>
-                <CardDescription>Declared payments vs captured sales - first hit variance</CardDescription>
+              <div className="flex items-center gap-4">
+                <div>
+                  <CardTitle className="text-lg">Reported Payments Summary</CardTitle>
+                  <CardDescription>Declared payments vs captured sales - first hit variance</CardDescription>
+                </div>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => handleOpenDeclareDialog()}
+                  data-testid="button-declare-payment"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Declare Payment
+                </Button>
               </div>
               <div className={cn(
                 "text-right px-3 py-1 rounded-lg",
@@ -762,6 +832,105 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={declareDialogOpen} onOpenChange={setDeclareDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Declare Payment</DialogTitle>
+            <DialogDescription>
+              Enter the amounts declared by staff for {dateStr}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Department</Label>
+              <Select value={declareDeptId} onValueChange={setDeclareDeptId}>
+                <SelectTrigger data-testid="select-declare-department">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map(dept => (
+                    <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label>Cash (₦)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={declaredCash}
+                  onChange={(e) => setDeclaredCash(e.target.value)}
+                  data-testid="input-declared-cash"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>POS (₦)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={declaredPos}
+                  onChange={(e) => setDeclaredPos(e.target.value)}
+                  data-testid="input-declared-pos"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Transfer (₦)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={declaredTransfer}
+                  onChange={(e) => setDeclaredTransfer(e.target.value)}
+                  data-testid="input-declared-transfer"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Input 
+                placeholder="Any notes about the declaration"
+                value={declareNotes}
+                onChange={(e) => setDeclareNotes(e.target.value)}
+                data-testid="input-declare-notes"
+              />
+            </div>
+            <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+              <div className="flex justify-between">
+                <span>Total Declared:</span>
+                <span className="font-mono font-medium">
+                  ₦ {(Number(declaredCash || 0) + Number(declaredPos || 0) + Number(declaredTransfer || 0)).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setDeclareDialogOpen(false);
+                resetDeclareForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveDeclaration}
+              disabled={createDeclarationMutation.isPending || !declareDeptId}
+              data-testid="button-save-declaration"
+            >
+              {createDeclarationMutation.isPending ? "Saving..." : "Save Declaration"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
