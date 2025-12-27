@@ -21,7 +21,7 @@ export default function AuditWorkspace() {
             <CardDescription>Step-by-step workflow</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
-            <div className="relative border-l border-border ml-3 space-y-8 py-2">
+            <div className="relative border-l border-border space-y-8 py-2 ml-[3px] mr-[3px] pt-[8px] pb-[8px] mt-[0px] mb-[0px]">
               {AUDIT_TASKS.map((task, index) => (
                 <div key={task.id} className="relative pl-8 group">
                   <div className={cn(
@@ -60,7 +60,6 @@ export default function AuditWorkspace() {
           </CardContent>
         </Card>
       </aside>
-
       {/* Main Panel: Tabbed Workflow */}
       <div className="flex-1 min-w-0">
         <Tabs defaultValue="sales" className="h-full flex flex-col">
