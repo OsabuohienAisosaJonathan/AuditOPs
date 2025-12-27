@@ -123,8 +123,8 @@ export default function SalesCapture() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: summaryQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["sales-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
       setCreateDialogOpen(false);
       setFormData(defaultFormData);
       toast.success("Sales entry recorded successfully");
@@ -153,8 +153,8 @@ export default function SalesCapture() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: summaryQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["sales-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
       setEditDialogOpen(false);
       setSelectedEntry(null);
       setFormData(defaultFormData);
@@ -168,8 +168,8 @@ export default function SalesCapture() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => salesEntriesApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: summaryQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["sales-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
       setDeleteConfirmOpen(false);
       setSelectedEntry(null);
       toast.success("Sales entry deleted successfully");
