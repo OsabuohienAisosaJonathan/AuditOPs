@@ -43,13 +43,25 @@ The server uses a storage abstraction layer (`server/storage.ts`) that wraps all
 PostgreSQL database with the following core entities:
 - **users**: Authentication, roles, access scope
 - **clients**: Top-level tenant organization
-- **outlets**: Locations within a client
-- **departments**: Units within outlets (Main Bar, Kitchen, etc.)
+- **outlets**: Locations within a client, includes `departmentMode` field
+- **departments**: Flexible department system with client-level and outlet-level scopes
+- **outletDepartmentLinks**: Toggle inheritance of client departments per outlet
 - **salesEntries**: Daily sales records
 - **purchases/stockMovements**: Inventory tracking
 - **reconciliations**: Daily stock comparisons
 - **exceptions/exceptionComments**: Audit discrepancy cases
 - **auditLogs/adminActivityLogs**: Compliance logging
+
+### Department Architecture
+The department system supports flexible inheritance:
+- **Client-level departments** (`scope='client'`): Shared across all outlets
+- **Outlet-level departments** (`scope='outlet'`): Specific to one outlet
+- **Department modes** per outlet:
+  - `inherit_only`: Uses only client departments
+  - `outlet_only`: Uses only outlet-specific departments
+  - `inherit_add`: Combines client + outlet departments
+- **Inheritance toggles**: Client departments can be individually enabled/disabled per outlet via `outletDepartmentLinks`
+- **Deletion protection**: Departments used in records are deactivated instead of deleted
 
 ### Authentication & Authorization
 - Session-based authentication stored in PostgreSQL
