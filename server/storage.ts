@@ -19,7 +19,7 @@ import {
   type AuditReissuePermission, type InsertAuditReissuePermission,
   type AuditChangeLog, type InsertAuditChangeLog
 } from "@shared/schema";
-import { eq, desc, and, gte, lte, sql, or, ilike, count, sum } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
 export interface DashboardFilters {
   clientId?: string;
@@ -180,6 +180,7 @@ export interface IStorage {
   
   // Sales summary for reconciliation
   getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
+  getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalVoids: number; grandTotal: number; entriesCount: number; departmentsCount: number }>;
 
   // User-Client Access
   getUserClientAccess(userId: string, clientId: string): Promise<UserClientAccess | undefined>;
@@ -1101,6 +1102,43 @@ export class DbStorage implements IStorage {
       totalPos: parseFloat(result?.totalPos || "0"),
       totalTransfer: parseFloat(result?.totalTransfer || "0"),
       totalSales: parseFloat(result?.totalSales || "0")
+    };
+  }
+
+  async getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalVoids: number; grandTotal: number; entriesCount: number; departmentsCount: number }> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const conditions = [
+      eq(salesEntries.clientId, clientId),
+      gte(salesEntries.date, startOfDay),
+      lte(salesEntries.date, endOfDay)
+    ];
+
+    if (departmentId) {
+      conditions.push(eq(salesEntries.departmentId, departmentId));
+    }
+
+    const [result] = await db.select({
+      totalCash: sum(salesEntries.cashAmount),
+      totalPos: sum(salesEntries.posAmount),
+      totalTransfer: sum(salesEntries.transferAmount),
+      totalVoids: sum(salesEntries.voidsAmount),
+      grandTotal: sum(salesEntries.totalSales),
+      entriesCount: count(salesEntries.id),
+      departmentsCount: countDistinct(salesEntries.departmentId)
+    }).from(salesEntries).where(and(...conditions));
+    
+    return {
+      totalCash: parseFloat(result?.totalCash || "0"),
+      totalPos: parseFloat(result?.totalPos || "0"),
+      totalTransfer: parseFloat(result?.totalTransfer || "0"),
+      totalVoids: parseFloat(result?.totalVoids || "0"),
+      grandTotal: parseFloat(result?.grandTotal || "0"),
+      entriesCount: parseInt(result?.entriesCount?.toString() || "0"),
+      departmentsCount: parseInt(result?.departmentsCount?.toString() || "0")
     };
   }
 

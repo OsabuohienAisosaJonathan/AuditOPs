@@ -1941,12 +1941,12 @@ export async function registerRoutes(
     }
   });
 
-  // Sales summary endpoint
+  // Sales summary endpoint - supports clientId+date with optional departmentId filter
   app.get("/api/sales-entries/summary", requireAuth, async (req, res) => {
     try {
       const { clientId, departmentId, date } = req.query;
       
-      if (!clientId || !departmentId || !date) {
+      if (!clientId || !date) {
         return res.json({
           totalCash: 0,
           totalPos: 0,
@@ -1954,34 +1954,23 @@ export async function registerRoutes(
           totalVoids: 0,
           grandTotal: 0,
           entriesCount: 0,
+          departmentsCount: 0,
           avgPerEntry: 0
         });
       }
       
       const dateObj = new Date(date as string);
       
-      // Get entries filtered by both clientId and departmentId
-      const entries = await storage.getSalesEntries(departmentId as string, dateObj, dateObj);
-      
-      // Additional filter by clientId to ensure context isolation
-      const filteredEntries = entries.filter(e => e.clientId === clientId);
-      
-      // Calculate summary from filtered entries
-      const totalCash = filteredEntries.reduce((sum, e) => sum + parseFloat(e.cashAmount || "0"), 0);
-      const totalPos = filteredEntries.reduce((sum, e) => sum + parseFloat(e.posAmount || "0"), 0);
-      const totalTransfer = filteredEntries.reduce((sum, e) => sum + parseFloat(e.transferAmount || "0"), 0);
-      const totalVoids = filteredEntries.reduce((sum, e) => sum + parseFloat(e.voidsAmount || "0"), 0);
-      const grandTotal = filteredEntries.reduce((sum, e) => sum + parseFloat(e.totalSales || "0"), 0);
-      const entriesCount = filteredEntries.length;
+      // Use the new storage method that aggregates across departments
+      const summary = await storage.getSalesSummaryForClient(
+        clientId as string, 
+        dateObj, 
+        departmentId as string | undefined
+      );
       
       res.json({
-        totalCash,
-        totalPos,
-        totalTransfer,
-        totalVoids,
-        grandTotal,
-        entriesCount,
-        avgPerEntry: entriesCount > 0 ? Math.round(grandTotal / entriesCount) : 0
+        ...summary,
+        avgPerEntry: summary.entriesCount > 0 ? Math.round(summary.grandTotal / summary.entriesCount) : 0
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
