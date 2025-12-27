@@ -564,6 +564,7 @@ export interface SalesSummary {
   totalVoids: number;
   grandTotal: number;
   entriesCount: number;
+  departmentsCount?: number;
   avgPerEntry: number;
 }
 
@@ -575,10 +576,10 @@ export const salesEntriesApi = {
     if (params?.date) searchParams.append("date", params.date);
     return fetchApi<SalesEntry[]>(`/sales-entries${searchParams.toString() ? `?${searchParams}` : ""}`);
   },
-  getSummary: (params: { clientId: string; departmentId: string; date: string }) => {
+  getSummary: (params: { clientId: string; departmentId?: string; date: string }) => {
     const searchParams = new URLSearchParams();
     searchParams.append("clientId", params.clientId);
-    searchParams.append("departmentId", params.departmentId);
+    if (params.departmentId) searchParams.append("departmentId", params.departmentId);
     searchParams.append("date", params.date);
     return fetchApi<SalesSummary>(`/sales-entries/summary?${searchParams}`);
   },

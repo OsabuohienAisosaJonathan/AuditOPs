@@ -86,15 +86,15 @@ export default function AuditWorkspace() {
   });
 
   const { data: salesEntries = [] } = useQuery({
-    queryKey: ["sales-entries", clientId, departmentId, dateStr],
-    queryFn: () => salesEntriesApi.getAll({ clientId: clientId || undefined, departmentId: departmentId || undefined, date: dateStr }),
-    enabled: !!clientId && !!departmentId,
+    queryKey: ["sales-entries", clientId, dateStr],
+    queryFn: () => salesEntriesApi.getAll({ clientId: clientId || undefined, date: dateStr }),
+    enabled: !!clientId,
   });
 
   const { data: salesSummary } = useQuery({
-    queryKey: ["sales-summary", departmentId, dateStr],
-    queryFn: () => salesEntriesApi.getSummary({ clientId: clientId!, departmentId: departmentId!, date: dateStr }),
-    enabled: !!clientId && !!departmentId,
+    queryKey: ["sales-summary", clientId, dateStr],
+    queryFn: () => salesEntriesApi.getSummary({ clientId: clientId!, date: dateStr }),
+    enabled: !!clientId,
   });
 
   const { data: purchases = [] } = useQuery({
@@ -313,9 +313,8 @@ export default function AuditWorkspace() {
                   salesEntries={salesEntries} 
                   salesSummary={salesSummary}
                   clientId={clientId}
-                  departmentId={departmentId}
+                  departments={departments}
                   dateStr={dateStr}
-                  departmentName={auditDepartment?.name}
                 />
               </TabsContent>
 
@@ -400,301 +399,199 @@ export default function AuditWorkspace() {
   );
 }
 
-function SalesTab({ salesEntries, salesSummary, clientId, departmentId, dateStr, departmentName }: {
+function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }: {
   salesEntries: SalesEntry[];
   salesSummary?: SalesSummary;
   clientId: string | null;
-  departmentId: string | null;
+  departments: Department[];
   dateStr: string;
-  departmentName?: string;
 }) {
   const queryClient = useQueryClient();
-  const [paymentFormOpen, setPaymentFormOpen] = useState(false);
-  const [paymentData, setPaymentData] = useState({
-    reportedCash: "",
-    reportedPosSettlement: "",
-    reportedTransfers: "",
-    notes: "",
-  });
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>("all");
 
-  const { data: paymentDeclaration } = useQuery({
-    queryKey: ["payment-declaration", clientId, departmentId, dateStr],
-    queryFn: () => paymentDeclarationsApi.get(clientId!, departmentId!, dateStr),
-    enabled: !!clientId && !!departmentId,
-    retry: false,
-  });
+  const filteredEntries = useMemo(() => {
+    if (selectedDeptFilter === "all") return salesEntries;
+    return salesEntries.filter(e => e.departmentId === selectedDeptFilter);
+  }, [salesEntries, selectedDeptFilter]);
 
-  const { data: reconciliationHint } = useQuery({
-    queryKey: ["reconciliation-hint", departmentId, dateStr],
-    queryFn: () => reconciliationHintApi.get(departmentId!, dateStr),
-    enabled: !!departmentId,
-    retry: false,
-  });
-
-  const paymentMutation = useMutation({
-    mutationFn: (data: any) => paymentDeclarationsApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payment-declaration"] });
-      setPaymentFormOpen(false);
-      toast.success("Payment declaration saved");
-    },
-    onError: (error: any) => toast.error(error.message || "Failed to save payment declaration"),
-  });
-
-  const handlePaymentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    paymentMutation.mutate({
-      clientId,
-      departmentId,
-      date: dateStr,
-      ...paymentData,
+  const entriesByDepartment = useMemo(() => {
+    const grouped: Record<string, { department: Department | undefined; entries: SalesEntry[] }> = {};
+    filteredEntries.forEach(entry => {
+      if (!grouped[entry.departmentId]) {
+        grouped[entry.departmentId] = {
+          department: departments.find(d => d.id === entry.departmentId),
+          entries: []
+        };
+      }
+      grouped[entry.departmentId].entries.push(entry);
     });
-  };
+    return Object.values(grouped);
+  }, [filteredEntries, departments]);
+
+  const { data: filteredSummary } = useQuery({
+    queryKey: ["sales-summary", clientId, selectedDeptFilter, dateStr],
+    queryFn: () => salesEntriesApi.getSummary({ 
+      clientId: clientId!, 
+      departmentId: selectedDeptFilter === "all" ? undefined : selectedDeptFilter,
+      date: dateStr 
+    }),
+    enabled: !!clientId,
+  });
+
+  const displaySummary = filteredSummary || salesSummary;
 
   return (
     <div className="space-y-6">
-      <Card className="border-none shadow-none">
-        <CardHeader className="px-0 pt-0 pb-4">
-          <CardTitle>Sales Capture</CardTitle>
-          <CardDescription>
-            {clientId && departmentId 
-              ? `Sales for ${departmentName} on ${dateStr}`
-              : "Select a client and department to view sales"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          <div className="border rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Shift</TableHead>
-                  <TableHead className="text-right">Cash (₦)</TableHead>
-                  <TableHead className="text-right">POS (₦)</TableHead>
-                  <TableHead className="text-right">Transfer (₦)</TableHead>
-                  <TableHead className="text-right">Voids (₦)</TableHead>
-                  <TableHead className="text-right">Total (₦)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {!clientId || !departmentId ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      Select a client and department from the dashboard to view sales
-                    </TableCell>
-                  </TableRow>
-                ) : salesEntries.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No sales entries for this period. Add entries from the Sales Capture page.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  salesEntries.map((entry) => (
-                    <TableRow key={entry.id} data-testid={`row-sales-${entry.id}`}>
-                      <TableCell>{format(new Date(entry.createdAt), "HH:mm")}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {entry.shift === "full" ? "Full Day" : entry.shift || "Full Day"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">{Number(entry.cashAmount || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{Number(entry.posAmount || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{Number(entry.transferAmount || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">{Number(entry.voidsAmount || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-bold font-mono">{Number(entry.totalSales || 0).toLocaleString()}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            {salesSummary && (
-              <div className="bg-muted/30 p-4 flex justify-end gap-8 border-t">
-                <div className="text-sm">
-                  <span className="text-muted-foreground mr-2">Total Cash:</span>
-                  <span className="font-mono font-medium">₦ {(salesSummary.totalCash || 0).toLocaleString()}</span>
+      <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border-emerald-200 dark:border-emerald-800">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">Daily Summary {selectedDeptFilter !== "all" && "(Filtered)"}</CardTitle>
+              <CardDescription>
+                {selectedDeptFilter === "all" 
+                  ? `All departments for ${dateStr}` 
+                  : `${departments.find(d => d.id === selectedDeptFilter)?.name || "Department"} for ${dateStr}`}
+              </CardDescription>
+            </div>
+            {displaySummary && (
+              <div className="text-right">
+                <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 font-mono">
+                  ₦ {(displaySummary.grandTotal || 0).toLocaleString()}
                 </div>
-                <div className="text-sm">
-                  <span className="text-muted-foreground mr-2">Total POS:</span>
-                  <span className="font-mono font-medium">₦ {(salesSummary.totalPos || 0).toLocaleString()}</span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-muted-foreground mr-2">Grand Total:</span>
-                  <span className="font-mono font-bold text-lg">₦ {(salesSummary.grandTotal || 0).toLocaleString()}</span>
+                <div className="text-xs text-muted-foreground">
+                  {displaySummary.entriesCount || 0} entries
+                  {displaySummary.departmentsCount && selectedDeptFilter === "all" && ` across ${displaySummary.departmentsCount} departments`}
                 </div>
               </div>
             )}
           </div>
+        </CardHeader>
+        <CardContent>
+          {displaySummary ? (
+            <div className="grid grid-cols-4 gap-4">
+              <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">Cash</div>
+                <div className="font-mono font-medium">₦ {(displaySummary.totalCash || 0).toLocaleString()}</div>
+              </div>
+              <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">POS</div>
+                <div className="font-mono font-medium">₦ {(displaySummary.totalPos || 0).toLocaleString()}</div>
+              </div>
+              <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">Transfers</div>
+                <div className="font-mono font-medium">₦ {(displaySummary.totalTransfer || 0).toLocaleString()}</div>
+              </div>
+              <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">Voids/Comp</div>
+                <div className="font-mono font-medium text-muted-foreground">₦ {(displaySummary.totalVoids || 0).toLocaleString()}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-4 text-sm text-muted-foreground">
+              No sales data for this date
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base">Report Payment Declaration</CardTitle>
-                <CardDescription>Declared payments by outlet staff</CardDescription>
-              </div>
-              {!paymentDeclaration && clientId && departmentId && (
-                <Button size="sm" onClick={() => setPaymentFormOpen(true)} data-testid="button-add-payment">
-                  <Plus className="h-4 w-4 mr-1" /> Add
-                </Button>
-              )}
+      <Card className="border-none shadow-none">
+        <CardHeader className="px-0 pt-0 pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Sales Entries</CardTitle>
+              <CardDescription>
+                {clientId 
+                  ? `Sales records for ${dateStr}`
+                  : "Select a client to view sales"}
+              </CardDescription>
             </div>
-          </CardHeader>
-          <CardContent>
-            {paymentDeclaration ? (
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Reported Cash:</span>
-                  <span className="font-mono font-medium">₦ {Number(paymentDeclaration.reportedCash || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">POS Settlement:</span>
-                  <span className="font-mono font-medium">₦ {Number(paymentDeclaration.reportedPosSettlement || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Transfers:</span>
-                  <span className="font-mono font-medium">₦ {Number(paymentDeclaration.reportedTransfers || 0).toLocaleString()}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm font-medium">
-                  <span>Total Reported:</span>
-                  <span className="font-mono text-lg">₦ {Number(paymentDeclaration.totalReported || 0).toLocaleString()}</span>
-                </div>
-                {paymentDeclaration.notes && (
-                  <div className="text-xs text-muted-foreground mt-2 p-2 bg-muted/50 rounded">
-                    {paymentDeclaration.notes}
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground">Department:</Label>
+              <Select value={selectedDeptFilter} onValueChange={setSelectedDeptFilter}>
+                <SelectTrigger className="w-48" data-testid="select-department-filter">
+                  <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {departments.map(dept => (
+                    <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="px-0">
+          {!clientId ? (
+            <div className="text-center py-8 text-muted-foreground border rounded-lg">
+              Select a client from the dashboard to view sales
+            </div>
+          ) : filteredEntries.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground border rounded-lg">
+              No sales entries for this period. Add entries from the Sales Capture page.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {entriesByDepartment.map(({ department, entries }) => (
+                <div key={department?.id || "unknown"} className="border rounded-lg overflow-hidden">
+                  <div className="bg-muted/50 px-4 py-2 font-medium flex items-center justify-between">
+                    <span>{department?.name || "Unknown Department"}</span>
+                    <Badge variant="outline">{entries.length} entries</Badge>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-6 text-sm text-muted-foreground">
-                No payment declaration recorded for this date
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className={cn(
-          reconciliationHint && reconciliationHint.difference.total !== 0 && "border-amber-500"
-        )}>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Reconciliation Hint</CardTitle>
-            <CardDescription>Expected vs Actual comparison</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {reconciliationHint ? (
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">POS Sales:</span>
-                  <span className="font-mono">₦ {Number(reconciliationHint.captured.totalPos || 0).toLocaleString()}</span>
+                  <Table>
+                    <TableHeader className="bg-muted/30">
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Shift</TableHead>
+                        <TableHead className="text-right">Cash (₦)</TableHead>
+                        <TableHead className="text-right">POS (₦)</TableHead>
+                        <TableHead className="text-right">Transfer (₦)</TableHead>
+                        <TableHead className="text-right">Voids (₦)</TableHead>
+                        <TableHead className="text-right">Total (₦)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {entries.map((entry) => (
+                        <TableRow key={entry.id} data-testid={`row-sales-${entry.id}`}>
+                          <TableCell>{format(new Date(entry.createdAt), "HH:mm")}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="capitalize">
+                              {entry.shift === "full" ? "Full Day" : entry.shift || "Full Day"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.cashAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.posAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.transferAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">{Number(entry.voidsAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-bold font-mono">{Number(entry.totalSales || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/20">
+                        <TableCell colSpan={2} className="font-medium">Subtotal</TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.cashAmount || 0), 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.posAmount || 0), 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.transferAmount || 0), 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.voidsAmount || 0), 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-bold font-mono">
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.totalSales || 0), 0).toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Cash Sales:</span>
-                  <span className="font-mono">₦ {Number(reconciliationHint.captured.totalCash || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Transfer Sales:</span>
-                  <span className="font-mono">₦ {Number(reconciliationHint.captured.totalTransfer || 0).toLocaleString()}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Sales:</span>
-                  <span className="font-mono font-medium">₦ {Number(reconciliationHint.captured.totalSales || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Reported:</span>
-                  <span className="font-mono font-medium">₦ {Number(reconciliationHint.reported?.total || 0).toLocaleString()}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm font-medium">
-                  <span>Variance:</span>
-                  <span className={cn(
-                    "font-mono text-lg",
-                    reconciliationHint.difference.total < 0 ? "text-red-600" : 
-                    reconciliationHint.difference.total > 0 ? "text-amber-600" : "text-emerald-600"
-                  )}>
-                    {reconciliationHint.difference.total > 0 ? "+" : ""}₦ {Number(reconciliationHint.difference.total || 0).toLocaleString()}
-                  </span>
-                </div>
-                {reconciliationHint.difference.total !== 0 && (
-                  <Badge variant={reconciliationHint.status === "under_declared" ? "destructive" : "secondary"} className="w-full justify-center">
-                    {reconciliationHint.status === "under_declared" ? "Shortage Detected" : reconciliationHint.status === "over_declared" ? "Overage Detected" : "Balanced"}
-                  </Badge>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-6 text-sm text-muted-foreground">
-                Complete sales entries and payment declaration to see reconciliation hint
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Dialog open={paymentFormOpen} onOpenChange={setPaymentFormOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Report Payment Declaration</DialogTitle>
-            <DialogDescription>Enter the payments declared by outlet staff for {dateStr}</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handlePaymentSubmit}>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="reportedCash">Reported Cash (₦)</Label>
-                <Input 
-                  id="reportedCash" 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="0.00"
-                  value={paymentData.reportedCash}
-                  onChange={(e) => setPaymentData(prev => ({ ...prev, reportedCash: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="reportedPosSettlement">POS Settlement (₦)</Label>
-                <Input 
-                  id="reportedPosSettlement" 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="0.00"
-                  value={paymentData.reportedPosSettlement}
-                  onChange={(e) => setPaymentData(prev => ({ ...prev, reportedPosSettlement: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="reportedTransfers">Bank Transfers (₦)</Label>
-                <Input 
-                  id="reportedTransfers" 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="0.00"
-                  value={paymentData.reportedTransfers}
-                  onChange={(e) => setPaymentData(prev => ({ ...prev, reportedTransfers: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes (optional)</Label>
-                <Textarea 
-                  id="notes" 
-                  placeholder="Any additional notes..."
-                  value={paymentData.notes}
-                  onChange={(e) => setPaymentData(prev => ({ ...prev, notes: e.target.value }))}
-                />
-              </div>
+              ))}
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setPaymentFormOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={paymentMutation.isPending}>
-                {paymentMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
-                Save Declaration
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
