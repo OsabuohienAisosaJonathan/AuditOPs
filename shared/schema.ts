@@ -96,16 +96,20 @@ export const purchaseLines = pgTable("purchase_lines", {
 
 export const stockCounts = pgTable("stock_counts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
   openingQty: decimal("opening_qty", { precision: 10, scale: 2 }).default("0.00"),
+  addedQty: decimal("added_qty", { precision: 10, scale: 2 }).default("0.00"),
   receivedQty: decimal("received_qty", { precision: 10, scale: 2 }).default("0.00"),
   soldQty: decimal("sold_qty", { precision: 10, scale: 2 }).default("0.00"),
   expectedClosingQty: decimal("expected_closing_qty", { precision: 10, scale: 2 }).default("0.00"),
   actualClosingQty: decimal("actual_closing_qty", { precision: 10, scale: 2 }),
   varianceQty: decimal("variance_qty", { precision: 10, scale: 2 }).default("0.00"),
   varianceValue: decimal("variance_value", { precision: 12, scale: 2 }).default("0.00"),
+  costPriceSnapshot: decimal("cost_price_snapshot", { precision: 12, scale: 2 }).default("0.00"),
+  sellingPriceSnapshot: decimal("selling_price_snapshot", { precision: 12, scale: 2 }).default("0.00"),
   notes: text("notes"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -354,6 +358,53 @@ export const auditChangeLog = pgTable("audit_change_log", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ============================================================
+// STORE ISSUES (Store → Department transfers)
+// ============================================================
+
+export const storeIssues = pgTable("store_issues", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  issueDate: timestamp("issue_date").notNull(),
+  fromDepartmentId: varchar("from_department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  toDepartmentId: varchar("to_department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  notes: text("notes"),
+  status: text("status").notNull().default("posted"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const storeIssueLines = pgTable("store_issue_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeIssueId: varchar("store_issue_id").notNull().references(() => storeIssues.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  qtyIssued: decimal("qty_issued", { precision: 10, scale: 2 }).notNull(),
+  costPriceSnapshot: decimal("cost_price_snapshot", { precision: 12, scale: 2 }).default("0.00"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// STORE STOCK (Daily store inventory balances)
+// ============================================================
+
+export const storeStock = pgTable("store_stock", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  storeDepartmentId: varchar("store_department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  openingQty: decimal("opening_qty", { precision: 10, scale: 2 }).default("0.00"),
+  addedQty: decimal("added_qty", { precision: 10, scale: 2 }).default("0.00"),
+  issuedQty: decimal("issued_qty", { precision: 10, scale: 2 }).default("0.00"),
+  closingQty: decimal("closing_qty", { precision: 10, scale: 2 }).default("0.00"),
+  physicalClosingQty: decimal("physical_closing_qty", { precision: 10, scale: 2 }),
+  varianceQty: decimal("variance_qty", { precision: 10, scale: 2 }).default("0.00"),
+  costPriceSnapshot: decimal("cost_price_snapshot", { precision: 12, scale: 2 }).default("0.00"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
@@ -377,6 +428,9 @@ export const insertAuditContextSchema = createInsertSchema(auditContexts).omit({
 export const insertAuditSchema = createInsertSchema(audits).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAuditReissuePermissionSchema = createInsertSchema(auditReissuePermissions).omit({ id: true, grantedAt: true });
 export const insertAuditChangeLogSchema = createInsertSchema(auditChangeLog).omit({ id: true, createdAt: true });
+export const insertStoreIssueSchema = createInsertSchema(storeIssues).omit({ id: true, createdAt: true });
+export const insertStoreIssueLineSchema = createInsertSchema(storeIssueLines).omit({ id: true, createdAt: true });
+export const insertStoreStockSchema = createInsertSchema(storeStock).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -423,3 +477,9 @@ export type InsertAuditReissuePermission = z.infer<typeof insertAuditReissuePerm
 export type AuditReissuePermission = typeof auditReissuePermissions.$inferSelect;
 export type InsertAuditChangeLog = z.infer<typeof insertAuditChangeLogSchema>;
 export type AuditChangeLog = typeof auditChangeLog.$inferSelect;
+export type InsertStoreIssue = z.infer<typeof insertStoreIssueSchema>;
+export type StoreIssue = typeof storeIssues.$inferSelect;
+export type InsertStoreIssueLine = z.infer<typeof insertStoreIssueLineSchema>;
+export type StoreIssueLine = typeof storeIssueLines.$inferSelect;
+export type InsertStoreStock = z.infer<typeof insertStoreStockSchema>;
+export type StoreStock = typeof storeStock.$inferSelect;

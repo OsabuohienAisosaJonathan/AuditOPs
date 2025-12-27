@@ -1,0 +1,267 @@
+PROMPT — IMPLEMENT YOUR EXACT RECONCILIATION STYLE (DEPARTMENT → SALES HIT → STOCK COUNT HIT → FINAL RECON)
+
+You are building Miemploya AuditOps. Implement reconciliation exactly in this workflow style (do NOT redesign the UI heavily; implement within the existing Audit Workspace tabs: Sales, Purchases, Stock, Counts, Recon). Use the existing header filters (Client, Department, Date) but Audit Workspace Sales view must support “All Departments” for that day.
+
+A) WORKFLOW ORDER (must be enforced in Audit Workspace checklist)
+
+Step 1: Department Sales Capture + Reported Payment (first reconciliation hit)
+
+Step 2: Department Stock Count (Bar/Restaurant style) → compute items sold + Value Sold (SSRV)
+
+Step 3: Store Reconciliation (inventory + cost only)
+
+Step 4: Kitchen Reconciliation (inventory + cost only if restaurant depends on kitchen)
+
+Step 5: Final Reconciliation Submission (Run Reconciliation)
+
+Users may edit any step while status = DRAFT. Lock everything after final submission except Super Admin.
+
+1) SALES TAB (DEPARTMENT SALES + REPORTED PAYMENTS + FIRST HIT)
+
+For the selected Client and Date, Sales tab must show all departmental sales posted that day (not just one department).
+
+For EACH department displayed on the Sales tab, show:
+
+1.1 Fields per department:
+
+A) “Sales Captured (System/Books)”
+
+This is the Z POS total or manual sales sheet total for the department for that day.
+
+Must be captured/stored even if reported payments are not yet entered.
+
+B) “Reported Payments (Cash/POS/Transfer)”
+
+Input fields to capture the department’s reported payment totals for that day:
+
+Cash
+
+POS
+
+Transfer
+
+Voids/Comp (optional)
+
+Total Reported Payments must auto-calc.
+
+1.2 First reconciliation hit (same department block)
+
+Auto-calculate and display:
+
+Variance = Sales Captured − Reported Payments Total
+Label:
+
+If variance > 0 → “Shortage vs Sales Captured”
+
+If variance < 0 → “Excess vs Sales Captured”
+This is the first reconciliation hit and must be stored.
+
+1.3 Evidence upload
+
+Allow upload of:
+
+Z-Report image/pdf OR manual sales sheet
+
+Payment evidence (optional)
+Store links per department per day.
+
+2) COUNTS TAB (DEPARTMENT STOCK COUNT STYLE → ITEMS SOLD → SSRV)
+
+After sales hit is done, user moves to Counts tab (Stock Count). This is where your “Bar/Restaurant” stock reconciliation happens.
+
+2.1 Department stock count structure (Bar/Restaurant departments)
+
+For each department, create a Stock Count grid with item lines containing:
+
+Opening (Qty)
+
+Added (Qty)
+
+Total Available (auto) = Opening + Added
+
+Closing/Expected Stock (Qty) — input by user (physical count)
+
+Sold (Qty) (auto) = Total Available − Closing
+
+Cost Price (pull from Inventory Item master or last purchase cost if you support it)
+
+Selling Price (pull from Inventory Item master)
+
+Stock Value (Cost) = Closing × Cost Price
+
+Value Sold (Selling) = Sold × Selling Price
+
+Value Sold (Cost) = Sold × Cost Price (optional but useful)
+
+Important: make “Sold Qty” and “Value Sold” only appear after user inputs Closing count (because that’s the audit-confirmed figure).
+
+2.2 SSRV definition (must match user’s concept)
+
+For each department, compute:
+
+SSRV (Stock Sold Reconciliation Value) = Sum of Value Sold (Selling) for all items in that department/day.
+
+This SSRV is the “inventory-validated discovered items sold value”.
+
+2.3 Second reconciliation hit (department-level)
+
+Within the same department section in Counts tab, compare:
+
+SSRV vs Sales Captured (Z POS/manual)
+Display:
+
+Variance = SSRV − Sales Captured
+Label:
+
+If positive → “Inventory indicates under-recorded sales”
+
+If negative → “Sales captured exceeds inventory-derived sales (check counts/prices/movements)”
+
+Store this result.
+
+3) RECON TAB (SHOW ALL 3 FIGURES TOGETHER + INTERPRETATION)
+
+For each department, display these three figures clearly:
+
+Sales Captured (Z POS / Manual)
+
+Reported Payments (Cash/POS/Transfer)
+
+Stock Sold Reconciliation Value (SSRV)
+
+3.1 Benchmark rule (must follow user’s method)
+
+Treat SSRV as the benchmark because it is validated by stock count and item-level reconciliation.
+
+Main comparison for shortage/excess must be:
+
+Compare SSRV to Reported Payments Total
+
+If SSRV > Reported Payments → “Departmental Sales Shortage”
+If SSRV < Reported Payments → “Excess” (possible tips, unpunched items, wrong classification)
+
+Also show:
+
+Sales Captured vs Reported Payments
+
+SSRV vs Sales Captured
+
+But the system must highlight the SSRV vs RPV as the main conclusion, exactly as the user described.
+
+4) STORE RECONCILIATION (INVENTORY + COST ONLY, NO SELLING)
+
+Store does not sell. Store reconciliation is about inventory control only.
+
+For Store department (or store category), daily:
+
+Opening stock (Qty/Value at cost)
+
+Added stock (Purchases received today / GRN)
+
+Total stock available
+
+Closing stock count (auditor)
+
+Expected stock (closing)
+
+Difference between total and expected stock = issues/requisitions to dependent departments (in qty/value)
+Display and store:
+
+Total requisition/issue out value at cost
+
+Discrepancy if requisitions cannot be explained
+
+No selling price/Value Sold logic in store.
+
+5) KITCHEN RECONCILIATION (INVENTORY + COST ONLY, IF RESTAURANT DEPENDS ON KITCHEN)
+
+Kitchen reconciliation is like store: inputs (ingredients) vs closing count determines usage/issue.
+Track at cost, not selling.
+
+Show:
+
+Opening ingredients
+
+Added (issues in/purchases)
+
+Closing count
+
+Usage (auto) = Opening + Added − Closing
+Optional: link usage to restaurant sales via SSRV comparison, but keep kitchen mainly cost-control.
+
+6) EXCEPTIONS BEFORE FINAL SUBMISSION (MANDATORY PROMPT)
+
+The final submission action is “Run Reconciliation”.
+
+When user clicks “Run Reconciliation”:
+
+Pop-up message:
+“Do you want to create Exceptions for discrepancies discovered before final submission?”
+Buttons:
+
+“Create Exception(s)”
+
+“Proceed Without Exceptions”
+
+“Cancel”
+
+If user selects Create Exception(s):
+
+Open exceptions form prefilled with:
+
+department
+
+date
+
+discrepancy type (shortage/excess/inventory variance)
+
+amount (auto from variances)
+
+Allow evidence upload
+
+User can proceed after creating exceptions or decline and proceed.
+
+7) PERMISSIONS AND EDITING RULES (MATCH AGREEMENT)
+
+While audit status = DRAFT:
+
+Auditor and Audit Supervisor can edit any figures even after clicking step completion buttons.
+
+Save Draft must persist everything.
+
+After “Run Reconciliation” final submission:
+
+Auditor and Audit Supervisor: view/export/print only (no edits)
+
+Super Admin: can edit submitted figures
+
+Super Admin can reissue edit permission for a submitted audit to a specific user if needed (log this).
+
+8) DATA LINKING REQUIREMENT (CRITICAL)
+
+Everything above must be tied to:
+
+clientId
+
+departmentId
+
+audit date (or range if enabled later)
+
+Sales Capture page and Audit Workspace Sales tab must read/write the same records.
+Counts tab must store stock counts per department/day and feed SSRV into Recon tab.
+
+9) ACCEPTANCE TEST (MUST DEMONSTRATE)
+
+For one day, post Sales Captured and Reported Payments for Bar + Restaurant.
+
+System shows first hit variances per department.
+
+Enter stock counts → system calculates Sold and SSRV per department.
+
+Recon tab shows the 3 figures and flags shortage/excess using SSRV vs Reported Payments as the main conclusion.
+
+Store shows cost-only reconciliation.
+
+Final “Run Reconciliation” prompts for exceptions before submission.
+
+After submission, non-admin cannot edit.

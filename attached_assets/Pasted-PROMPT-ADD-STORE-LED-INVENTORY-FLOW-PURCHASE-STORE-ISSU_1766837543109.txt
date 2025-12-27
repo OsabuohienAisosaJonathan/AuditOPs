@@ -1,0 +1,198 @@
+PROMPT — ADD STORE-LED INVENTORY FLOW (PURCHASE → STORE → ISSUE TO DEPARTMENTS → AUTO APPEARS IN COUNTS) + AUTO OPENING FROM PREVIOUS DAY
+
+You are building Miemploya AuditOps. Implement a store-led inventory control workflow so departmental stock “Added” is not manually typed but comes from Store Issues. This must work with existing pages (Purchases, Inventory Management, Audit Workspace Counts/Recon). Do not redesign heavily; add a Store Ledger / Store Issue page and connect all data.
+
+1) INVENTORY STRUCTURE (MASTER ITEMS)
+
+Inventory Management already has Items with:
+
+item name, SKU, category
+
+costPrice
+
+sellingPrice
+Keep this as the master.
+
+2) PURCHASES PAGE BECOMES GRN (GOODS RECEIVED)
+
+Purchases must represent goods received into Store, not direct department.
+
+2.1 On Purchases page:
+
+record GRN lines: supplierId, itemId, qtyReceived, unitCost (optional), dateReceived, evidence
+
+each GRN line must increase Store stock for that day automatically.
+
+2.2 Rule:
+Only received quantities count. Purchases recorded without qtyReceived must not hit stock.
+
+3) CREATE A NEW PAGE: “STORE” (STORE LEDGER + ISSUE TO DEPARTMENTS)
+
+Add menu item: Store (or “Store Ledger”).
+
+This page has two tabs:
+A) Store Stock (Ledger / Balances)
+B) Issue to Departments (Requisition Posting)
+
+3A) Store Stock (Ledger / Balances)
+
+For the selected Client + Date:
+
+For each item:
+
+Opening Qty (auto from previous day closing)
+
+Added Qty (auto from GRN/Purchases received today)
+
+Total Available (auto)
+
+Issued Qty (auto from issues to departments today)
+
+Closing Qty (auto) = Total Available − Issued
+
+Closing physical count input by auditor (optional)
+
+Variance (optional) = physical closing − system closing
+
+Show totals in cost value (costPrice × qty).
+
+Important: Store is cost-only. No selling price logic on store page.
+
+3B) Issue to Departments (Requisition Posting)
+
+This is where the store “pushes” items to departments.
+
+Form must include:
+
+Issue Date (defaults to header date)
+
+From Location: Store (fixed)
+
+To Department (dropdown of all client departments)
+
+Item lines (select item, qty issued)
+
+Notes (optional)
+
+Submit Issue
+
+Rules:
+
+Issued qty reduces store balance for that date.
+
+The receiving department automatically gets “Added Qty” for that same date.
+
+Prevent issuing more than available stock (unless Super Admin override with reason).
+
+4) DEPARTMENT “ADDED QTY” MUST COME FROM STORE ISSUES (NOT MANUAL)
+
+In Audit Workspace → Counts tab (department stock count):
+
+Opening Qty must auto-load from previous day department closing qty
+
+Added Qty must auto-load from Store Issues IN for that department/date
+
+Total Available = Opening + Added
+
+Closing count entered by user
+
+Sold Qty auto computed based on your earlier logic
+
+This means:
+Departments cannot “invent” stock added manually (except Super Admin override).
+
+5) AUTO-ROLL FORWARD OPENING STOCK (PREVIOUS DAY CLOSING → TODAY OPENING)
+
+Implement automatic opening stock for both Store and Departments:
+
+For any date D:
+
+Opening(D) = Closing(D−1)
+
+Where closing is the final stored “closing qty” after counts are saved.
+
+If there is no previous day record:
+
+Opening defaults to 0, or allow manual opening entry once (admin only).
+
+6) DATA TABLES / ENTITIES (MINIMUM REQUIRED)
+
+Implement these core entities:
+
+inventory_items (existing)
+
+grn_receipts
+
+clientId, dateReceived, supplierId, createdBy
+
+grn_lines
+
+grnId, itemId, qtyReceived, unitCost(optional)
+
+store_issues
+
+clientId, issueDate, departmentId, createdBy, notes
+
+store_issue_lines
+
+storeIssueId, itemId, qtyIssued
+
+stock_counts
+
+clientId, departmentId, date, status(DRAFT/SUBMITTED), createdBy
+
+stock_count_lines
+
+stockCountId, itemId, openingQty, addedQty(auto), closingQty, soldQty(auto), costPriceSnapshot, sellingPriceSnapshot
+
+Snapshots: when counting, store the cost/selling price snapshot used that day to avoid future price edits breaking past audits.
+
+7) HOW IT CONNECTS TO RECONCILIATION
+
+Recon must now treat departmental stock “Added” as:
+
+sum(Store Issues to that department for the day)
+
+Store reconciliation:
+
+Opening + GRN − Total Issues = expected closing
+
+Compare expected closing with physical store count (if entered)
+
+Department reconciliation:
+
+Opening + Issues in − Closing = Sold Qty
+
+Sold × sellingPrice = SSRV
+
+8) UI/UX BEHAVIOR (KEEP CURRENT DESIGN)
+
+Do not remove existing pages.
+
+Add Store page and connect it.
+
+On Counts tab, show Added Qty as read-only (system generated) with tooltip “From Store Issues”.
+
+9) ACCEPTANCE TEST
+
+Add item “Chicken” with cost=1000 selling=1700
+
+GRN purchase: Chicken qty 50 into Store on Dec 27
+
+Store Issue: issue Chicken qty 10 to Grill on Dec 27
+
+Audit Workspace → Counts → Grill:
+
+Added Qty auto shows 10
+
+Opening auto from Dec 26 closing
+
+Enter Grill closing count → system computes sold qty and SSRV
+
+Store page shows reduced balance
+
+Next day Dec 28:
+
+store opening equals Dec 27 closing
+
+grill opening equals Dec 27 closing
