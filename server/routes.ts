@@ -10,6 +10,7 @@ import {
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, 
   insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
+  insertPaymentDeclarationSchema,
   type UserRole 
 } from "@shared/schema";
 import { randomBytes } from "crypto";
@@ -367,6 +368,185 @@ export async function registerRoutes(
       const { clientId } = req.params;
       const departments = await storage.getDepartmentsByClient(clientId);
       res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== PAYMENT DECLARATIONS ==============
+  app.get("/api/payment-declarations/:outletId", requireAuth, async (req, res) => {
+    try {
+      const { outletId } = req.params;
+      const { startDate, endDate } = req.query;
+      const declarations = await storage.getPaymentDeclarations(
+        outletId,
+        startDate ? new Date(startDate as string) : undefined,
+        endDate ? new Date(endDate as string) : undefined
+      );
+      res.json(declarations);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/payment-declarations/:clientId/:outletId/:date", requireAuth, async (req, res) => {
+    try {
+      const { clientId, outletId, date } = req.params;
+      const declaration = await storage.getPaymentDeclaration(clientId, outletId, new Date(date));
+      if (!declaration) {
+        return res.status(404).json({ error: "No payment declaration found for this date" });
+      }
+      res.json(declaration);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/payment-declarations", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertPaymentDeclarationSchema.safeParse({
+        ...req.body,
+        createdBy: req.session.userId,
+        date: new Date(req.body.date)
+      });
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+      
+      // Check if declaration already exists for this client/outlet/date
+      const existing = await storage.getPaymentDeclaration(
+        parsed.data.clientId,
+        parsed.data.outletId,
+        parsed.data.date
+      );
+      
+      if (existing) {
+        // Update instead of create
+        const updated = await storage.updatePaymentDeclaration(existing.id, parsed.data);
+        
+        await storage.createAuditLog({
+          userId: req.session.userId,
+          action: "update",
+          entity: "payment_declaration",
+          entityId: existing.id,
+          details: `Updated payment declaration for ${parsed.data.date}`,
+          ipAddress: req.ip
+        });
+        
+        return res.json(updated);
+      }
+      
+      const declaration = await storage.createPaymentDeclaration(parsed.data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "create",
+        entity: "payment_declaration",
+        entityId: declaration.id,
+        details: `Created payment declaration for ${parsed.data.date}`,
+        ipAddress: req.ip
+      });
+      
+      res.status(201).json(declaration);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/payment-declarations/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const existing = await storage.getPaymentDeclarationById(id);
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Payment declaration not found" });
+      }
+      
+      const updated = await storage.updatePaymentDeclaration(id, req.body);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "update",
+        entity: "payment_declaration",
+        entityId: id,
+        details: `Updated payment declaration`,
+        ipAddress: req.ip
+      });
+      
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/payment-declarations/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const existing = await storage.getPaymentDeclarationById(id);
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Payment declaration not found" });
+      }
+      
+      await storage.deletePaymentDeclaration(id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "delete",
+        entity: "payment_declaration",
+        entityId: id,
+        details: `Deleted payment declaration`,
+        ipAddress: req.ip
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get sales summary and reconciliation hint for an outlet on a date
+  app.get("/api/reconciliation-hint/:outletId/:date", requireAuth, async (req, res) => {
+    try {
+      const { outletId, date } = req.params;
+      const dateObj = new Date(date);
+      
+      // Get outlet to get clientId
+      const outlet = await storage.getOutlet(outletId);
+      if (!outlet) {
+        return res.status(404).json({ error: "Outlet not found" });
+      }
+      
+      // Get captured sales summary
+      const salesSummary = await storage.getSalesSummaryForOutlet(outletId, dateObj);
+      
+      // Get payment declaration if exists
+      const declaration = await storage.getPaymentDeclaration(outlet.clientId, outletId, dateObj);
+      
+      const reportedTotal = declaration ? parseFloat(declaration.totalReported || "0") : 0;
+      const capturedTotal = salesSummary.totalSales;
+      const difference = capturedTotal - reportedTotal;
+      
+      res.json({
+        captured: salesSummary,
+        reported: declaration ? {
+          cash: parseFloat(declaration.reportedCash || "0"),
+          pos: parseFloat(declaration.reportedPosSettlement || "0"),
+          transfers: parseFloat(declaration.reportedTransfers || "0"),
+          total: reportedTotal,
+          notes: declaration.notes,
+          documents: declaration.supportingDocuments
+        } : null,
+        difference: {
+          cash: salesSummary.totalCash - (declaration ? parseFloat(declaration.reportedCash || "0") : 0),
+          pos: salesSummary.totalPos - (declaration ? parseFloat(declaration.reportedPosSettlement || "0") : 0),
+          transfers: salesSummary.totalTransfer - (declaration ? parseFloat(declaration.reportedTransfers || "0") : 0),
+          total: difference
+        },
+        hasDeclaration: !!declaration,
+        status: Math.abs(difference) < 0.01 ? "balanced" : difference > 0 ? "over_declared" : "under_declared"
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
