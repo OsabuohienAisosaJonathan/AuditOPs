@@ -405,7 +405,36 @@ export const storeStock = pgTable("store_stock", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ============================================================
+// STORE NAMES (Master list of store names for linking)
+// ============================================================
+
+export const storeNames = pgTable("store_names", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// INVENTORY DEPARTMENTS (Links store names to clients with type)
+// ============================================================
+
+export const INVENTORY_TYPES = ["MAIN_STORE", "WAREHOUSE", "DEPARTMENT_STORE"] as const;
+export type InventoryType = typeof INVENTORY_TYPES[number];
+
+export const inventoryDepartments = pgTable("inventory_departments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  storeNameId: varchar("store_name_id").notNull().references(() => storeNames.id, { onDelete: "restrict" }),
+  inventoryType: text("inventory_type").notNull(),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert schemas
+export const insertStoreNameSchema = createInsertSchema(storeNames).omit({ id: true, createdAt: true });
+export const insertInventoryDepartmentSchema = createInsertSchema(inventoryDepartments).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true, createdAt: true });
@@ -483,3 +512,7 @@ export type InsertStoreIssueLine = z.infer<typeof insertStoreIssueLineSchema>;
 export type StoreIssueLine = typeof storeIssueLines.$inferSelect;
 export type InsertStoreStock = z.infer<typeof insertStoreStockSchema>;
 export type StoreStock = typeof storeStock.$inferSelect;
+export type InsertStoreName = z.infer<typeof insertStoreNameSchema>;
+export type StoreName = typeof storeNames.$inferSelect;
+export type InsertInventoryDepartment = z.infer<typeof insertInventoryDepartmentSchema>;
+export type InventoryDepartment = typeof inventoryDepartments.$inferSelect;
