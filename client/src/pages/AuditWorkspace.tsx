@@ -77,37 +77,6 @@ export default function AuditWorkspace() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] gap-4">
-      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-primary" />
-            <div>
-              <Badge variant="secondary" className="text-xs font-medium">
-                {periodLabels[urlPeriod]}
-              </Badge>
-              <p className="text-sm font-medium mt-0.5">{formatDateRange()}</p>
-            </div>
-          </div>
-          <Separator orientation="vertical" className="h-10" />
-          <div className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-muted-foreground" />
-            <div>
-              <p className="text-xs text-muted-foreground">Client</p>
-              <p className="text-sm font-medium">{auditClient?.name || "Loading..."}</p>
-            </div>
-          </div>
-          {auditDepartment && (
-            <>
-              <Separator orientation="vertical" className="h-10" />
-              <div>
-                <p className="text-xs text-muted-foreground">Department</p>
-                <p className="text-sm font-medium">{auditDepartment.name}</p>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
       <div className="flex flex-1 gap-6 min-h-0">
       <aside className="w-80 shrink-0 flex flex-col gap-4">
         <Card className="h-full border-none shadow-none bg-transparent">
