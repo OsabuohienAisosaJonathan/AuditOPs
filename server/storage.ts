@@ -1,11 +1,10 @@
 import { db } from "./db";
 import { 
-  users, clients, outlets, departments, outletDepartmentLinks, salesEntries, purchases,
+  users, clients, categories, departments, salesEntries, purchases,
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   type User, type InsertUser, type Client, type InsertClient,
-  type Outlet, type InsertOutlet, type Department, type InsertDepartment,
-  type OutletDepartmentLink, type InsertOutletDepartmentLink,
+  type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
   type StockMovement, type InsertStockMovement, type Reconciliation, type InsertReconciliation,
   type Exception, type InsertException, type ExceptionComment, type InsertExceptionComment,
@@ -18,13 +17,14 @@ import { eq, desc, and, gte, lte, sql, or, ilike, count, sum } from "drizzle-orm
 
 export interface DashboardFilters {
   clientId?: string;
+  categoryId?: string;
   departmentId?: string;
   date?: string;
 }
 
 export interface DashboardSummary {
   totalClients: number;
-  activeOutlets: number;
+  totalDepartments: number;
   totalSalesToday: number;
   totalPurchasesToday: number;
   totalSales: number;
@@ -56,17 +56,17 @@ export interface IStorage {
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
   deleteClient(id: string): Promise<boolean>;
 
-  // Outlets
-  getOutlets(clientId: string): Promise<Outlet[]>;
-  getAllOutlets(): Promise<Outlet[]>;
-  getOutlet(id: string): Promise<Outlet | undefined>;
-  createOutlet(outlet: InsertOutlet): Promise<Outlet>;
-  updateOutlet(id: string, outlet: Partial<InsertOutlet>): Promise<Outlet | undefined>;
-  deleteOutlet(id: string): Promise<boolean>;
+  // Categories
+  getCategories(clientId: string): Promise<Category[]>;
+  getAllCategories(): Promise<Category[]>;
+  getCategory(id: string): Promise<Category | undefined>;
+  createCategory(category: InsertCategory): Promise<Category>;
+  updateCategory(id: string, category: Partial<InsertCategory>): Promise<Category | undefined>;
+  deleteCategory(id: string): Promise<boolean>;
 
   // Departments
-  getDepartments(outletId: string): Promise<Department[]>;
-  getClientDepartments(clientId: string): Promise<Department[]>;
+  getDepartments(clientId: string): Promise<Department[]>;
+  getDepartmentsByCategory(categoryId: string): Promise<Department[]>;
   getAllDepartments(): Promise<Department[]>;
   getDepartment(id: string): Promise<Department | undefined>;
   createDepartment(department: InsertDepartment): Promise<Department>;
@@ -74,15 +74,7 @@ export interface IStorage {
   updateDepartment(id: string, department: Partial<InsertDepartment>): Promise<Department | undefined>;
   deleteDepartment(id: string): Promise<boolean>;
   checkDepartmentUsage(id: string): Promise<boolean>;
-  
-  // Outlet Department Links
-  getOutletDepartmentLinks(outletId: string): Promise<OutletDepartmentLink[]>;
-  createOutletDepartmentLink(link: InsertOutletDepartmentLink): Promise<OutletDepartmentLink>;
-  updateOutletDepartmentLink(outletId: string, departmentId: string, isActive: boolean): Promise<OutletDepartmentLink | undefined>;
-  deleteOutletDepartmentLink(outletId: string, departmentId: string): Promise<boolean>;
-  
-  // Get effective departments for an outlet (respects inheritance mode)
-  getEffectiveDepartmentsForOutlet(outletId: string): Promise<(Department & { source: 'client' | 'outlet'; isActive: boolean })[]>;
+  checkDepartmentNameExists(clientId: string, name: string, excludeId?: string): Promise<boolean>;
 
   // Suppliers
   getSuppliers(clientId: string): Promise<Supplier[]>;
@@ -112,6 +104,7 @@ export interface IStorage {
 
   // Sales
   getSalesEntries(departmentId: string, startDate?: Date, endDate?: Date): Promise<SalesEntry[]>;
+  getSalesEntriesByClient(clientId: string, startDate?: Date, endDate?: Date): Promise<SalesEntry[]>;
   getAllSalesEntries(): Promise<SalesEntry[]>;
   getSalesEntry(id: string): Promise<SalesEntry | undefined>;
   createSalesEntry(entry: InsertSalesEntry): Promise<SalesEntry>;
@@ -119,7 +112,8 @@ export interface IStorage {
   deleteSalesEntry(id: string): Promise<boolean>;
 
   // Purchases
-  getPurchases(outletId: string): Promise<Purchase[]>;
+  getPurchases(clientId: string): Promise<Purchase[]>;
+  getPurchasesByDepartment(departmentId: string): Promise<Purchase[]>;
   getAllPurchases(): Promise<Purchase[]>;
   getPurchase(id: string): Promise<Purchase | undefined>;
   createPurchase(purchase: InsertPurchase): Promise<Purchase>;
@@ -127,11 +121,13 @@ export interface IStorage {
   deletePurchase(id: string): Promise<boolean>;
 
   // Stock Movements
-  getStockMovements(outletId: string): Promise<StockMovement[]>;
+  getStockMovements(clientId: string): Promise<StockMovement[]>;
+  getStockMovementsByDepartment(departmentId: string): Promise<StockMovement[]>;
   createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
 
   // Reconciliations
   getReconciliations(departmentId: string, date?: Date): Promise<Reconciliation[]>;
+  getReconciliationsByClient(clientId: string, startDate?: Date, endDate?: Date): Promise<Reconciliation[]>;
   getAllReconciliations(): Promise<Reconciliation[]>;
   getReconciliation(id: string): Promise<Reconciliation | undefined>;
   createReconciliation(reconciliation: InsertReconciliation): Promise<Reconciliation>;
@@ -139,7 +135,7 @@ export interface IStorage {
   deleteReconciliation(id: string): Promise<boolean>;
 
   // Exceptions
-  getExceptions(filters?: { outletId?: string; status?: string; severity?: string }): Promise<Exception[]>;
+  getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string }): Promise<Exception[]>;
   getException(id: string): Promise<Exception | undefined>;
   createException(exception: InsertException): Promise<Exception>;
   updateException(id: string, exception: Partial<InsertException>): Promise<Exception | undefined>;
@@ -165,19 +161,16 @@ export interface IStorage {
   // Dashboard
   getDashboardSummary(filters?: DashboardFilters): Promise<DashboardSummary>;
   
-  // Departments by Client
-  getDepartmentsByClient(clientId: string): Promise<Department[]>;
-  
   // Payment Declarations
-  getPaymentDeclaration(clientId: string, outletId: string, date: Date): Promise<PaymentDeclaration | undefined>;
+  getPaymentDeclaration(clientId: string, departmentId: string, date: Date): Promise<PaymentDeclaration | undefined>;
   getPaymentDeclarationById(id: string): Promise<PaymentDeclaration | undefined>;
-  getPaymentDeclarations(outletId: string, startDate?: Date, endDate?: Date): Promise<PaymentDeclaration[]>;
+  getPaymentDeclarations(departmentId: string, startDate?: Date, endDate?: Date): Promise<PaymentDeclaration[]>;
   createPaymentDeclaration(declaration: InsertPaymentDeclaration): Promise<PaymentDeclaration>;
   updatePaymentDeclaration(id: string, declaration: Partial<InsertPaymentDeclaration>): Promise<PaymentDeclaration | undefined>;
   deletePaymentDeclaration(id: string): Promise<boolean>;
   
   // Sales summary for reconciliation
-  getSalesSummaryForOutlet(outletId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
+  getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
 }
 
 export class DbStorage implements IStorage {
@@ -270,50 +263,48 @@ export class DbStorage implements IStorage {
     return true;
   }
 
-  // Outlets
-  async getOutlets(clientId: string): Promise<Outlet[]> {
-    return db.select().from(outlets).where(eq(outlets.clientId, clientId));
+  // Categories
+  async getCategories(clientId: string): Promise<Category[]> {
+    return db.select().from(categories).where(eq(categories.clientId, clientId)).orderBy(categories.name);
   }
 
-  async getAllOutlets(): Promise<Outlet[]> {
-    return db.select().from(outlets);
+  async getAllCategories(): Promise<Category[]> {
+    return db.select().from(categories).orderBy(categories.name);
   }
 
-  async getOutlet(id: string): Promise<Outlet | undefined> {
-    const [outlet] = await db.select().from(outlets).where(eq(outlets.id, id));
-    return outlet;
+  async getCategory(id: string): Promise<Category | undefined> {
+    const [category] = await db.select().from(categories).where(eq(categories.id, id));
+    return category;
   }
 
-  async createOutlet(insertOutlet: InsertOutlet): Promise<Outlet> {
-    const [outlet] = await db.insert(outlets).values(insertOutlet).returning();
-    return outlet;
+  async createCategory(insertCategory: InsertCategory): Promise<Category> {
+    const [category] = await db.insert(categories).values(insertCategory).returning();
+    return category;
   }
 
-  async updateOutlet(id: string, updateData: Partial<InsertOutlet>): Promise<Outlet | undefined> {
-    const [outlet] = await db.update(outlets).set(updateData).where(eq(outlets.id, id)).returning();
-    return outlet;
+  async updateCategory(id: string, updateData: Partial<InsertCategory>): Promise<Category | undefined> {
+    const [category] = await db.update(categories).set(updateData).where(eq(categories.id, id)).returning();
+    return category;
   }
 
-  async deleteOutlet(id: string): Promise<boolean> {
-    await db.delete(outlets).where(eq(outlets.id, id));
+  async deleteCategory(id: string): Promise<boolean> {
+    // Set categoryId to null for all departments in this category before deleting
+    await db.update(departments).set({ categoryId: null }).where(eq(departments.categoryId, id));
+    await db.delete(categories).where(eq(categories.id, id));
     return true;
   }
 
   // Departments
-  async getDepartments(outletId: string): Promise<Department[]> {
-    return db.select().from(departments).where(
-      and(eq(departments.outletId, outletId), eq(departments.scope, "outlet"))
-    );
+  async getDepartments(clientId: string): Promise<Department[]> {
+    return db.select().from(departments).where(eq(departments.clientId, clientId)).orderBy(departments.name);
   }
 
-  async getClientDepartments(clientId: string): Promise<Department[]> {
-    return db.select().from(departments).where(
-      and(eq(departments.clientId, clientId), eq(departments.scope, "client"))
-    ).orderBy(departments.name);
+  async getDepartmentsByCategory(categoryId: string): Promise<Department[]> {
+    return db.select().from(departments).where(eq(departments.categoryId, categoryId)).orderBy(departments.name);
   }
 
   async getAllDepartments(): Promise<Department[]> {
-    return db.select().from(departments);
+    return db.select().from(departments).orderBy(departments.name);
   }
 
   async getDepartment(id: string): Promise<Department | undefined> {
@@ -353,71 +344,28 @@ export class DbStorage implements IStorage {
     
     const [exceptionUsage] = await db.select({ count: count() }).from(exceptions).where(eq(exceptions.departmentId, id));
     if ((exceptionUsage?.count || 0) > 0) return true;
+
+    const [purchaseUsage] = await db.select({ count: count() }).from(purchases).where(eq(purchases.departmentId, id));
+    if ((purchaseUsage?.count || 0) > 0) return true;
+
+    const [movementUsage] = await db.select({ count: count() }).from(stockMovements).where(eq(stockMovements.departmentId, id));
+    if ((movementUsage?.count || 0) > 0) return true;
     
     return false;
   }
 
-  // Outlet Department Links
-  async getOutletDepartmentLinks(outletId: string): Promise<OutletDepartmentLink[]> {
-    return db.select().from(outletDepartmentLinks).where(eq(outletDepartmentLinks.outletId, outletId));
-  }
-
-  async createOutletDepartmentLink(link: InsertOutletDepartmentLink): Promise<OutletDepartmentLink> {
-    const [created] = await db.insert(outletDepartmentLinks).values(link).returning();
-    return created;
-  }
-
-  async updateOutletDepartmentLink(outletId: string, departmentId: string, isActive: boolean): Promise<OutletDepartmentLink | undefined> {
-    const [updated] = await db.update(outletDepartmentLinks)
-      .set({ isActive })
-      .where(and(
-        eq(outletDepartmentLinks.outletId, outletId),
-        eq(outletDepartmentLinks.departmentId, departmentId)
-      ))
-      .returning();
-    return updated;
-  }
-
-  async deleteOutletDepartmentLink(outletId: string, departmentId: string): Promise<boolean> {
-    await db.delete(outletDepartmentLinks).where(
-      and(
-        eq(outletDepartmentLinks.outletId, outletId),
-        eq(outletDepartmentLinks.departmentId, departmentId)
-      )
-    );
-    return true;
-  }
-
-  async getEffectiveDepartmentsForOutlet(outletId: string): Promise<(Department & { source: 'client' | 'outlet'; isActive: boolean })[]> {
-    const outlet = await this.getOutlet(outletId);
-    if (!outlet) return [];
-
-    const mode = (outlet as any).departmentMode || "inherit_only";
-    const result: (Department & { source: 'client' | 'outlet'; isActive: boolean })[] = [];
-
-    if (mode === "inherit_only" || mode === "inherit_add") {
-      const clientDepts = await this.getClientDepartments(outlet.clientId);
-      const links = await this.getOutletDepartmentLinks(outletId);
-      const linkMap = new Map(links.map(l => [l.departmentId, l.isActive]));
-
-      for (const dept of clientDepts) {
-        if (dept.status === "active") {
-          const isActive = linkMap.has(dept.id) ? linkMap.get(dept.id)! : true;
-          result.push({ ...dept, source: 'client', isActive });
-        }
-      }
+  async checkDepartmentNameExists(clientId: string, name: string, excludeId?: string): Promise<boolean> {
+    const conditions = [
+      eq(departments.clientId, clientId),
+      sql`LOWER(${departments.name}) = LOWER(${name})`
+    ];
+    
+    if (excludeId) {
+      conditions.push(sql`${departments.id} != ${excludeId}`);
     }
-
-    if (mode === "outlet_only" || mode === "inherit_add") {
-      const outletDepts = await this.getDepartments(outletId);
-      for (const dept of outletDepts) {
-        if (dept.status === "active") {
-          result.push({ ...dept, source: 'outlet', isActive: true });
-        }
-      }
-    }
-
-    return result.sort((a, b) => a.name.localeCompare(b.name));
+    
+    const [result] = await db.select({ count: count() }).from(departments).where(and(...conditions));
+    return (result?.count || 0) > 0;
   }
 
   // Suppliers
@@ -539,6 +487,20 @@ export class DbStorage implements IStorage {
     return db.select().from(salesEntries).where(eq(salesEntries.departmentId, departmentId)).orderBy(desc(salesEntries.date));
   }
 
+  async getSalesEntriesByClient(clientId: string, startDate?: Date, endDate?: Date): Promise<SalesEntry[]> {
+    if (startDate && endDate) {
+      return db.select().from(salesEntries).where(
+        and(
+          eq(salesEntries.clientId, clientId),
+          gte(salesEntries.date, startDate),
+          lte(salesEntries.date, endDate)
+        )
+      ).orderBy(desc(salesEntries.date));
+    }
+    
+    return db.select().from(salesEntries).where(eq(salesEntries.clientId, clientId)).orderBy(desc(salesEntries.date));
+  }
+
   async getAllSalesEntries(): Promise<SalesEntry[]> {
     return db.select().from(salesEntries).orderBy(desc(salesEntries.date));
   }
@@ -564,8 +526,12 @@ export class DbStorage implements IStorage {
   }
 
   // Purchases
-  async getPurchases(outletId: string): Promise<Purchase[]> {
-    return db.select().from(purchases).where(eq(purchases.outletId, outletId)).orderBy(desc(purchases.createdAt));
+  async getPurchases(clientId: string): Promise<Purchase[]> {
+    return db.select().from(purchases).where(eq(purchases.clientId, clientId)).orderBy(desc(purchases.createdAt));
+  }
+
+  async getPurchasesByDepartment(departmentId: string): Promise<Purchase[]> {
+    return db.select().from(purchases).where(eq(purchases.departmentId, departmentId)).orderBy(desc(purchases.createdAt));
   }
 
   async getAllPurchases(): Promise<Purchase[]> {
@@ -588,14 +554,17 @@ export class DbStorage implements IStorage {
   }
 
   async deletePurchase(id: string): Promise<boolean> {
-    await db.delete(purchaseLines).where(eq(purchaseLines.purchaseId, id));
     await db.delete(purchases).where(eq(purchases.id, id));
     return true;
   }
 
   // Stock Movements
-  async getStockMovements(outletId: string): Promise<StockMovement[]> {
-    return db.select().from(stockMovements).where(eq(stockMovements.outletId, outletId)).orderBy(desc(stockMovements.createdAt));
+  async getStockMovements(clientId: string): Promise<StockMovement[]> {
+    return db.select().from(stockMovements).where(eq(stockMovements.clientId, clientId)).orderBy(desc(stockMovements.createdAt));
+  }
+
+  async getStockMovementsByDepartment(departmentId: string): Promise<StockMovement[]> {
+    return db.select().from(stockMovements).where(eq(stockMovements.departmentId, departmentId)).orderBy(desc(stockMovements.createdAt));
   }
 
   async createStockMovement(insertMovement: InsertStockMovement): Promise<StockMovement> {
@@ -606,14 +575,33 @@ export class DbStorage implements IStorage {
   // Reconciliations
   async getReconciliations(departmentId: string, date?: Date): Promise<Reconciliation[]> {
     if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      
       return db.select().from(reconciliations).where(
         and(
           eq(reconciliations.departmentId, departmentId),
-          eq(reconciliations.date, date)
+          gte(reconciliations.date, startOfDay),
+          lte(reconciliations.date, endOfDay)
         )
       ).orderBy(desc(reconciliations.createdAt));
     }
     return db.select().from(reconciliations).where(eq(reconciliations.departmentId, departmentId)).orderBy(desc(reconciliations.createdAt));
+  }
+
+  async getReconciliationsByClient(clientId: string, startDate?: Date, endDate?: Date): Promise<Reconciliation[]> {
+    if (startDate && endDate) {
+      return db.select().from(reconciliations).where(
+        and(
+          eq(reconciliations.clientId, clientId),
+          gte(reconciliations.date, startDate),
+          lte(reconciliations.date, endDate)
+        )
+      ).orderBy(desc(reconciliations.date));
+    }
+    return db.select().from(reconciliations).where(eq(reconciliations.clientId, clientId)).orderBy(desc(reconciliations.date));
   }
 
   async getAllReconciliations(): Promise<Reconciliation[]> {
@@ -621,18 +609,18 @@ export class DbStorage implements IStorage {
   }
 
   async getReconciliation(id: string): Promise<Reconciliation | undefined> {
-    const [recon] = await db.select().from(reconciliations).where(eq(reconciliations.id, id));
-    return recon;
+    const [reconciliation] = await db.select().from(reconciliations).where(eq(reconciliations.id, id));
+    return reconciliation;
   }
 
-  async createReconciliation(insertRecon: InsertReconciliation): Promise<Reconciliation> {
-    const [recon] = await db.insert(reconciliations).values(insertRecon).returning();
-    return recon;
+  async createReconciliation(insertReconciliation: InsertReconciliation): Promise<Reconciliation> {
+    const [reconciliation] = await db.insert(reconciliations).values(insertReconciliation).returning();
+    return reconciliation;
   }
 
   async updateReconciliation(id: string, updateData: Partial<InsertReconciliation>): Promise<Reconciliation | undefined> {
-    const [recon] = await db.update(reconciliations).set(updateData).where(eq(reconciliations.id, id)).returning();
-    return recon;
+    const [reconciliation] = await db.update(reconciliations).set(updateData).where(eq(reconciliations.id, id)).returning();
+    return reconciliation;
   }
 
   async deleteReconciliation(id: string): Promise<boolean> {
@@ -641,11 +629,14 @@ export class DbStorage implements IStorage {
   }
 
   // Exceptions
-  async getExceptions(filters?: { outletId?: string; status?: string; severity?: string }): Promise<Exception[]> {
-    let conditions = [];
+  async getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string }): Promise<Exception[]> {
+    const conditions = [];
     
-    if (filters?.outletId) {
-      conditions.push(eq(exceptions.outletId, filters.outletId));
+    if (filters?.clientId) {
+      conditions.push(eq(exceptions.clientId, filters.clientId));
+    }
+    if (filters?.departmentId) {
+      conditions.push(eq(exceptions.departmentId, filters.departmentId));
     }
     if (filters?.status) {
       conditions.push(eq(exceptions.status, filters.status));
@@ -653,7 +644,7 @@ export class DbStorage implements IStorage {
     if (filters?.severity) {
       conditions.push(eq(exceptions.severity, filters.severity));
     }
-
+    
     if (conditions.length > 0) {
       return db.select().from(exceptions).where(and(...conditions)).orderBy(desc(exceptions.createdAt));
     }
@@ -665,33 +656,9 @@ export class DbStorage implements IStorage {
     return exception;
   }
 
-  async generateExceptionCaseNumber(): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
-    const todayStart = new Date(today);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
-    
-    const countResult = await db.select({ count: count() }).from(exceptions).where(
-      and(
-        gte(exceptions.createdAt, todayStart),
-        lte(exceptions.createdAt, todayEnd)
-      )
-    );
-    const sequence = (countResult[0]?.count || 0) + 1;
-    
-    return `EXC-${dateStr}-${String(sequence).padStart(3, '0')}`;
-  }
-
   async createException(insertException: InsertException): Promise<Exception> {
     const caseNumber = await this.generateExceptionCaseNumber();
-    
-    const [exception] = await db.insert(exceptions).values({
-      ...insertException,
-      caseNumber,
-    }).returning();
+    const [exception] = await db.insert(exceptions).values({ ...insertException, caseNumber }).returning();
     return exception;
   }
 
@@ -701,14 +668,20 @@ export class DbStorage implements IStorage {
   }
 
   async deleteException(id: string): Promise<boolean> {
-    await db.delete(exceptionComments).where(eq(exceptionComments.exceptionId, id));
     await db.delete(exceptions).where(eq(exceptions.id, id));
     return true;
   }
 
+  async generateExceptionCaseNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [result] = await db.select({ count: count() }).from(exceptions);
+    const nextNum = (result?.count || 0) + 1;
+    return `EXC-${year}-${String(nextNum).padStart(5, "0")}`;
+  }
+
   // Exception Comments
   async getExceptionComments(exceptionId: string): Promise<ExceptionComment[]> {
-    return db.select().from(exceptionComments).where(eq(exceptionComments.exceptionId, exceptionId)).orderBy(exceptionComments.createdAt);
+    return db.select().from(exceptionComments).where(eq(exceptionComments.exceptionId, exceptionId)).orderBy(desc(exceptionComments.createdAt));
   }
 
   async createExceptionComment(insertComment: InsertExceptionComment): Promise<ExceptionComment> {
@@ -718,16 +691,13 @@ export class DbStorage implements IStorage {
 
   // Audit Logs
   async getAuditLogs(filters?: { limit?: number; offset?: number; userId?: string; entity?: string; startDate?: Date; endDate?: Date }): Promise<{ logs: AuditLog[]; total: number }> {
-    const limit = filters?.limit || 50;
-    const offset = filters?.offset || 0;
-    
-    let conditions = [];
+    const conditions = [];
     
     if (filters?.userId) {
       conditions.push(eq(auditLogs.userId, filters.userId));
     }
     if (filters?.entity) {
-      conditions.push(ilike(auditLogs.entity, `%${filters.entity}%`));
+      conditions.push(eq(auditLogs.entity, filters.entity));
     }
     if (filters?.startDate) {
       conditions.push(gte(auditLogs.createdAt, filters.startDate));
@@ -735,10 +705,13 @@ export class DbStorage implements IStorage {
     if (filters?.endDate) {
       conditions.push(lte(auditLogs.createdAt, filters.endDate));
     }
-
+    
+    const limit = filters?.limit || 50;
+    const offset = filters?.offset || 0;
+    
     let logs: AuditLog[];
     let totalResult: { count: number }[];
-
+    
     if (conditions.length > 0) {
       logs = await db.select().from(auditLogs).where(and(...conditions)).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
       totalResult = await db.select({ count: count() }).from(auditLogs).where(and(...conditions));
@@ -746,7 +719,7 @@ export class DbStorage implements IStorage {
       logs = await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
       totalResult = await db.select({ count: count() }).from(auditLogs);
     }
-
+    
     return { logs, total: totalResult[0]?.count || 0 };
   }
 
@@ -757,7 +730,7 @@ export class DbStorage implements IStorage {
 
   // Admin Activity Logs
   async getAdminActivityLogs(filters?: { actorId?: string; targetUserId?: string; actionType?: string; startDate?: Date; endDate?: Date }): Promise<AdminActivityLog[]> {
-    let conditions = [];
+    const conditions = [];
     
     if (filters?.actorId) {
       conditions.push(eq(adminActivityLogs.actorId, filters.actorId));
@@ -774,11 +747,11 @@ export class DbStorage implements IStorage {
     if (filters?.endDate) {
       conditions.push(lte(adminActivityLogs.createdAt, filters.endDate));
     }
-
+    
     if (conditions.length > 0) {
-      return db.select().from(adminActivityLogs).where(and(...conditions)).orderBy(desc(adminActivityLogs.createdAt)).limit(100);
+      return db.select().from(adminActivityLogs).where(and(...conditions)).orderBy(desc(adminActivityLogs.createdAt));
     }
-    return db.select().from(adminActivityLogs).orderBy(desc(adminActivityLogs.createdAt)).limit(100);
+    return db.select().from(adminActivityLogs).orderBy(desc(adminActivityLogs.createdAt));
   }
 
   async createAdminActivityLog(insertLog: InsertAdminActivityLog): Promise<AdminActivityLog> {
@@ -801,122 +774,163 @@ export class DbStorage implements IStorage {
     }
   }
 
-  // Dashboard Summary
+  // Dashboard
   async getDashboardSummary(filters?: DashboardFilters): Promise<DashboardSummary> {
-    const allClients: Client[] = await db.select().from(clients);
-    const allOutlets: Outlet[] = await db.select().from(outlets);
-    const allDepartments: Department[] = await db.select().from(departments);
-    
-    // Build outlet IDs and department IDs for filtering
-    let filteredOutletIds: string[] = allOutlets.map(o => o.id);
-    let filteredDepartmentIds: string[] = allDepartments.map(d => d.id);
-    let filteredClientCount = allClients.length;
-    let filteredOutletCount = allOutlets.length;
-    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // Get total clients
+    const [clientsResult] = await db.select({ count: count() }).from(clients);
+    const totalClients = clientsResult?.count || 0;
+
+    // Get total departments (with optional filters)
+    let deptConditions: any[] = [];
     if (filters?.clientId) {
-      const clientOutlets = allOutlets.filter(o => o.clientId === filters.clientId);
-      filteredOutletIds = clientOutlets.map(o => o.id);
-      filteredDepartmentIds = allDepartments.filter(d => filteredOutletIds.includes(d.outletId)).map(d => d.id);
-      filteredClientCount = 1;
-      filteredOutletCount = clientOutlets.length;
+      deptConditions.push(eq(departments.clientId, filters.clientId));
     }
-    
+    const [deptsResult] = deptConditions.length > 0 
+      ? await db.select({ count: count() }).from(departments).where(and(...deptConditions))
+      : await db.select({ count: count() }).from(departments);
+    const totalDepartments = deptsResult?.count || 0;
+
+    // Sales conditions
+    let salesConditions: any[] = [
+      gte(salesEntries.date, today),
+      lte(salesEntries.date, endOfToday)
+    ];
+    if (filters?.clientId) {
+      salesConditions.push(eq(salesEntries.clientId, filters.clientId));
+    }
     if (filters?.departmentId) {
-      filteredDepartmentIds = [filters.departmentId];
+      salesConditions.push(eq(salesEntries.departmentId, filters.departmentId));
     }
-    
-    // Date filter
-    const filterDate = filters?.date ? new Date(filters.date) : new Date();
-    filterDate.setHours(0, 0, 0, 0);
-    const nextDay = new Date(filterDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    
-    // Get sales filtered by department and date
-    const allSales: SalesEntry[] = await db.select().from(salesEntries);
-    const filteredSales = allSales.filter((s: SalesEntry) => {
-      const saleDate = new Date(s.date);
-      const matchesDepartment = filteredDepartmentIds.length === 0 || filteredDepartmentIds.includes(s.departmentId);
-      const matchesDate = saleDate >= filterDate && saleDate < nextDay;
-      return matchesDepartment && matchesDate;
-    });
-    const totalSalesToday = filteredSales.reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
-    const totalSales = allSales
-      .filter((s: SalesEntry) => filteredDepartmentIds.length === 0 || filteredDepartmentIds.includes(s.departmentId))
-      .reduce((acc: number, s: SalesEntry) => acc + parseFloat(s.totalSales || "0"), 0);
 
-    // Get purchases filtered by outlet and date
-    const allPurchases: Purchase[] = await db.select().from(purchases);
-    const filteredPurchases = allPurchases.filter((p: Purchase) => {
-      const purchaseDate = new Date(p.invoiceDate);
-      const matchesOutlet = filteredOutletIds.length === 0 || filteredOutletIds.includes(p.outletId);
-      const matchesDate = purchaseDate >= filterDate && purchaseDate < nextDay;
-      return matchesOutlet && matchesDate;
-    });
-    const totalPurchasesToday = filteredPurchases.reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
-    const totalPurchases = allPurchases
-      .filter((p: Purchase) => filteredOutletIds.length === 0 || filteredOutletIds.includes(p.outletId))
-      .reduce((acc: number, p: Purchase) => acc + parseFloat(p.totalAmount || "0"), 0);
+    // Get total sales today
+    const [salesTodayResult] = await db.select({ 
+      total: sum(salesEntries.totalSales) 
+    }).from(salesEntries).where(and(...salesConditions));
+    const totalSalesToday = parseFloat(salesTodayResult?.total || "0");
 
-    // Get exceptions filtered by outlet and department
-    const allExceptions: Exception[] = await db.select().from(exceptions);
-    const filteredExceptions = allExceptions.filter((e: Exception) => {
-      const matchesOutlet = filteredOutletIds.length === 0 || filteredOutletIds.includes(e.outletId);
-      const matchesDepartment = !filters?.departmentId || e.departmentId === filters.departmentId;
-      return matchesOutlet && matchesDepartment;
-    });
-    const totalExceptions = filteredExceptions.length;
-    const openExceptions = filteredExceptions.filter((e: Exception) => e.status === "open").length;
+    // Get all-time sales
+    let allSalesConditions: any[] = [];
+    if (filters?.clientId) {
+      allSalesConditions.push(eq(salesEntries.clientId, filters.clientId));
+    }
+    if (filters?.departmentId) {
+      allSalesConditions.push(eq(salesEntries.departmentId, filters.departmentId));
+    }
+    const [allSalesResult] = allSalesConditions.length > 0
+      ? await db.select({ total: sum(salesEntries.totalSales) }).from(salesEntries).where(and(...allSalesConditions))
+      : await db.select({ total: sum(salesEntries.totalSales) }).from(salesEntries);
+    const totalSales = parseFloat(allSalesResult?.total || "0");
 
-    // Get reconciliations filtered by department
-    const allRecons: Reconciliation[] = await db.select().from(reconciliations);
-    const filteredRecons = allRecons.filter((r: Reconciliation) => {
-      const matchesDepartment = filteredDepartmentIds.length === 0 || filteredDepartmentIds.includes(r.departmentId);
-      return matchesDepartment;
-    });
-    const totalVarianceValue = filteredRecons.reduce((acc: number, r: Reconciliation) => acc + Math.abs(parseFloat(r.varianceValue || "0")), 0);
-    const pendingReconciliations = filteredRecons.filter((r: Reconciliation) => r.status === "pending").length;
+    // Purchases conditions
+    let purchaseConditions: any[] = [
+      gte(purchases.invoiceDate, today),
+      lte(purchases.invoiceDate, endOfToday)
+    ];
+    if (filters?.clientId) {
+      purchaseConditions.push(eq(purchases.clientId, filters.clientId));
+    }
+    if (filters?.departmentId) {
+      purchaseConditions.push(eq(purchases.departmentId, filters.departmentId));
+    }
 
-    const recentExceptions = filteredExceptions.slice(0, 5);
+    // Get total purchases today
+    const [purchasesTodayResult] = await db.select({ 
+      total: sum(purchases.totalAmount) 
+    }).from(purchases).where(and(...purchaseConditions));
+    const totalPurchasesToday = parseFloat(purchasesTodayResult?.total || "0");
 
+    // Get all-time purchases
+    let allPurchaseConditions: any[] = [];
+    if (filters?.clientId) {
+      allPurchaseConditions.push(eq(purchases.clientId, filters.clientId));
+    }
+    if (filters?.departmentId) {
+      allPurchaseConditions.push(eq(purchases.departmentId, filters.departmentId));
+    }
+    const [allPurchasesResult] = allPurchaseConditions.length > 0
+      ? await db.select({ total: sum(purchases.totalAmount) }).from(purchases).where(and(...allPurchaseConditions))
+      : await db.select({ total: sum(purchases.totalAmount) }).from(purchases);
+    const totalPurchases = parseFloat(allPurchasesResult?.total || "0");
+
+    // Exception conditions
+    let exceptionConditions: any[] = [];
+    if (filters?.clientId) {
+      exceptionConditions.push(eq(exceptions.clientId, filters.clientId));
+    }
+    if (filters?.departmentId) {
+      exceptionConditions.push(eq(exceptions.departmentId, filters.departmentId));
+    }
+
+    // Get exceptions counts
+    const [exceptionsResult] = exceptionConditions.length > 0
+      ? await db.select({ count: count() }).from(exceptions).where(and(...exceptionConditions))
+      : await db.select({ count: count() }).from(exceptions);
+    const totalExceptions = exceptionsResult?.count || 0;
+
+    const openConditions = [...exceptionConditions, eq(exceptions.status, "open")];
+    const [openExceptionsResult] = await db.select({ count: count() }).from(exceptions).where(and(...openConditions));
+    const openExceptions = openExceptionsResult?.count || 0;
+
+    // Reconciliation conditions
+    let reconConditions: any[] = [];
+    if (filters?.clientId) {
+      reconConditions.push(eq(reconciliations.clientId, filters.clientId));
+    }
+    if (filters?.departmentId) {
+      reconConditions.push(eq(reconciliations.departmentId, filters.departmentId));
+    }
+
+    // Get variance value
+    const [varianceResult] = reconConditions.length > 0
+      ? await db.select({ total: sum(reconciliations.varianceValue) }).from(reconciliations).where(and(...reconConditions))
+      : await db.select({ total: sum(reconciliations.varianceValue) }).from(reconciliations);
+    const totalVarianceValue = parseFloat(varianceResult?.total || "0");
+
+    // Get pending reconciliations
+    const pendingConditions = [...reconConditions, eq(reconciliations.status, "pending")];
+    const [pendingResult] = await db.select({ count: count() }).from(reconciliations).where(and(...pendingConditions));
+    const pendingReconciliations = pendingResult?.count || 0;
+
+    // Get recent exceptions
+    const recentExceptions = exceptionConditions.length > 0
+      ? await db.select().from(exceptions).where(and(...exceptionConditions)).orderBy(desc(exceptions.createdAt)).limit(5)
+      : await db.select().from(exceptions).orderBy(desc(exceptions.createdAt)).limit(5);
+
+    // Generate red flags based on data
     const redFlags: { type: string; message: string; severity: string }[] = [];
-
-    if (openExceptions > 0) {
+    
+    if (openExceptions > 5) {
       redFlags.push({
         type: "exceptions",
-        message: `${openExceptions} open exception(s) require attention`,
-        severity: openExceptions > 10 ? "high" : "medium"
+        message: `${openExceptions} open exceptions require attention`,
+        severity: "high"
       });
     }
-
+    
     if (pendingReconciliations > 0) {
       redFlags.push({
-        type: "reconciliations",
-        message: `${pendingReconciliations} reconciliation(s) pending approval`,
-        severity: pendingReconciliations > 5 ? "high" : "medium"
+        type: "reconciliation",
+        message: `${pendingReconciliations} reconciliations pending review`,
+        severity: "medium"
       });
     }
 
-    const highVarianceRecons = filteredRecons.filter((r: Reconciliation) => Math.abs(parseFloat(r.varianceValue || "0")) > 1000);
-    if (highVarianceRecons.length > 0) {
+    if (Math.abs(totalVarianceValue) > 10000) {
       redFlags.push({
         type: "variance",
-        message: `${highVarianceRecons.length} reconciliation(s) with high variance (>₦1000)`,
+        message: `High variance detected: ₦${Math.abs(totalVarianceValue).toLocaleString()}`,
         severity: "high"
       });
     }
 
-    const criticalExceptions = filteredExceptions.filter((e: Exception) => e.severity === "critical" && e.status === "open");
-    if (criticalExceptions.length > 0) {
-      redFlags.push({
-        type: "critical",
-        message: `${criticalExceptions.length} critical exception(s) open`,
-        severity: "critical"
-      });
-    }
-
     return {
-      totalClients: filteredClientCount,
-      activeOutlets: filteredOutletCount,
+      totalClients,
+      totalDepartments,
       totalSalesToday,
       totalPurchasesToday,
       totalSales,
@@ -929,28 +943,9 @@ export class DbStorage implements IStorage {
       redFlags
     };
   }
-  
-  // Departments by Client - returns all departments (client-level + outlet-level) for a client
-  async getDepartmentsByClient(clientId: string): Promise<Department[]> {
-    const clientDepts = await db.select().from(departments).where(
-      and(eq(departments.clientId, clientId), eq(departments.scope, "client"))
-    );
-    
-    const clientOutlets = await db.select().from(outlets).where(eq(outlets.clientId, clientId));
-    const outletIds = clientOutlets.map(o => o.id);
-    
-    if (outletIds.length === 0) {
-      return clientDepts;
-    }
-    
-    const allDepts = await db.select().from(departments);
-    const outletDepts = allDepts.filter(d => d.scope === "outlet" && d.outletId && outletIds.includes(d.outletId));
-    
-    return [...clientDepts, ...outletDepts].sort((a, b) => a.name.localeCompare(b.name));
-  }
-  
+
   // Payment Declarations
-  async getPaymentDeclaration(clientId: string, outletId: string, date: Date): Promise<PaymentDeclaration | undefined> {
+  async getPaymentDeclaration(clientId: string, departmentId: string, date: Date): Promise<PaymentDeclaration | undefined> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -959,109 +954,95 @@ export class DbStorage implements IStorage {
     const [declaration] = await db.select().from(paymentDeclarations).where(
       and(
         eq(paymentDeclarations.clientId, clientId),
-        eq(paymentDeclarations.outletId, outletId),
+        eq(paymentDeclarations.departmentId, departmentId),
         gte(paymentDeclarations.date, startOfDay),
         lte(paymentDeclarations.date, endOfDay)
       )
     );
     return declaration;
   }
-  
+
   async getPaymentDeclarationById(id: string): Promise<PaymentDeclaration | undefined> {
     const [declaration] = await db.select().from(paymentDeclarations).where(eq(paymentDeclarations.id, id));
     return declaration;
   }
-  
-  async getPaymentDeclarations(outletId: string, startDate?: Date, endDate?: Date): Promise<PaymentDeclaration[]> {
-    let conditions = [eq(paymentDeclarations.outletId, outletId)];
-    
-    if (startDate) {
-      conditions.push(gte(paymentDeclarations.date, startDate));
+
+  async getPaymentDeclarations(departmentId: string, startDate?: Date, endDate?: Date): Promise<PaymentDeclaration[]> {
+    if (startDate && endDate) {
+      return db.select().from(paymentDeclarations).where(
+        and(
+          eq(paymentDeclarations.departmentId, departmentId),
+          gte(paymentDeclarations.date, startDate),
+          lte(paymentDeclarations.date, endDate)
+        )
+      ).orderBy(desc(paymentDeclarations.date));
     }
-    if (endDate) {
-      conditions.push(lte(paymentDeclarations.date, endDate));
-    }
-    
-    return db.select().from(paymentDeclarations)
-      .where(and(...conditions))
-      .orderBy(desc(paymentDeclarations.date));
+    return db.select().from(paymentDeclarations).where(eq(paymentDeclarations.departmentId, departmentId)).orderBy(desc(paymentDeclarations.date));
   }
-  
-  async createPaymentDeclaration(declaration: InsertPaymentDeclaration): Promise<PaymentDeclaration> {
-    const total = parseFloat(declaration.reportedCash || "0") + 
-                  parseFloat(declaration.reportedPosSettlement || "0") + 
-                  parseFloat(declaration.reportedTransfers || "0");
+
+  async createPaymentDeclaration(insertDeclaration: InsertPaymentDeclaration): Promise<PaymentDeclaration> {
+    // Calculate total
+    const total = (parseFloat(insertDeclaration.reportedCash || "0") +
+                  parseFloat(insertDeclaration.reportedPosSettlement || "0") +
+                  parseFloat(insertDeclaration.reportedTransfers || "0")).toString();
     
-    const [created] = await db.insert(paymentDeclarations).values({
-      ...declaration,
-      totalReported: total.toFixed(2)
+    const [declaration] = await db.insert(paymentDeclarations).values({
+      ...insertDeclaration,
+      totalReported: total
     }).returning();
-    return created;
+    return declaration;
   }
-  
-  async updatePaymentDeclaration(id: string, declaration: Partial<InsertPaymentDeclaration>): Promise<PaymentDeclaration | undefined> {
+
+  async updatePaymentDeclaration(id: string, updateData: Partial<InsertPaymentDeclaration>): Promise<PaymentDeclaration | undefined> {
+    // Recalculate total if any amount field is updated
     const existing = await this.getPaymentDeclarationById(id);
     if (!existing) return undefined;
+
+    const cash = updateData.reportedCash !== undefined ? updateData.reportedCash : existing.reportedCash;
+    const pos = updateData.reportedPosSettlement !== undefined ? updateData.reportedPosSettlement : existing.reportedPosSettlement;
+    const transfers = updateData.reportedTransfers !== undefined ? updateData.reportedTransfers : existing.reportedTransfers;
     
-    const reportedCash = declaration.reportedCash ?? existing.reportedCash;
-    const reportedPos = declaration.reportedPosSettlement ?? existing.reportedPosSettlement;
-    const reportedTransfers = declaration.reportedTransfers ?? existing.reportedTransfers;
-    
-    const total = parseFloat(reportedCash || "0") + 
-                  parseFloat(reportedPos || "0") + 
-                  parseFloat(reportedTransfers || "0");
-    
-    const [updated] = await db.update(paymentDeclarations)
-      .set({ 
-        ...declaration, 
-        totalReported: total.toFixed(2),
-        updatedAt: new Date() 
-      })
-      .where(eq(paymentDeclarations.id, id))
-      .returning();
-    return updated;
+    const total = (parseFloat(cash || "0") + parseFloat(pos || "0") + parseFloat(transfers || "0")).toString();
+
+    const [declaration] = await db.update(paymentDeclarations).set({
+      ...updateData,
+      totalReported: total,
+      updatedAt: new Date()
+    }).where(eq(paymentDeclarations.id, id)).returning();
+    return declaration;
   }
-  
+
   async deletePaymentDeclaration(id: string): Promise<boolean> {
     await db.delete(paymentDeclarations).where(eq(paymentDeclarations.id, id));
     return true;
   }
-  
-  // Get sales summary for an outlet on a specific date (for reconciliation)
-  async getSalesSummaryForOutlet(outletId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }> {
+
+  // Sales summary for reconciliation
+  async getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    // Get departments for this outlet
-    const outlet = await this.getOutlet(outletId);
-    if (!outlet) {
-      return { totalCash: 0, totalPos: 0, totalTransfer: 0, totalSales: 0 };
-    }
-    
-    const effectiveDepts = await this.getEffectiveDepartmentsForOutlet(outletId);
-    const activeDeptIds = effectiveDepts.filter(d => d.isActive).map(d => d.id);
-    
-    if (activeDeptIds.length === 0) {
-      return { totalCash: 0, totalPos: 0, totalTransfer: 0, totalSales: 0 };
-    }
-    
-    const allSales = await db.select().from(salesEntries).where(
+    const [result] = await db.select({
+      totalCash: sum(salesEntries.cashAmount),
+      totalPos: sum(salesEntries.posAmount),
+      totalTransfer: sum(salesEntries.transferAmount),
+      totalSales: sum(salesEntries.totalSales)
+    }).from(salesEntries).where(
       and(
+        eq(salesEntries.departmentId, departmentId),
         gte(salesEntries.date, startOfDay),
         lte(salesEntries.date, endOfDay)
       )
     );
     
-    const outletSales = allSales.filter(s => activeDeptIds.includes(s.departmentId));
-    
-    const totalCash = outletSales.reduce((sum, s) => sum + parseFloat(s.cashAmount || "0"), 0);
-    const totalPos = outletSales.reduce((sum, s) => sum + parseFloat(s.posAmount || "0"), 0);
-    const totalTransfer = outletSales.reduce((sum, s) => sum + parseFloat(s.transferAmount || "0"), 0);
-    const totalSales = outletSales.reduce((sum, s) => sum + parseFloat(s.totalSales || "0"), 0);
-    
-    return { totalCash, totalPos, totalTransfer, totalSales };
+    return {
+      totalCash: parseFloat(result?.totalCash || "0"),
+      totalPos: parseFloat(result?.totalPos || "0"),
+      totalTransfer: parseFloat(result?.totalTransfer || "0"),
+      totalSales: parseFloat(result?.totalSales || "0")
+    };
   }
 }
 

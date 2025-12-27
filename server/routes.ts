@@ -6,7 +6,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
 import { 
-  insertUserSchema, insertClientSchema, insertOutletSchema, insertDepartmentSchema, 
+  insertUserSchema, insertClientSchema, insertCategorySchema, insertDepartmentSchema, 
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, 
   insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
@@ -366,7 +366,7 @@ export async function registerRoutes(
   app.get("/api/departments/by-client/:clientId", requireAuth, async (req, res) => {
     try {
       const { clientId } = req.params;
-      const departments = await storage.getDepartmentsByClient(clientId);
+      const departments = await storage.getDepartments(clientId);
       res.json(departments);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -374,12 +374,12 @@ export async function registerRoutes(
   });
 
   // ============== PAYMENT DECLARATIONS ==============
-  app.get("/api/payment-declarations/:outletId", requireAuth, async (req, res) => {
+  app.get("/api/payment-declarations/:departmentId", requireAuth, async (req, res) => {
     try {
-      const { outletId } = req.params;
+      const { departmentId } = req.params;
       const { startDate, endDate } = req.query;
       const declarations = await storage.getPaymentDeclarations(
-        outletId,
+        departmentId,
         startDate ? new Date(startDate as string) : undefined,
         endDate ? new Date(endDate as string) : undefined
       );
@@ -389,10 +389,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/payment-declarations/:clientId/:outletId/:date", requireAuth, async (req, res) => {
+  app.get("/api/payment-declarations/:clientId/:departmentId/:date", requireAuth, async (req, res) => {
     try {
-      const { clientId, outletId, date } = req.params;
-      const declaration = await storage.getPaymentDeclaration(clientId, outletId, new Date(date));
+      const { clientId, departmentId, date } = req.params;
+      const declaration = await storage.getPaymentDeclaration(clientId, departmentId, new Date(date));
       if (!declaration) {
         return res.status(404).json({ error: "No payment declaration found for this date" });
       }
@@ -414,10 +414,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.message });
       }
       
-      // Check if declaration already exists for this client/outlet/date
+      // Check if declaration already exists for this client/department/date
       const existing = await storage.getPaymentDeclaration(
         parsed.data.clientId,
-        parsed.data.outletId,
+        parsed.data.departmentId,
         parsed.data.date
       );
       
@@ -506,23 +506,23 @@ export async function registerRoutes(
     }
   });
 
-  // Get sales summary and reconciliation hint for an outlet on a date
-  app.get("/api/reconciliation-hint/:outletId/:date", requireAuth, async (req, res) => {
+  // Get sales summary and reconciliation hint for a department on a date
+  app.get("/api/reconciliation-hint/:departmentId/:date", requireAuth, async (req, res) => {
     try {
-      const { outletId, date } = req.params;
+      const { departmentId, date } = req.params;
       const dateObj = new Date(date);
       
-      // Get outlet to get clientId
-      const outlet = await storage.getOutlet(outletId);
-      if (!outlet) {
-        return res.status(404).json({ error: "Outlet not found" });
+      // Get department to get clientId
+      const department = await storage.getDepartment(departmentId);
+      if (!department) {
+        return res.status(404).json({ error: "Department not found" });
       }
       
       // Get captured sales summary
-      const salesSummary = await storage.getSalesSummaryForOutlet(outletId, dateObj);
+      const salesSummary = await storage.getSalesSummaryForDepartment(departmentId, dateObj);
       
       // Get payment declaration if exists
-      const declaration = await storage.getPaymentDeclaration(outlet.clientId, outletId, dateObj);
+      const declaration = await storage.getPaymentDeclaration(department.clientId, departmentId, dateObj);
       
       const reportedTotal = declaration ? parseFloat(declaration.totalReported || "0") : 0;
       const capturedTotal = salesSummary.totalSales;
@@ -957,79 +957,82 @@ export async function registerRoutes(
     }
   });
 
-  // ============== OUTLETS ==============
-  app.get("/api/clients/:clientId/outlets", requireAuth, async (req, res) => {
+  // ============== CATEGORIES ==============
+  app.get("/api/clients/:clientId/categories", requireAuth, async (req, res) => {
     try {
-      const outlets = await storage.getOutlets(req.params.clientId);
-      res.json(outlets);
+      const categories = await storage.getCategories(req.params.clientId);
+      res.json(categories);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/outlets", requireAuth, async (req, res) => {
+  app.get("/api/categories", requireAuth, async (req, res) => {
     try {
-      const outlets = await storage.getAllOutlets();
-      res.json(outlets);
+      const categories = await storage.getAllCategories();
+      res.json(categories);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/outlets/:id", requireAuth, async (req, res) => {
+  app.get("/api/categories/:id", requireAuth, async (req, res) => {
     try {
-      const outlet = await storage.getOutlet(req.params.id);
-      if (!outlet) {
-        return res.status(404).json({ error: "Outlet not found" });
+      const category = await storage.getCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
       }
-      res.json(outlet);
+      res.json(category);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/outlets", requireSuperAdmin, async (req, res) => {
+  app.post("/api/categories", requireSupervisorOrAbove, async (req, res) => {
     try {
-      const data = insertOutletSchema.parse(req.body);
-      const outlet = await storage.createOutlet(data);
+      const data = insertCategorySchema.parse({
+        ...req.body,
+        createdBy: req.session.userId
+      });
+      const category = await storage.createCategory(data);
       
       await storage.createAuditLog({
         userId: req.session.userId!,
-        action: "Created Outlet",
-        entity: "Outlet",
-        entityId: outlet.id,
-        details: `New outlet added: ${outlet.name}`,
+        action: "Created Category",
+        entity: "Category",
+        entityId: category.id,
+        details: `New category added: ${category.name}`,
         ipAddress: req.ip || "Unknown",
       });
 
-      res.json(outlet);
+      res.json(category);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
-  app.patch("/api/outlets/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/categories/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
-      const outlet = await storage.updateOutlet(req.params.id, req.body);
-      if (!outlet) {
-        return res.status(404).json({ error: "Outlet not found" });
+      const category = await storage.updateCategory(req.params.id, req.body);
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
       }
-      res.json(outlet);
+      res.json(category);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
-  app.delete("/api/outlets/:id", requireSuperAdmin, async (req, res) => {
+  app.delete("/api/categories/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
-      await storage.deleteOutlet(req.params.id);
+      await storage.deleteCategory(req.params.id);
       
       await storage.createAuditLog({
         userId: req.session.userId!,
-        action: "Deleted Outlet",
-        entity: "Outlet",
+        action: "Deleted Category",
+        entity: "Category",
         entityId: req.params.id,
-        details: `Outlet deleted`,
+        details: `Category deleted`,
         ipAddress: req.ip || "Unknown",
       });
 
@@ -1041,73 +1044,51 @@ export async function registerRoutes(
 
   // ============== DEPARTMENTS ==============
   
-  // Get outlet-specific departments
-  app.get("/api/outlets/:outletId/departments", requireAuth, async (req, res) => {
-    try {
-      const departments = await storage.getDepartments(req.params.outletId);
-      res.json(departments);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Get effective departments for an outlet (respects inheritance mode)
-  app.get("/api/outlets/:outletId/effective-departments", requireAuth, async (req, res) => {
-    try {
-      const departments = await storage.getEffectiveDepartmentsForOutlet(req.params.outletId);
-      res.json(departments);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Create outlet-specific department
-  app.post("/api/outlets/:outletId/departments", requireSupervisorOrAbove, async (req, res) => {
-    try {
-      const { outletId } = req.params;
-      const data = { ...req.body, outletId, scope: "outlet" };
-      const parsed = insertDepartmentSchema.parse(data);
-      const department = await storage.createDepartment(parsed);
-      
-      await storage.createAuditLog({
-        userId: req.session.userId!,
-        action: "Created Outlet Department",
-        entity: "Department",
-        entityId: department.id,
-        details: `New outlet department added: ${department.name}`,
-        ipAddress: req.ip || "Unknown",
-      });
-
-      res.json(department);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
-    }
-  });
-
-  // Get client-level departments
+  // Get departments for a client
   app.get("/api/clients/:clientId/departments", requireAuth, async (req, res) => {
     try {
-      const departments = await storage.getClientDepartments(req.params.clientId);
+      const departments = await storage.getDepartments(req.params.clientId);
       res.json(departments);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  // Create client-level department
+  // Get departments by category
+  app.get("/api/categories/:categoryId/departments", requireAuth, async (req, res) => {
+    try {
+      const departments = await storage.getDepartmentsByCategory(req.params.categoryId);
+      res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create department for a client
   app.post("/api/clients/:clientId/departments", requireSupervisorOrAbove, async (req, res) => {
     try {
       const { clientId } = req.params;
-      const data = { ...req.body, clientId, scope: "client" };
+      
+      // Check for duplicate name
+      const nameExists = await storage.checkDepartmentNameExists(clientId, req.body.name);
+      if (nameExists) {
+        return res.status(400).json({ error: "A department with this name already exists for this client" });
+      }
+      
+      const data = { 
+        ...req.body, 
+        clientId,
+        createdBy: req.session.userId
+      };
       const parsed = insertDepartmentSchema.parse(data);
       const department = await storage.createDepartment(parsed);
       
       await storage.createAuditLog({
         userId: req.session.userId!,
-        action: "Created Client Department",
+        action: "Created Department",
         entity: "Department",
         entityId: department.id,
-        details: `New client-level department added: ${department.name}`,
+        details: `New department added: ${department.name}`,
         ipAddress: req.ip || "Unknown",
       });
 
@@ -1117,21 +1098,25 @@ export async function registerRoutes(
     }
   });
 
-  // Bulk create departments (client or outlet level)
+  // Bulk create departments for a client
   app.post("/api/departments/bulk", requireSupervisorOrAbove, async (req, res) => {
     try {
-      const { departments: deptList, clientId, outletId, scope } = req.body;
+      const { departments: deptList, clientId, categoryId } = req.body;
       
       if (!Array.isArray(deptList) || deptList.length === 0) {
         return res.status(400).json({ error: "departments array is required" });
       }
       
+      if (!clientId) {
+        return res.status(400).json({ error: "clientId is required" });
+      }
+      
       const insertData = deptList.map((name: string) => ({
         name: name.trim(),
-        clientId: scope === "client" ? clientId : null,
-        outletId: scope === "outlet" ? outletId : null,
-        scope: scope || "outlet",
+        clientId,
+        categoryId: categoryId || null,
         status: "active",
+        createdBy: req.session.userId,
       })).filter((d: { name: string }) => d.name.length > 0);
       
       const created = await storage.createDepartmentsBulk(insertData);
@@ -1146,47 +1131,6 @@ export async function registerRoutes(
       });
 
       res.json(created);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
-    }
-  });
-
-  // Get outlet department links (for inheritance toggle)
-  app.get("/api/outlets/:outletId/department-links", requireAuth, async (req, res) => {
-    try {
-      const links = await storage.getOutletDepartmentLinks(req.params.outletId);
-      res.json(links);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Toggle outlet department link (enable/disable inherited department for outlet)
-  app.post("/api/outlets/:outletId/department-links", requireSupervisorOrAbove, async (req, res) => {
-    try {
-      const { outletId } = req.params;
-      const { departmentId, isActive } = req.body;
-      
-      const existingLinks = await storage.getOutletDepartmentLinks(outletId);
-      const existing = existingLinks.find(l => l.departmentId === departmentId);
-      
-      let link;
-      if (existing) {
-        link = await storage.updateOutletDepartmentLink(outletId, departmentId, isActive);
-      } else {
-        link = await storage.createOutletDepartmentLink({ outletId, departmentId, isActive });
-      }
-      
-      await storage.createAuditLog({
-        userId: req.session.userId!,
-        action: isActive ? "Enabled Department for Outlet" : "Disabled Department for Outlet",
-        entity: "OutletDepartmentLink",
-        entityId: `${outletId}:${departmentId}`,
-        details: `Department ${departmentId} ${isActive ? "enabled" : "disabled"} for outlet ${outletId}`,
-        ipAddress: req.ip || "Unknown",
-      });
-
-      res.json(link);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

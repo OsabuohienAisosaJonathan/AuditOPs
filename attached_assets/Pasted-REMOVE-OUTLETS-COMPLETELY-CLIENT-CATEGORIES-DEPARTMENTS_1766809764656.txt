@@ -1,0 +1,250 @@
+REMOVE OUTLETS COMPLETELY + CLIENT CATEGORIES & DEPARTMENTS (UNLIMITED) + DEPARTMENT-BASED RECON + REMOVE INHERITANCE + FIX AUDIT WORKSPACE BACKEND
+
+You are working on Miemploya AuditOps. We must NOT rebuild from scratch, but we must refactor the system to remove the “Outlets” concept completely from the Client structure and eliminate all inheritance logic/UI. The system must use only Client → Category → Department as the operational structure. Departments are the unit for sales capture, inventory posting, reconciliation, exceptions, and reporting. Categories are optional grouping subtitles (e.g., “F&B”) and must not change posting rules.
+
+1) Definitions (must be enforced in UI labels, DB, and API)
+
+Client = business brand/company.
+
+Category = a grouping label/subtitle under a client (e.g., F&B, Front Desk, Admin). Categories do not carry transactions directly; they only group departments for reporting/navigation.
+
+Department = the core operational unit. All transactions and reconciliations must be tied to a department. Examples: Main Bar, Restaurant, Kitchen, Grilling, Reception, Store, VIP Lounge (as the client defines).
+
+No Outlets: remove outlet/branch logic from UI, DB, filtering, dropdowns, and workflows.
+
+2) Data Model Changes (minimal, safe migration)
+
+2.1 Remove/disable “Outlets” completely
+
+Remove outlet tables, outlet dropdowns, outlet routes, outlet setup sections, and all “inherit mode” logic and UI.
+
+Remove any outletId dependency from operational records.
+
+2.2 Implement Categories
+
+Create categories linked to client:
+
+id, clientId, name, status (active/inactive), createdAt, createdBy
+
+Unlimited categories per client.
+
+2.3 Implement Departments (unlimited, department is the posting key)
+
+Create departments linked to client and optionally linked to category:
+
+id, clientId, categoryId (nullable), name, status (active/suspended), createdAt, createdBy
+
+Unlimited departments per client.
+
+Department names must be unique per client (case-insensitive).
+
+2.4 Update all operational records to reference departmentId
+Every record must reference:
+
+clientId
+
+departmentId (required)
+And must no longer require outletId.
+
+This includes at minimum:
+
+sales records
+
+purchases records (if purchases are department-targeted, otherwise store-level must be represented as a department like “Store” if needed)
+
+inventory movements / stock ledger
+
+stock counts
+
+reconciliation results
+
+exceptions
+
+reports archive
+
+2.5 Migration / Backfill (must not break existing data)
+
+Create a default category if needed (e.g., “General”) but only if required.
+
+For existing records that currently reference outlets:
+
+Convert existing outlet entities into departments (or map them to departments) under the same client.
+
+Remove/ignore outlet references going forward.
+
+Ensure all existing records end up with valid departmentId so production pages don’t fail.
+
+3) Department Management Features (Super Admin only)
+
+3.1 Super Admin must be able to:
+
+Create department
+
+Edit department name
+
+Assign/change category for a department
+
+Suspend (deactivate) department
+
+Delete department only if it has NO linked records; otherwise enforce suspend/archive (to preserve audit trail)
+
+3.2 Rules
+
+Suspended departments:
+
+cannot be selected for new sales/purchases/inventory/reconciliation entries
+
+remain visible in historical records and reports
+
+Deletion:
+
+hard delete only allowed if department has zero linked operational records
+
+otherwise show message: “Department has transactions; you can only suspend it.”
+
+3.3 Log all actions in Audit Trail:
+
+who did it, what changed, timestamps, and reason for suspend/delete
+
+4) Category Management (Super Admin + Supervisor)
+
+Create/edit/suspend categories
+
+Deleting a category should not delete departments; departments become “Uncategorized” (categoryId null) or reassigned.
+
+5) Remove ALL Inheritance Codes and Layout
+
+This is mandatory:
+
+Remove “Inherit Only / Outlet Only / Inherit + Add” options
+
+Remove all “inherited departments” UI blocks
+
+Remove any code paths that copy departments from client to outlet
+
+Remove outlet-department toggle UI entirely
+
+Ensure no leftover routes/components reference inheritance
+
+6) Fix Backend Functionality of Audit Workspace (all pages must work end-to-end)
+
+The Audit Workspace must be fully functional with real persistence in production.
+
+6.1 Sales Capture page
+
+Must require selecting a Department
+
+Summary sales entry must save to DB
+
+POS import (if present) must map to Department; if mapping missing, force user to pick the department during import
+
+Sales Evidence upload must be stored and linked to clientId + departmentId + date
+
+6.2 Inventory & Purchases page
+
+Must be complete and usable:
+
+items list (add/edit/archive)
+
+suppliers (add/edit)
+
+purchases/GRN (record, attach evidence, save)
+
+stock movements (issue, wastage, complimentary, staff consumption) must post to departmentId
+
+If you previously relied on “Store” as an outlet, implement “Store” as a department option OR create a store entity but still link movements to departmentId consistently.
+
+6.3 Reconciliation page
+
+Reconciliation must be department-based (Department A is the required reconciliation unit).
+
+Allow reconciliation filtered by:
+
+clientId + departmentId + date range
+
+Ensure variance, exceptions creation, and “pending/awaiting review” statuses work.
+
+Dashboard counts for pending reconciliations must reflect real DB status.
+
+6.4 Exceptions page
+
+Exceptions must be tied to departmentId.
+
+Filters: client, department, date, severity, status.
+
+Buttons must be linked and functional (view details, update status, assign, resolve).
+
+6.5 Reports page
+
+Report builder must generate PDF and optionally Excel.
+
+Report scope:
+
+client (all departments)
+
+category (all departments in a category)
+
+single department
+
+Must work in production (no “Failed to load”).
+
+“Generate Report” button must call real backend and download output.
+
+6.6 Dashboard
+
+Remove outlet filter completely.
+
+Replace header filters with:
+
+Client selector
+
+Category selector (optional)
+
+Department selector (required when drilling down)
+
+Date selector
+
+“All Clients” and “All Departments” must aggregate correctly.
+
+7) Production Stability Fixes (must be solved)
+
+Fix the issue where pages work in development but fail after publishing (“Failed to load”).
+
+Ensure:
+
+production env vars are correct
+
+DB migrations run in production
+
+API base URL and auth cookies are correct
+
+Replace generic “Failed to load” with meaningful errors (401 vs 500 vs network).
+
+8) Acceptance Tests (must be demonstrated in published production)
+
+Create client → create categories (F&B, Front Desk) → create 10 departments (Kitchen, Grilling, Main Bar, Restaurant, Store, etc.).
+
+Confirm department list is unlimited and saved.
+
+Capture sales for “Main Bar” department → saved and appears on dashboard totals.
+
+Record purchase and stock movement against “Store” or relevant department → saved and visible.
+
+Run reconciliation for “Restaurant” department → status updates and shows in pending/awaiting review counts.
+
+Suspend a department with existing records → can’t post new entries but history remains.
+
+Attempt delete department with records → blocked; only suspend allowed.
+
+Generate report for:
+
+one department
+
+one category
+
+entire client
+PDF downloads successfully.
+
+No inheritance UI remains. No outlet dropdowns exist anywhere.
+
+No production “Failed to load” on Dashboard/Clients/Audit Workspace pages

@@ -22,7 +22,7 @@ export const users = pgTable("users", {
   loginAttempts: integer("login_attempts").default(0),
   lockedUntil: timestamp("locked_until"),
   lastLoginAt: timestamp("last_login_at"),
-  accessScope: jsonb("access_scope").$type<{ clientIds?: string[]; outletIds?: string[]; global?: boolean }>(),
+  accessScope: jsonb("access_scope").$type<{ clientIds?: string[]; departmentIds?: string[]; global?: boolean }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -36,36 +36,25 @@ export const clients = pgTable("clients", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Department modes for outlets
-export const DEPARTMENT_MODES = ["inherit_only", "outlet_only", "inherit_add"] as const;
-export type DepartmentMode = typeof DEPARTMENT_MODES[number];
-
-export const outlets = pgTable("outlets", {
+// Categories are optional grouping labels under a client (e.g., F&B, Front Desk, Admin)
+export const categories = pgTable("categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  departmentMode: text("department_mode").notNull().default("inherit_only"),
+  status: text("status").notNull().default("active"),
+  createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Departments can be client-level (scope=client) or outlet-level (scope=outlet)
+// Departments are the core operational unit - all transactions and reconciliations tie to departments
 export const departments = pgTable("departments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  clientId: varchar("client_id").references(() => clients.id, { onDelete: "cascade" }),
-  outletId: varchar("outlet_id").references(() => outlets.id, { onDelete: "cascade" }),
-  scope: text("scope").notNull().default("outlet"),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id").references(() => categories.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
-  deactivationReason: text("deactivation_reason"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// Links client departments to outlets with active/inactive toggle
-export const outletDepartmentLinks = pgTable("outlet_department_links", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
-  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
-  isActive: boolean("is_active").notNull().default(true),
+  suspendReason: text("suspend_reason"),
+  createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -124,6 +113,7 @@ export const stockCounts = pgTable("stock_counts", {
 
 export const salesEntries = pgTable("sales_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
   shift: text("shift").default("full"),
@@ -139,9 +129,11 @@ export const salesEntries = pgTable("sales_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Purchases are now tied to departments (e.g., "Store" department for inventory purchases)
 export const purchases = pgTable("purchases", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   supplierName: text("supplier_name").notNull(),
   invoiceRef: text("invoice_ref").notNull(),
   invoiceDate: timestamp("invoice_date").notNull(),
@@ -152,9 +144,11 @@ export const purchases = pgTable("purchases", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Stock movements are now tied to departments
 export const stockMovements = pgTable("stock_movements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   movementType: text("movement_type").notNull(),
   sourceLocation: text("source_location"),
   destinationLocation: text("destination_location"),
@@ -167,6 +161,7 @@ export const stockMovements = pgTable("stock_movements", {
 
 export const reconciliations = pgTable("reconciliations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
   openingStock: jsonb("opening_stock").notNull(),
@@ -182,11 +177,12 @@ export const reconciliations = pgTable("reconciliations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Exceptions are tied to departments
 export const exceptions = pgTable("exceptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseNumber: text("case_number").notNull().unique(),
-  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
-  departmentId: varchar("department_id").references(() => departments.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   summary: text("summary").notNull(),
   description: text("description"),
   impact: text("impact"),
@@ -238,10 +234,11 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Payment declarations are now tied to client + department + date
 export const paymentDeclarations = pgTable("payment_declarations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
   reportedCash: decimal("reported_cash", { precision: 12, scale: 2 }).default("0.00"),
   reportedPosSettlement: decimal("reported_pos_settlement", { precision: 12, scale: 2 }).default("0.00"),
@@ -257,9 +254,8 @@ export const paymentDeclarations = pgTable("payment_declarations", {
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
-export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true, createdAt: true });
+export const insertCategorySchema = createInsertSchema(categories).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
-export const insertOutletDepartmentLinkSchema = createInsertSchema(outletDepartmentLinks).omit({ id: true, createdAt: true });
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
 export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true });
 export const insertPurchaseLineSchema = createInsertSchema(purchaseLines).omit({ id: true, createdAt: true });
@@ -279,12 +275,10 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
-export type InsertOutlet = z.infer<typeof insertOutletSchema>;
-export type Outlet = typeof outlets.$inferSelect;
+export type InsertCategory = z.infer<typeof insertCategorySchema>;
+export type Category = typeof categories.$inferSelect;
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
 export type Department = typeof departments.$inferSelect;
-export type InsertOutletDepartmentLink = z.infer<typeof insertOutletDepartmentLinkSchema>;
-export type OutletDepartmentLink = typeof outletDepartmentLinks.$inferSelect;
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertItem = z.infer<typeof insertItemSchema>;
