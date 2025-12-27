@@ -2291,6 +2291,49 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/stock-movements/:id", requireAuth, async (req, res) => {
+    try {
+      const movement = await storage.getStockMovement(req.params.id);
+      if (!movement) {
+        return res.status(404).json({ error: "Stock movement not found" });
+      }
+      res.json(movement);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/stock-movements/:id", requireAuth, async (req, res) => {
+    try {
+      const movement = await storage.updateStockMovement(req.params.id, req.body);
+      if (!movement) {
+        return res.status(404).json({ error: "Stock movement not found" });
+      }
+      res.json(movement);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/stock-movements/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteStockMovement(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Stock Movement",
+        entity: "StockMovement",
+        entityId: req.params.id,
+        details: `Stock movement deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== RECONCILIATIONS ==============
   app.get("/api/reconciliations", requireAuth, async (req, res) => {
     try {
@@ -2363,32 +2406,69 @@ export async function registerRoutes(
     try {
       const { departmentId, date, openingStock, additions, physicalCount } = req.body;
 
-      if (!departmentId || !date || !openingStock || !additions || !physicalCount) {
-        return res.status(400).json({ error: "Missing required fields for reconciliation computation" });
+      if (!departmentId || !date) {
+        return res.status(400).json({ error: "Missing departmentId or date" });
       }
 
-      const openingQty = parseFloat(openingStock.quantity || openingStock.totalQty || 0);
-      const additionsQty = parseFloat(additions.quantity || additions.totalQty || 0);
-      const physicalQty = parseFloat(physicalCount.quantity || physicalCount.totalQty || 0);
+      // If detailed data provided, compute with it
+      if (openingStock && additions && physicalCount) {
+        const openingQty = parseFloat(openingStock.quantity || openingStock.totalQty || 0);
+        const additionsQty = parseFloat(additions.quantity || additions.totalQty || 0);
+        const physicalQty = parseFloat(physicalCount.quantity || physicalCount.totalQty || 0);
 
-      const expectedClosing = openingQty + additionsQty;
-      const varianceQty = physicalQty - expectedClosing;
-      const unitValue = parseFloat(openingStock.unitValue || 10);
-      const varianceValue = varianceQty * unitValue;
+        const expectedClosing = openingQty + additionsQty;
+        const varianceQty = physicalQty - expectedClosing;
+        const unitValue = parseFloat(openingStock.unitValue || 10);
+        const varianceValue = varianceQty * unitValue;
 
-      res.json({
+        return res.json({
+          departmentId,
+          date,
+          openingStock,
+          additions,
+          expectedUsage: { quantity: 0 },
+          physicalCount,
+          expectedClosingQty: expectedClosing.toFixed(2),
+          actualClosingQty: physicalQty.toFixed(2),
+          varianceQty: varianceQty.toFixed(2),
+          varianceValue: varianceValue.toFixed(2),
+          status: varianceQty === 0 ? "balanced" : (Math.abs(varianceQty) > 10 ? "significant_variance" : "minor_variance")
+        });
+      }
+
+      // Otherwise, create a simple reconciliation record from aggregated data
+      const salesSummary = await storage.getSalesSummaryForDepartment(departmentId, new Date(date));
+      const purchases = await storage.getPurchasesByDepartment(departmentId);
+      const stockCounts = await storage.getStockCounts(departmentId, new Date(date));
+      
+      const purchasesTotal = purchases.reduce((sum, p) => sum + parseFloat(p.totalAmount || "0"), 0);
+      const varianceQty = stockCounts.reduce((sum, c) => sum + parseFloat(c.varianceQty || "0"), 0);
+      
+      const reconciliation = await storage.createReconciliation({
+        clientId: purchases[0]?.clientId || "",
         departmentId,
-        date,
-        openingStock,
-        additions,
-        expectedUsage: { quantity: 0 },
-        physicalCount,
-        expectedClosingQty: expectedClosing.toFixed(2),
-        actualClosingQty: physicalQty.toFixed(2),
-        varianceQty: varianceQty.toFixed(2),
-        varianceValue: varianceValue.toFixed(2),
-        status: varianceQty === 0 ? "balanced" : (Math.abs(varianceQty) > 10 ? "significant_variance" : "minor_variance")
+        date: new Date(date),
+        openingQty: "0",
+        purchasesQty: String(purchasesTotal),
+        salesQty: String(salesSummary.totalSales),
+        expectedClosingQty: "0",
+        actualClosingQty: "0",
+        varianceQty: String(varianceQty),
+        varianceValue: String(varianceQty * 10),
+        status: "submitted",
+        createdBy: req.session.userId!,
       });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Submitted Reconciliation",
+        entity: "Reconciliation",
+        entityId: reconciliation.id,
+        details: `Audit submitted for department ${departmentId}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(reconciliation);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

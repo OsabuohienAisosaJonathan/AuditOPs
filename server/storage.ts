@@ -129,7 +129,10 @@ export interface IStorage {
   // Stock Movements
   getStockMovements(clientId: string): Promise<StockMovement[]>;
   getStockMovementsByDepartment(departmentId: string): Promise<StockMovement[]>;
+  getStockMovement(id: string): Promise<StockMovement | undefined>;
   createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
+  updateStockMovement(id: string, movement: Partial<InsertStockMovement>): Promise<StockMovement | undefined>;
+  deleteStockMovement(id: string): Promise<boolean>;
 
   // Reconciliations
   getReconciliations(departmentId: string, date?: Date): Promise<Reconciliation[]>;
@@ -611,6 +614,21 @@ export class DbStorage implements IStorage {
   async createStockMovement(insertMovement: InsertStockMovement): Promise<StockMovement> {
     const [movement] = await db.insert(stockMovements).values(insertMovement).returning();
     return movement;
+  }
+
+  async getStockMovement(id: string): Promise<StockMovement | undefined> {
+    const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id));
+    return movement;
+  }
+
+  async updateStockMovement(id: string, updateData: Partial<InsertStockMovement>): Promise<StockMovement | undefined> {
+    const [movement] = await db.update(stockMovements).set(updateData).where(eq(stockMovements.id, id)).returning();
+    return movement;
+  }
+
+  async deleteStockMovement(id: string): Promise<boolean> {
+    await db.delete(stockMovements).where(eq(stockMovements.id, id));
+    return true;
   }
 
   // Reconciliations
