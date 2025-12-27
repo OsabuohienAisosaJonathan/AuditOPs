@@ -1,10 +1,11 @@
 import { db } from "./db";
 import { 
-  users, clients, outlets, departments, salesEntries, purchases,
+  users, clients, outlets, departments, outletDepartmentLinks, salesEntries, purchases,
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts,
   type User, type InsertUser, type Client, type InsertClient,
   type Outlet, type InsertOutlet, type Department, type InsertDepartment,
+  type OutletDepartmentLink, type InsertOutletDepartmentLink,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
   type StockMovement, type InsertStockMovement, type Reconciliation, type InsertReconciliation,
   type Exception, type InsertException, type ExceptionComment, type InsertExceptionComment,
@@ -64,11 +65,23 @@ export interface IStorage {
 
   // Departments
   getDepartments(outletId: string): Promise<Department[]>;
+  getClientDepartments(clientId: string): Promise<Department[]>;
   getAllDepartments(): Promise<Department[]>;
   getDepartment(id: string): Promise<Department | undefined>;
   createDepartment(department: InsertDepartment): Promise<Department>;
+  createDepartmentsBulk(departments: InsertDepartment[]): Promise<Department[]>;
   updateDepartment(id: string, department: Partial<InsertDepartment>): Promise<Department | undefined>;
   deleteDepartment(id: string): Promise<boolean>;
+  checkDepartmentUsage(id: string): Promise<boolean>;
+  
+  // Outlet Department Links
+  getOutletDepartmentLinks(outletId: string): Promise<OutletDepartmentLink[]>;
+  createOutletDepartmentLink(link: InsertOutletDepartmentLink): Promise<OutletDepartmentLink>;
+  updateOutletDepartmentLink(outletId: string, departmentId: string, isActive: boolean): Promise<OutletDepartmentLink | undefined>;
+  deleteOutletDepartmentLink(outletId: string, departmentId: string): Promise<boolean>;
+  
+  // Get effective departments for an outlet (respects inheritance mode)
+  getEffectiveDepartmentsForOutlet(outletId: string): Promise<(Department & { source: 'client' | 'outlet'; isActive: boolean })[]>;
 
   // Suppliers
   getSuppliers(clientId: string): Promise<Supplier[]>;
@@ -276,7 +289,15 @@ export class DbStorage implements IStorage {
 
   // Departments
   async getDepartments(outletId: string): Promise<Department[]> {
-    return db.select().from(departments).where(eq(departments.outletId, outletId));
+    return db.select().from(departments).where(
+      and(eq(departments.outletId, outletId), eq(departments.scope, "outlet"))
+    );
+  }
+
+  async getClientDepartments(clientId: string): Promise<Department[]> {
+    return db.select().from(departments).where(
+      and(eq(departments.clientId, clientId), eq(departments.scope, "client"))
+    ).orderBy(departments.name);
   }
 
   async getAllDepartments(): Promise<Department[]> {
@@ -293,6 +314,11 @@ export class DbStorage implements IStorage {
     return department;
   }
 
+  async createDepartmentsBulk(insertDepartments: InsertDepartment[]): Promise<Department[]> {
+    if (insertDepartments.length === 0) return [];
+    return db.insert(departments).values(insertDepartments).returning();
+  }
+
   async updateDepartment(id: string, updateData: Partial<InsertDepartment>): Promise<Department | undefined> {
     const [department] = await db.update(departments).set(updateData).where(eq(departments.id, id)).returning();
     return department;
@@ -301,6 +327,85 @@ export class DbStorage implements IStorage {
   async deleteDepartment(id: string): Promise<boolean> {
     await db.delete(departments).where(eq(departments.id, id));
     return true;
+  }
+
+  async checkDepartmentUsage(id: string): Promise<boolean> {
+    const [salesUsage] = await db.select({ count: count() }).from(salesEntries).where(eq(salesEntries.departmentId, id));
+    if ((salesUsage?.count || 0) > 0) return true;
+    
+    const [stockCountUsage] = await db.select({ count: count() }).from(stockCounts).where(eq(stockCounts.departmentId, id));
+    if ((stockCountUsage?.count || 0) > 0) return true;
+    
+    const [reconUsage] = await db.select({ count: count() }).from(reconciliations).where(eq(reconciliations.departmentId, id));
+    if ((reconUsage?.count || 0) > 0) return true;
+    
+    const [exceptionUsage] = await db.select({ count: count() }).from(exceptions).where(eq(exceptions.departmentId, id));
+    if ((exceptionUsage?.count || 0) > 0) return true;
+    
+    return false;
+  }
+
+  // Outlet Department Links
+  async getOutletDepartmentLinks(outletId: string): Promise<OutletDepartmentLink[]> {
+    return db.select().from(outletDepartmentLinks).where(eq(outletDepartmentLinks.outletId, outletId));
+  }
+
+  async createOutletDepartmentLink(link: InsertOutletDepartmentLink): Promise<OutletDepartmentLink> {
+    const [created] = await db.insert(outletDepartmentLinks).values(link).returning();
+    return created;
+  }
+
+  async updateOutletDepartmentLink(outletId: string, departmentId: string, isActive: boolean): Promise<OutletDepartmentLink | undefined> {
+    const [updated] = await db.update(outletDepartmentLinks)
+      .set({ isActive })
+      .where(and(
+        eq(outletDepartmentLinks.outletId, outletId),
+        eq(outletDepartmentLinks.departmentId, departmentId)
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteOutletDepartmentLink(outletId: string, departmentId: string): Promise<boolean> {
+    await db.delete(outletDepartmentLinks).where(
+      and(
+        eq(outletDepartmentLinks.outletId, outletId),
+        eq(outletDepartmentLinks.departmentId, departmentId)
+      )
+    );
+    return true;
+  }
+
+  async getEffectiveDepartmentsForOutlet(outletId: string): Promise<(Department & { source: 'client' | 'outlet'; isActive: boolean })[]> {
+    const outlet = await this.getOutlet(outletId);
+    if (!outlet) return [];
+
+    const mode = (outlet as any).departmentMode || "inherit_only";
+    const result: (Department & { source: 'client' | 'outlet'; isActive: boolean })[] = [];
+
+    if (mode === "inherit_only" || mode === "inherit_add") {
+      const clientDepts = await this.getClientDepartments(outlet.clientId);
+      const links = await this.getOutletDepartmentLinks(outletId);
+      const linkMap = new Map(links.map(l => [l.departmentId, l.isActive]));
+
+      for (const dept of clientDepts) {
+        if (dept.status === "active") {
+          const isActive = linkMap.has(dept.id) ? linkMap.get(dept.id)! : true;
+          result.push({ ...dept, source: 'client', isActive });
+        }
+      }
+    }
+
+    if (mode === "outlet_only" || mode === "inherit_add") {
+      const outletDepts = await this.getDepartments(outletId);
+      for (const dept of outletDepts) {
+        if (dept.status === "active") {
+          result.push({ ...dept, source: 'outlet', isActive: true });
+        }
+      }
+    }
+
+    return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // Suppliers
@@ -813,17 +918,23 @@ export class DbStorage implements IStorage {
     };
   }
   
-  // Departments by Client
+  // Departments by Client - returns all departments (client-level + outlet-level) for a client
   async getDepartmentsByClient(clientId: string): Promise<Department[]> {
+    const clientDepts = await db.select().from(departments).where(
+      and(eq(departments.clientId, clientId), eq(departments.scope, "client"))
+    );
+    
     const clientOutlets = await db.select().from(outlets).where(eq(outlets.clientId, clientId));
     const outletIds = clientOutlets.map(o => o.id);
     
     if (outletIds.length === 0) {
-      return [];
+      return clientDepts;
     }
     
     const allDepts = await db.select().from(departments);
-    return allDepts.filter(d => outletIds.includes(d.outletId));
+    const outletDepts = allDepts.filter(d => d.scope === "outlet" && d.outletId && outletIds.includes(d.outletId));
+    
+    return [...clientDepts, ...outletDepts].sort((a, b) => a.name.localeCompare(b.name));
   }
 }
 

@@ -36,18 +36,36 @@ export const clients = pgTable("clients", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Department modes for outlets
+export const DEPARTMENT_MODES = ["inherit_only", "outlet_only", "inherit_add"] as const;
+export type DepartmentMode = typeof DEPARTMENT_MODES[number];
+
 export const outlets = pgTable("outlets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  departmentMode: text("department_mode").notNull().default("inherit_only"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Departments can be client-level (scope=client) or outlet-level (scope=outlet)
 export const departments = pgTable("departments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  outletId: varchar("outlet_id").references(() => outlets.id, { onDelete: "cascade" }),
+  scope: text("scope").notNull().default("outlet"),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
+  deactivationReason: text("deactivation_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Links client departments to outlets with active/inactive toggle
+export const outletDepartmentLinks = pgTable("outlet_department_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -225,6 +243,7 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true, creat
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
+export const insertOutletDepartmentLinkSchema = createInsertSchema(outletDepartmentLinks).omit({ id: true, createdAt: true });
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
 export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true });
 export const insertPurchaseLineSchema = createInsertSchema(purchaseLines).omit({ id: true, createdAt: true });
@@ -247,6 +266,8 @@ export type InsertOutlet = z.infer<typeof insertOutletSchema>;
 export type Outlet = typeof outlets.$inferSelect;
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
 export type Department = typeof departments.$inferSelect;
+export type InsertOutletDepartmentLink = z.infer<typeof insertOutletDepartmentLinkSchema>;
+export type OutletDepartmentLink = typeof outletDepartmentLinks.$inferSelect;
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertItem = z.infer<typeof insertItemSchema>;

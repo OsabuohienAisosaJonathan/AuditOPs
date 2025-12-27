@@ -860,6 +860,8 @@ export async function registerRoutes(
   });
 
   // ============== DEPARTMENTS ==============
+  
+  // Get outlet-specific departments
   app.get("/api/outlets/:outletId/departments", requireAuth, async (req, res) => {
     try {
       const departments = await storage.getDepartments(req.params.outletId);
@@ -869,23 +871,142 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlets/:outletId/departments", requireSuperAdmin, async (req, res) => {
+  // Get effective departments for an outlet (respects inheritance mode)
+  app.get("/api/outlets/:outletId/effective-departments", requireAuth, async (req, res) => {
+    try {
+      const departments = await storage.getEffectiveDepartmentsForOutlet(req.params.outletId);
+      res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create outlet-specific department
+  app.post("/api/outlets/:outletId/departments", requireSupervisorOrAbove, async (req, res) => {
     try {
       const { outletId } = req.params;
-      const data = { ...req.body, outletId };
+      const data = { ...req.body, outletId, scope: "outlet" };
       const parsed = insertDepartmentSchema.parse(data);
       const department = await storage.createDepartment(parsed);
       
       await storage.createAuditLog({
         userId: req.session.userId!,
-        action: "Created Department",
+        action: "Created Outlet Department",
         entity: "Department",
         entityId: department.id,
-        details: `New department added: ${department.name}`,
+        details: `New outlet department added: ${department.name}`,
         ipAddress: req.ip || "Unknown",
       });
 
       res.json(department);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get client-level departments
+  app.get("/api/clients/:clientId/departments", requireAuth, async (req, res) => {
+    try {
+      const departments = await storage.getClientDepartments(req.params.clientId);
+      res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create client-level department
+  app.post("/api/clients/:clientId/departments", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const data = { ...req.body, clientId, scope: "client" };
+      const parsed = insertDepartmentSchema.parse(data);
+      const department = await storage.createDepartment(parsed);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Client Department",
+        entity: "Department",
+        entityId: department.id,
+        details: `New client-level department added: ${department.name}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(department);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Bulk create departments (client or outlet level)
+  app.post("/api/departments/bulk", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { departments: deptList, clientId, outletId, scope } = req.body;
+      
+      if (!Array.isArray(deptList) || deptList.length === 0) {
+        return res.status(400).json({ error: "departments array is required" });
+      }
+      
+      const insertData = deptList.map((name: string) => ({
+        name: name.trim(),
+        clientId: scope === "client" ? clientId : null,
+        outletId: scope === "outlet" ? outletId : null,
+        scope: scope || "outlet",
+        status: "active",
+      })).filter((d: { name: string }) => d.name.length > 0);
+      
+      const created = await storage.createDepartmentsBulk(insertData);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Bulk Created Departments",
+        entity: "Department",
+        entityId: null,
+        details: `Bulk created ${created.length} departments`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(created);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get outlet department links (for inheritance toggle)
+  app.get("/api/outlets/:outletId/department-links", requireAuth, async (req, res) => {
+    try {
+      const links = await storage.getOutletDepartmentLinks(req.params.outletId);
+      res.json(links);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Toggle outlet department link (enable/disable inherited department for outlet)
+  app.post("/api/outlets/:outletId/department-links", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { outletId } = req.params;
+      const { departmentId, isActive } = req.body;
+      
+      const existingLinks = await storage.getOutletDepartmentLinks(outletId);
+      const existing = existingLinks.find(l => l.departmentId === departmentId);
+      
+      let link;
+      if (existing) {
+        link = await storage.updateOutletDepartmentLink(outletId, departmentId, isActive);
+      } else {
+        link = await storage.createOutletDepartmentLink({ outletId, departmentId, isActive });
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: isActive ? "Enabled Department for Outlet" : "Disabled Department for Outlet",
+        entity: "OutletDepartmentLink",
+        entityId: `${outletId}:${departmentId}`,
+        details: `Department ${departmentId} ${isActive ? "enabled" : "disabled"} for outlet ${outletId}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(link);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -912,7 +1033,17 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/departments", requireSuperAdmin, async (req, res) => {
+  // Check if department can be deleted (not used in any records)
+  app.get("/api/departments/:id/usage", requireAuth, async (req, res) => {
+    try {
+      const isUsed = await storage.checkDepartmentUsage(req.params.id);
+      res.json({ isUsed });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/departments", requireSupervisorOrAbove, async (req, res) => {
     try {
       const data = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment(data);
@@ -932,20 +1063,40 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/departments/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/departments/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
+      const existingDept = await storage.getDepartment(req.params.id);
       const department = await storage.updateDepartment(req.params.id, req.body);
       if (!department) {
         return res.status(404).json({ error: "Department not found" });
       }
+      
+      if (req.body.status === "inactive" && existingDept?.status === "active") {
+        await storage.createAuditLog({
+          userId: req.session.userId!,
+          action: "Deactivated Department",
+          entity: "Department",
+          entityId: department.id,
+          details: `Department deactivated: ${department.name}. Reason: ${req.body.deactivationReason || "Not specified"}`,
+          ipAddress: req.ip || "Unknown",
+        });
+      }
+      
       res.json(department);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
-  app.delete("/api/departments/:id", requireSuperAdmin, async (req, res) => {
+  app.delete("/api/departments/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
+      const isUsed = await storage.checkDepartmentUsage(req.params.id);
+      if (isUsed) {
+        return res.status(400).json({ 
+          error: "Cannot delete department that has been used in records. Deactivate it instead." 
+        });
+      }
+      
       await storage.deleteDepartment(req.params.id);
       
       await storage.createAuditLog({

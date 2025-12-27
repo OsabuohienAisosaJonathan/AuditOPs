@@ -44,14 +44,31 @@ export interface Outlet {
   id: string;
   clientId: string;
   name: string;
+  departmentMode: string;
   createdAt: Date;
 }
 
 export interface Department {
   id: string;
-  outletId: string;
+  clientId: string | null;
+  outletId: string | null;
+  scope: string;
   name: string;
   status: string;
+  deactivationReason: string | null;
+  createdAt: Date;
+}
+
+export interface EffectiveDepartment extends Department {
+  source: 'client' | 'outlet';
+  isActive: boolean;
+}
+
+export interface OutletDepartmentLink {
+  id: string;
+  outletId: string;
+  departmentId: string;
+  isActive: boolean;
   createdAt: Date;
 }
 
@@ -326,21 +343,42 @@ export const dashboardApi = {
 export const departmentsApi = {
   getAll: () => fetchApi<Department[]>("/departments"),
   getByClient: (clientId: string) => fetchApi<Department[]>(`/departments/by-client/${clientId}`),
+  getClientDepartments: (clientId: string) => fetchApi<Department[]>(`/clients/${clientId}/departments`),
   getByOutlet: (outletId: string) => fetchApi<Department[]>(`/outlets/${outletId}/departments`),
+  getEffectiveForOutlet: (outletId: string) => fetchApi<EffectiveDepartment[]>(`/outlets/${outletId}/effective-departments`),
   get: (id: string) => fetchApi<Department>(`/departments/${id}`),
-  create: (outletId: string, data: any) =>
+  checkUsage: (id: string) => fetchApi<{ isUsed: boolean }>(`/departments/${id}/usage`),
+  
+  createForClient: (clientId: string, data: any) =>
+    fetchApi<Department>(`/clients/${clientId}/departments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  createForOutlet: (outletId: string, data: any) =>
     fetchApi<Department>(`/outlets/${outletId}/departments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  createBulk: (data: { departments: string[]; clientId?: string; outletId?: string; scope: string }) =>
+    fetchApi<Department[]>("/departments/bulk", {
       method: "POST",
       body: JSON.stringify(data),
     }),
   update: (id: string, data: any) =>
     fetchApi<Department>(`/departments/${id}`, {
-      method: "PUT",
+      method: "PATCH",
       body: JSON.stringify(data),
     }),
   delete: (id: string) =>
-    fetchApi<void>(`/departments/${id}`, {
+    fetchApi<{ success: boolean } | { error: string }>(`/departments/${id}`, {
       method: "DELETE",
+    }),
+    
+  getOutletLinks: (outletId: string) => fetchApi<OutletDepartmentLink[]>(`/outlets/${outletId}/department-links`),
+  toggleOutletLink: (outletId: string, departmentId: string, isActive: boolean) =>
+    fetchApi<OutletDepartmentLink>(`/outlets/${outletId}/department-links`, {
+      method: "POST",
+      body: JSON.stringify({ departmentId, isActive }),
     }),
 };
 

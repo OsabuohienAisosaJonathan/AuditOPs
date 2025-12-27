@@ -1,0 +1,153 @@
+UNLIMITED CLIENT DEPARTMENTS + OUTLET INHERIT/OVERRIDE + FULL SYSTEM LINKING
+
+You are implementing Departments for Miemploya AuditOps. A client can have multiple outlets (branches). Departments must be unlimited and must support this rule: each outlet can either use the client’s main departments (inherit) or create its own outlet-specific departments, or combine both. Departments must be fully functional and linked across Sales, Purchases, Inventory, Reconciliation, Exceptions, and Reports.
+
+1) Department Types and Inheritance Logic
+
+1.1 Implement two department scopes:
+
+Client-level departments (global for the client; reusable across outlets)
+
+Outlet-level departments (specific to an outlet only)
+
+1.2 Inheritance rule per outlet:
+Each outlet must have a setting called Department Mode with three options:
+A) Inherit only: outlet uses client departments only
+B) Outlet only: outlet ignores client departments and uses only outlet-created departments
+C) Inherit + Add: outlet uses client departments and can add extra outlet-specific departments
+
+1.3 For “Inherit only” and “Inherit + Add”, allow outlet to optionally toggle which client departments are active in that outlet (e.g., the client has 8 departments but outlet uses 4).
+
+2) Unlimited Department Creation (No Limits)
+
+2.1 Users must be able to create as many departments as they want:
+
+Unlimited departments at client-level
+
+Unlimited departments at outlet-level
+No artificial limit like 3/5/10.
+
+2.2 Provide fast UX:
+
+Add Department button with inline “Add another”
+
+Bulk add option (paste list of departments separated by commas/new lines)
+
+Search and sorting
+
+3) Where Users Manage Departments (UI Requirements)
+
+3.1 Client Setup Page
+Add a “Departments (Client-wide)” section:
+
+List existing client departments
+
+Add new client department(s) (single + bulk paste)
+
+Edit department name
+
+Deactivate/Archive department (do not hard-delete if used)
+
+3.2 Outlet Setup Page
+Add “Departments for this Outlet” section:
+
+Outlet Department Mode selector: Inherit only / Outlet only / Inherit + Add
+
+If mode includes inherit:
+a) show checklist of client departments with toggles “Active in this outlet”
+
+If mode includes outlet departments:
+a) allow creating outlet-specific departments (single + bulk paste)
+b) list outlet-specific departments separately from inherited ones
+
+3.3 Dropdown Behavior (Header + Forms)
+Department dropdown must always reflect the selected client and outlet:
+
+If Client is selected but no outlet selected:
+a) show client-level departments only + “All Departments”
+
+If Outlet is selected:
+a) show only the departments available to that outlet based on mode:
+
+Inherit only: active inherited client departments
+
+Outlet only: outlet departments only
+
+Inherit + Add: inherited active departments + outlet departments
+
+Clearly label inherited vs outlet departments (e.g., “Kitchen (Client)” vs “Kitchen (Outlet)”).
+
+4) Data Integrity and Link to All Modules (Must Work Everywhere)
+
+4.1 Sales
+
+Every sale record must be tagged to a department.
+
+POS import must map department:
+a) map automatically if department column exists
+b) else force user to select department during import
+
+Sales filtering by department must work.
+
+4.2 Purchases & Inventory
+
+Purchases should be recorded at outlet level and optionally tagged:
+a) default: purchases go to outlet main store
+b) optional: purchases can be tagged to a department if the client buys directly for that department
+
+Stock movements must support department linkage:
+a) transfer store → department
+b) wastage/spoilage by department
+c) complimentary/staff consumption by department
+
+Inventory and movement reports must filter by department.
+
+4.3 Reconciliation
+
+Reconciliation must compute and store results per outlet and per department (where applicable).
+
+Variance registers must show department breakdown.
+
+4.4 Exceptions
+
+Exception cases must store the department reference.
+
+Exceptions dashboard filters must include department.
+
+4.5 Reports
+
+Every report must support department filtering:
+Daily audit, weekly summary, inventory movement, variance report, P&L.
+
+Selecting a department must change totals and included transactions correctly.
+
+5) Deactivation, Editing, and Safety Rules
+
+If a department has been used in any record, do not allow hard delete.
+
+Allow deactivation/archive with reason.
+
+Deactivated departments cannot be used for new entries but remain visible on old records.
+
+6) Permissions and Audit Trail
+
+Only Super Admin and Supervisor can create/edit/deactivate departments and set outlet department mode.
+
+Auditors can select departments on entries but cannot change department structure.
+
+Log all changes (department creation/edit/deactivation, outlet mode changes, inherited department toggles) in Audit Trail.
+
+7) Acceptance Tests (Must Pass)
+
+Create 10 client departments → all show in client department list and dropdown.
+
+Create an outlet and set:
+a) Inherit only → dropdown shows only inherited active departments
+b) Outlet only → dropdown shows only outlet departments
+c) Inherit + Add → dropdown shows both inherited and outlet departments
+
+Disable a client department for one outlet → it disappears from that outlet department dropdown but remains in other outlets if active.
+
+Create sales, purchases, stock movements, reconciliation, and reports filtered by department → numbers change correctly.
+
+Publish to production and confirm the same behavior exists (no “Failed to load” and no missing department lists).
