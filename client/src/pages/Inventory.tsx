@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { clientsApi, itemsApi, suppliersApi, Item, Supplier } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
+import { AuditContextGate, AuditContextBanner } from "@/components/AuditContextGate";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/lib/client-context";
@@ -84,7 +85,9 @@ export default function Inventory() {
   }
 
   return (
+    <AuditContextGate pageName="Inventory Management">
     <div className="space-y-6 max-w-[1600px] mx-auto">
+      <AuditContextBanner />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Inventory Management</h1>
@@ -375,5 +378,6 @@ export default function Inventory() {
         </TabsContent>
       </Tabs>
     </div>
+    </AuditContextGate>
   );
 }
