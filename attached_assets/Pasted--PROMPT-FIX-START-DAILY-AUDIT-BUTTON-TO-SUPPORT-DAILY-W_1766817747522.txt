@@ -1,0 +1,99 @@
+### PROMPT — FIX “START DAILY AUDIT” BUTTON TO SUPPORT DAILY / WEEKLY / MONTHLY + DATE RANGE (DEFAULTS TO TODAY)
+
+You are working on **Miemploya AuditOps**. The Dashboard button currently says **“Start Daily Audit”** but this is incorrect because audits can be **Daily, Weekly, or Monthly**. Fix the UX and logic so starting an audit allows the user to choose the audit period and date selection mode (single day or range), while the header date remains **default = today** until the user changes it.
+
+#### 1) Rename and purpose
+
+1. Rename the button from **“Start Daily Audit”** to **“Start Audit”**.
+2. On click, open a modal titled **“Start Audit”**.
+
+#### 2) Start Audit modal (must implement)
+
+The modal must include these fields:
+
+2.1 Audit Period (required dropdown)
+
+* Daily
+* Weekly
+* Monthly
+* Custom Range
+
+2.2 Date Selection (dynamic based on Audit Period)
+A) If **Daily**:
+
+* show a single date picker (default = today)
+
+B) If **Weekly**:
+
+* show either:
+
+  * week picker (select week) OR
+  * date range picker (Mon–Sun auto suggested)
+* default range = current week (optional) but keep dashboard header date unchanged until confirmed
+
+C) If **Monthly**:
+
+* show month/year picker (e.g., December 2025)
+* internally convert to range: first day → last day of that month
+
+D) If **Custom Range**:
+
+* show date range picker (Start Date, End Date)
+
+2.3 Scope (pre-filled from header selections)
+
+* Client (required) – use current selected client from header
+* Department (optional) – use current selected department if any
+
+2.4 Actions
+
+* Cancel
+* Start Audit
+
+#### 3) Default date behavior (important)
+
+1. The main Dashboard header date must remain **today** by default when the page loads.
+2. Changing the audit period/date inside the modal must NOT immediately change the header date.
+3. Only when the user clicks **Start Audit** should the header date be updated to:
+
+* selected single date (Daily)
+  OR
+* a visible range display (Weekly/Monthly/Custom) in the header date control
+
+#### 4) After clicking “Start Audit”
+
+1. Create or load an audit session/workspace based on:
+
+* clientId
+* departmentId (if chosen)
+* auditPeriod
+* dateStart + dateEnd
+
+2. Redirect user to **Audit Workspace** with the selected period context applied.
+3. The Audit Workspace must show:
+
+* Period label (Daily/Weekly/Monthly/Custom)
+* Date range (start–end)
+
+4. All pages that depend on date filtering must respect:
+
+* single date when Daily
+* date range when Weekly/Monthly/Custom
+
+#### 5) Persistence
+
+1. Save the selected audit period and date range in:
+
+* the URL query params (recommended)
+* and/or a server-side audit session record
+  so refresh does not lose the selected range.
+
+#### 6) Acceptance test (must pass)
+
+1. Dashboard loads with date = today.
+2. Click **Start Audit** → select Weekly → pick a date range → click Start Audit.
+3. Header date updates to show the chosen range.
+4. Audit Workspace opens and filters all records by that date range.
+5. Return to dashboard, default still starts at today unless user starts another audit and confirms.
+
+---

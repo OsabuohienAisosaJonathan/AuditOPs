@@ -1,14 +1,14 @@
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, FileText, Plus, Upload, ShoppingCart, BarChart3, AlertOctagon, FileCheck, Building2, Calendar, Download, FileSpreadsheet } from "lucide-react";
+import { AlertTriangle, FileText, Plus, Upload, ShoppingCart, BarChart3, AlertOctagon, FileCheck, Building2, Calendar, Download, FileSpreadsheet, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi, clientsApi, departmentsApi, DashboardSummary, Client, Department, DashboardFilters } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Check, ChevronsUpDown } from "lucide-react";
 
+type AuditPeriod = "daily" | "weekly" | "monthly" | "custom";
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [selectedClientId, setSelectedClientId] = useState<string>("");
@@ -27,6 +29,11 @@ export default function Dashboard() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [startAuditDialogOpen, setStartAuditDialogOpen] = useState(false);
+  const [auditPeriod, setAuditPeriod] = useState<AuditPeriod>("daily");
+  const [auditStartDate, setAuditStartDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [auditEndDate, setAuditEndDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [auditMonth, setAuditMonth] = useState<string>(format(new Date(), "yyyy-MM"));
 
   const filters: DashboardFilters = useMemo(() => ({
     clientId: selectedClientId || undefined,
@@ -72,12 +79,63 @@ export default function Dashboard() {
     setSelectedDate(e.target.value);
   };
 
-  const handleStartDailyAudit = () => {
+  const handleOpenStartAudit = () => {
+    setAuditPeriod("daily");
+    setAuditStartDate(format(new Date(), "yyyy-MM-dd"));
+    setAuditEndDate(format(new Date(), "yyyy-MM-dd"));
+    setAuditMonth(format(new Date(), "yyyy-MM"));
+    setStartAuditDialogOpen(true);
+  };
+
+  const handleAuditPeriodChange = (period: AuditPeriod) => {
+    setAuditPeriod(period);
+    const today = new Date();
+    
+    if (period === "daily") {
+      setAuditStartDate(format(today, "yyyy-MM-dd"));
+      setAuditEndDate(format(today, "yyyy-MM-dd"));
+    } else if (period === "weekly") {
+      const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+      setAuditStartDate(format(weekStart, "yyyy-MM-dd"));
+      setAuditEndDate(format(weekEnd, "yyyy-MM-dd"));
+    } else if (period === "monthly") {
+      const monthStart = startOfMonth(today);
+      const monthEnd = endOfMonth(today);
+      setAuditStartDate(format(monthStart, "yyyy-MM-dd"));
+      setAuditEndDate(format(monthEnd, "yyyy-MM-dd"));
+      setAuditMonth(format(today, "yyyy-MM"));
+    } else if (period === "custom") {
+      setAuditStartDate(format(today, "yyyy-MM-dd"));
+      setAuditEndDate(format(today, "yyyy-MM-dd"));
+    }
+  };
+
+  const handleMonthChange = (monthStr: string) => {
+    setAuditMonth(monthStr);
+    const [year, month] = monthStr.split("-").map(Number);
+    const date = new Date(year, month - 1, 1);
+    const monthStart = startOfMonth(date);
+    const monthEnd = endOfMonth(date);
+    setAuditStartDate(format(monthStart, "yyyy-MM-dd"));
+    setAuditEndDate(format(monthEnd, "yyyy-MM-dd"));
+  };
+
+  const handleStartAudit = () => {
+    if (!selectedClientId) {
+      toast.error("Please select a client before starting an audit");
+      return;
+    }
+
     const params = new URLSearchParams();
-    if (selectedClientId) params.set("clientId", selectedClientId);
+    params.set("clientId", selectedClientId);
     if (selectedDepartmentId) params.set("departmentId", selectedDepartmentId);
-    if (selectedDate) params.set("date", selectedDate);
-    setLocation(`/sales-capture${params.toString() ? `?${params.toString()}` : ""}`);
+    params.set("period", auditPeriod);
+    params.set("startDate", auditStartDate);
+    params.set("endDate", auditEndDate);
+    
+    setStartAuditDialogOpen(false);
+    setLocation(`/audit${params.toString() ? `?${params.toString()}` : ""}`);
   };
 
   const handleImportPOS = () => {
@@ -260,9 +318,9 @@ Report generated by Miemploya AuditOps
               <Upload className="h-4 w-4" />
               Import POS Data
             </Button>
-            <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handleStartDailyAudit} data-testid="button-start-audit">
+            <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handleOpenStartAudit} data-testid="button-start-audit">
               <Plus className="h-4 w-4" />
-              Start Daily Audit
+              Start Audit
             </Button>
           </div>
         </div>
@@ -485,6 +543,148 @@ Report generated by Miemploya AuditOps
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={startAuditDialogOpen} onOpenChange={setStartAuditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5" />
+              Start Audit
+            </DialogTitle>
+            <DialogDescription>
+              Select the audit period and date range to begin your audit session.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="auditPeriod">Audit Period</Label>
+              <Select 
+                value={auditPeriod} 
+                onValueChange={(value) => handleAuditPeriodChange(value as AuditPeriod)}
+              >
+                <SelectTrigger data-testid="select-audit-period">
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="custom">Custom Range</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {auditPeriod === "daily" && (
+              <div className="space-y-2">
+                <Label htmlFor="auditDate">Date</Label>
+                <Input 
+                  id="auditDate"
+                  type="date" 
+                  value={auditStartDate}
+                  onChange={(e) => {
+                    setAuditStartDate(e.target.value);
+                    setAuditEndDate(e.target.value);
+                  }}
+                  data-testid="input-audit-date"
+                />
+              </div>
+            )}
+            
+            {auditPeriod === "weekly" && (
+              <div className="space-y-2">
+                <Label>Week Range</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Start (Mon)</Label>
+                    <Input 
+                      type="date" 
+                      value={auditStartDate}
+                      onChange={(e) => setAuditStartDate(e.target.value)}
+                      data-testid="input-audit-week-start"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">End (Sun)</Label>
+                    <Input 
+                      type="date" 
+                      value={auditEndDate}
+                      onChange={(e) => setAuditEndDate(e.target.value)}
+                      data-testid="input-audit-week-end"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {auditPeriod === "monthly" && (
+              <div className="space-y-2">
+                <Label htmlFor="auditMonth">Month</Label>
+                <Input 
+                  id="auditMonth"
+                  type="month" 
+                  value={auditMonth}
+                  onChange={(e) => handleMonthChange(e.target.value)}
+                  data-testid="input-audit-month"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Range: {format(parseISO(auditStartDate), "MMM d")} – {format(parseISO(auditEndDate), "MMM d, yyyy")}
+                </p>
+              </div>
+            )}
+            
+            {auditPeriod === "custom" && (
+              <div className="space-y-2">
+                <Label>Custom Date Range</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Start Date</Label>
+                    <Input 
+                      type="date" 
+                      value={auditStartDate}
+                      onChange={(e) => setAuditStartDate(e.target.value)}
+                      data-testid="input-audit-custom-start"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">End Date</Label>
+                    <Input 
+                      type="date" 
+                      value={auditEndDate}
+                      onChange={(e) => setAuditEndDate(e.target.value)}
+                      data-testid="input-audit-custom-end"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2 border-t">
+              <Label>Scope</Label>
+              <div className="text-sm p-3 bg-muted rounded-lg space-y-1">
+                <p><span className="text-muted-foreground">Client:</span> <strong>{selectedClient?.name || "Not selected"}</strong></p>
+                <p><span className="text-muted-foreground">Department:</span> <strong>{departments.find(d => d.id === selectedDepartmentId)?.name || "All Departments"}</strong></p>
+              </div>
+              {!selectedClientId && (
+                <p className="text-xs text-destructive">Please select a client from the dashboard before starting an audit.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setStartAuditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleStartAudit} 
+              disabled={!selectedClientId}
+              className="gap-2"
+              data-testid="button-confirm-start-audit"
+            >
+              <Plus className="h-4 w-4" />
+              Start Audit
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
