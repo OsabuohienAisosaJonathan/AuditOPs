@@ -1952,6 +1952,7 @@ export async function registerRoutes(
       
       const data = insertStoreIssueSchema.parse({
         ...issueData,
+        issueDate: issueData.issueDate ? new Date(issueData.issueDate) : undefined,
         createdBy: req.session.userId!,
       });
       
@@ -2363,6 +2364,7 @@ export async function registerRoutes(
       
       const data = insertPurchaseSchema.parse({
         ...purchaseData,
+        invoiceDate: purchaseData.invoiceDate ? new Date(purchaseData.invoiceDate) : undefined,
         createdBy: req.session.userId!,
       });
       const purchase = await storage.createPurchase(data);
