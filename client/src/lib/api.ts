@@ -146,18 +146,61 @@ export interface PurchaseLine {
 export interface StockCount {
   id: string;
   departmentId: string;
+  clientId: string | null;
   itemId: string;
   date: Date;
   openingQty: string;
+  addedQty: string | null;
   receivedQty: string;
   soldQty: string;
   expectedClosingQty: string;
   actualClosingQty: string | null;
   varianceQty: string;
   varianceValue: string;
+  costPriceSnapshot: string | null;
+  sellingPriceSnapshot: string | null;
   notes: string | null;
   createdBy: string;
   createdAt: Date;
+}
+
+export interface StoreIssue {
+  id: string;
+  clientId: string;
+  issueDate: Date;
+  fromDepartmentId: string;
+  toDepartmentId: string;
+  notes: string | null;
+  status: string;
+  createdBy: string;
+  createdAt: Date;
+}
+
+export interface StoreIssueLine {
+  id: string;
+  storeIssueId: string;
+  itemId: string;
+  qtyIssued: string;
+  costPriceSnapshot: string | null;
+  createdAt: Date;
+}
+
+export interface StoreStock {
+  id: string;
+  clientId: string;
+  storeDepartmentId: string;
+  itemId: string;
+  date: Date;
+  openingQty: string;
+  addedQty: string;
+  issuedQty: string;
+  closingQty: string;
+  physicalClosingQty: string | null;
+  varianceQty: string;
+  costPriceSnapshot: string;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface SalesEntry {
@@ -647,6 +690,75 @@ export const stockCountsApi = {
   delete: (id: string) =>
     fetchApi<void>(`/stock-counts/${id}`, {
       method: "DELETE",
+    }),
+};
+
+export const storeIssuesApi = {
+  getAll: (clientId: string, date?: string) => {
+    const params = new URLSearchParams({ clientId });
+    if (date) params.append("date", date);
+    return fetchApi<StoreIssue[]>(`/store-issues?${params}`);
+  },
+  getByDepartment: (toDepartmentId: string, date?: string) => {
+    const params = new URLSearchParams({ toDepartmentId });
+    if (date) params.append("date", date);
+    return fetchApi<StoreIssue[]>(`/store-issues?${params}`);
+  },
+  get: (id: string) => fetchApi<StoreIssue>(`/store-issues/${id}`),
+  getLines: (id: string) => fetchApi<StoreIssueLine[]>(`/store-issues/${id}/lines`),
+  create: (data: { 
+    clientId: string; 
+    issueDate: string; 
+    fromDepartmentId: string; 
+    toDepartmentId: string; 
+    notes?: string;
+    status?: string;
+    lines?: { itemId: string; qtyIssued: string; costPriceSnapshot?: string }[];
+  }) =>
+    fetchApi<StoreIssue>("/store-issues", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: any) =>
+    fetchApi<StoreIssue>(`/store-issues/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<void>(`/store-issues/${id}`, {
+      method: "DELETE",
+    }),
+  getIssuedQty: (departmentId: string, itemId: string, date: string) =>
+    fetchApi<{ issuedQty: number }>(`/store-issues/issued-qty?departmentId=${departmentId}&itemId=${itemId}&date=${date}`),
+};
+
+export const storeStockApi = {
+  getAll: (clientId: string, storeDepartmentId: string, date?: string) => {
+    const params = new URLSearchParams({ clientId, storeDepartmentId });
+    if (date) params.append("date", date);
+    return fetchApi<StoreStock[]>(`/store-stock?${params}`);
+  },
+  create: (data: {
+    clientId: string;
+    storeDepartmentId: string;
+    itemId: string;
+    date: string;
+    openingQty: string;
+    addedQty: string;
+    issuedQty: string;
+    closingQty: string;
+    physicalClosingQty?: string;
+    varianceQty: string;
+    costPriceSnapshot: string;
+  }) =>
+    fetchApi<StoreStock>("/store-stock", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: any) =>
+    fetchApi<StoreStock>(`/store-stock/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     }),
 };
 

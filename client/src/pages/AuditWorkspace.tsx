@@ -19,7 +19,9 @@ import { useClientContext } from "@/lib/client-context";
 import { 
   paymentDeclarationsApi, reconciliationHintApi, salesEntriesApi, clientsApi, departmentsApi, 
   purchasesApi, stockMovementsApi, stockCountsApi, reconciliationsApi, exceptionsApi, itemsApi, suppliersApi,
-  type SalesEntry, type SalesSummary, type Purchase, type StockMovement, type StockCount, type Reconciliation, type Item, type Supplier
+  storeIssuesApi, storeStockApi,
+  type SalesEntry, type SalesSummary, type Purchase, type StockMovement, type StockCount, type Reconciliation, type Item, type Supplier,
+  type StoreIssue, type StoreIssueLine, type StoreStock, type Department
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
@@ -287,11 +289,12 @@ export default function AuditWorkspace() {
         <div className="flex-1 min-w-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <TabsList className="grid w-full max-w-[600px] grid-cols-5">
+              <TabsList className="grid w-full max-w-[720px] grid-cols-6">
                 <TabsTrigger value="sales" data-testid="tab-sales">Sales</TabsTrigger>
                 <TabsTrigger value="purchases" data-testid="tab-purchases">Purchases</TabsTrigger>
-                <TabsTrigger value="stock" data-testid="tab-stock">Stock</TabsTrigger>
+                <TabsTrigger value="store" data-testid="tab-store">Store</TabsTrigger>
                 <TabsTrigger value="counts" data-testid="tab-counts">Counts</TabsTrigger>
+                <TabsTrigger value="stock" data-testid="tab-stock">Stock</TabsTrigger>
                 <TabsTrigger value="recon" data-testid="tab-recon">Recon</TabsTrigger>
               </TabsList>
               <div className="flex items-center gap-2">
@@ -326,6 +329,15 @@ export default function AuditWorkspace() {
                   clientId={clientId}
                   departmentId={departmentId}
                   totalPurchases={totalPurchases}
+                />
+              </TabsContent>
+
+              <TabsContent value="store" className="mt-0">
+                <StoreTab 
+                  clientId={clientId}
+                  departments={departments}
+                  items={items}
+                  dateStr={dateStr}
                 />
               </TabsContent>
 
@@ -731,6 +743,257 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+function StoreTab({ clientId, departments, items, dateStr }: {
+  clientId: string | null;
+  departments: Department[];
+  items: Item[];
+  dateStr: string;
+}) {
+  const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  const [selectedFromDept, setSelectedFromDept] = useState<string>("");
+  const [selectedToDept, setSelectedToDept] = useState<string>("");
+  const [issueLines, setIssueLines] = useState<{ itemId: string; qtyIssued: string; costPriceSnapshot: string }[]>([]);
+  const queryClient = useQueryClient();
+
+  const storeDepartments = departments.filter(d => d.name.toLowerCase().includes("store") || d.name.toLowerCase().includes("main"));
+  const otherDepartments = departments.filter(d => !d.name.toLowerCase().includes("store") || d.name.toLowerCase() !== "main");
+
+  const { data: storeIssues = [] } = useQuery({
+    queryKey: ["store-issues", clientId, dateStr],
+    queryFn: () => clientId ? storeIssuesApi.getAll(clientId, dateStr) : Promise.resolve([]),
+    enabled: !!clientId,
+  });
+
+  const createIssueMutation = useMutation({
+    mutationFn: (data: any) => storeIssuesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-issues"] });
+      setIssueDialogOpen(false);
+      setIssueLines([]);
+      setSelectedFromDept("");
+      setSelectedToDept("");
+      toast.success("Store issue created successfully");
+    },
+    onError: (error: any) => toast.error(error.message || "Failed to create store issue"),
+  });
+
+  const handleAddLine = () => {
+    setIssueLines([...issueLines, { itemId: "", qtyIssued: "", costPriceSnapshot: "0" }]);
+  };
+
+  const handleRemoveLine = (index: number) => {
+    setIssueLines(issueLines.filter((_, i) => i !== index));
+  };
+
+  const handleLineChange = (index: number, field: string, value: string) => {
+    const updatedLines = [...issueLines];
+    updatedLines[index] = { ...updatedLines[index], [field]: value };
+    if (field === "itemId") {
+      const item = items.find(i => i.id === value);
+      if (item) {
+        updatedLines[index].costPriceSnapshot = item.costPrice;
+      }
+    }
+    setIssueLines(updatedLines);
+  };
+
+  const handleSubmitIssue = () => {
+    if (!clientId || !selectedFromDept || !selectedToDept || issueLines.length === 0) {
+      toast.error("Please fill all required fields and add at least one item");
+      return;
+    }
+
+    createIssueMutation.mutate({
+      clientId,
+      issueDate: dateStr,
+      fromDepartmentId: selectedFromDept,
+      toDepartmentId: selectedToDept,
+      status: "posted",
+      lines: issueLines.filter(l => l.itemId && l.qtyIssued),
+    });
+  };
+
+  const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || "Unknown";
+  const getItemName = (id: string) => items.find(i => i.id === id)?.name || "Unknown";
+
+  const totalIssuedValue = storeIssues.reduce((sum, _issue) => sum, 0);
+
+  return (
+    <Card className="border-none shadow-none">
+      <CardHeader className="px-0 pt-0 pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Store Issues</CardTitle>
+            <CardDescription>Issue items from store to departments</CardDescription>
+          </div>
+          <Button onClick={() => setIssueDialogOpen(true)} className="gap-2" disabled={!clientId} data-testid="button-issue-to-dept">
+            <ArrowUpRight className="h-4 w-4" /> Issue to Department
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="px-0">
+        <div className="border rounded-lg overflow-hidden">
+          <Table>
+            <TableHeader className="bg-muted/50">
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>From</TableHead>
+                <TableHead>To</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Notes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {storeIssues.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    No store issues recorded today. Click "Issue to Department" to create one.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                storeIssues.map((issue) => (
+                  <TableRow key={issue.id} data-testid={`row-store-issue-${issue.id}`}>
+                    <TableCell>{format(new Date(issue.issueDate), "MMM d, yyyy")}</TableCell>
+                    <TableCell className="font-medium">{getDepartmentName(issue.fromDepartmentId)}</TableCell>
+                    <TableCell className="font-medium">{getDepartmentName(issue.toDepartmentId)}</TableCell>
+                    <TableCell>
+                      <Badge variant={issue.status === "posted" ? "default" : "secondary"}>
+                        {issue.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{issue.notes || "-"}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="mt-6 p-4 bg-muted/30 rounded-lg">
+          <h4 className="text-sm font-semibold mb-2">Issue Summary</h4>
+          <p className="text-sm text-muted-foreground">
+            Total issues today: <span className="font-mono font-medium">{storeIssues.length}</span>
+          </p>
+        </div>
+      </CardContent>
+
+      <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Issue Items to Department</DialogTitle>
+            <DialogDescription>Select store and destination department, then add items to issue</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>From Department (Store)</Label>
+                <Select value={selectedFromDept} onValueChange={setSelectedFromDept}>
+                  <SelectTrigger data-testid="select-from-dept">
+                    <SelectValue placeholder="Select store" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>To Department</Label>
+                <Select value={selectedToDept} onValueChange={setSelectedToDept}>
+                  <SelectTrigger data-testid="select-to-dept">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.filter(d => d.id !== selectedFromDept).map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Items to Issue</Label>
+                <Button type="button" variant="outline" size="sm" onClick={handleAddLine}>
+                  <Plus className="h-4 w-4 mr-1" /> Add Item
+                </Button>
+              </div>
+              
+              {issueLines.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+                  Click "Add Item" to add items to issue
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="w-32">Quantity</TableHead>
+                      <TableHead className="w-32">Unit Cost</TableHead>
+                      <TableHead className="w-16"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {issueLines.map((line, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <Select value={line.itemId} onValueChange={(v) => handleLineChange(index, "itemId", v)}>
+                            <SelectTrigger data-testid={`select-item-${index}`}>
+                              <SelectValue placeholder="Select item" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {items.map((item) => (
+                                <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            value={line.qtyIssued} 
+                            onChange={(e) => handleLineChange(index, "qtyIssued", e.target.value)}
+                            placeholder="0"
+                            data-testid={`input-qty-${index}`}
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono text-muted-foreground">
+                          ₦ {Number(line.costPriceSnapshot || 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="sm" onClick={() => handleRemoveLine(index)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIssueDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={handleSubmitIssue} 
+              disabled={createIssueMutation.isPending || !selectedFromDept || !selectedToDept || issueLines.length === 0}
+              data-testid="button-submit-issue"
+            >
+              {createIssueMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
+              Post Issue
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>
