@@ -2,7 +2,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut, Check, ChevronsUpDown, Layers, UserCog } from "lucide-react";
+import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut, Check, ChevronsUpDown, Layers, UserCog, BookOpen } from "lucide-react";
 import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -21,6 +21,7 @@ const MAIN_NAV_ITEMS = [
   { icon: ClipboardCheck, label: "Audit Workspace", href: "/audit-workspace" },
   { icon: ShoppingBag, label: "Sales Capture", href: "/sales-capture" },
   { icon: PackageSearch, label: "Inventory & Purchases", href: "/inventory" },
+  { icon: BookOpen, label: "Inventory Ledger", href: "/inventory-ledger" },
   { icon: FileCheck, label: "Reconciliation", href: "/reconciliation" },
   { icon: AlertOctagon, label: "Exceptions", href: "/exceptions" },
   { icon: FileText, label: "Reports", href: "/reports" },

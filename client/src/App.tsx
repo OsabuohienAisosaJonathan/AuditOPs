@@ -13,6 +13,7 @@ import AuditWorkspace from "@/pages/AuditWorkspace";
 import Clients from "@/pages/Clients";
 import SalesCapture from "@/pages/SalesCapture";
 import Inventory from "@/pages/Inventory";
+import InventoryLedger from "@/pages/InventoryLedger";
 import Reconciliation from "@/pages/Reconciliation";
 import Exceptions from "@/pages/Exceptions";
 import Reports from "@/pages/Reports";
@@ -76,6 +77,9 @@ function Router() {
         </Route>
         <Route path="/inventory">
           <ProtectedRoute component={Inventory} />
+        </Route>
+        <Route path="/inventory-ledger">
+          <ProtectedRoute component={InventoryLedger} />
         </Route>
         <Route path="/reconciliation">
           <ProtectedRoute component={Reconciliation} />

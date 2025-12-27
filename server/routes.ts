@@ -2279,6 +2279,145 @@ export async function registerRoutes(
     }
   });
 
+  // ============== CLIENT-SCOPED STORE STOCK ==============
+  app.get("/api/clients/:clientId/store-stock", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { departmentId, date } = req.query;
+      
+      if (!departmentId) {
+        return res.status(400).json({ error: "departmentId is required" });
+      }
+      
+      const dateFilter = date ? new Date(date as string) : undefined;
+      const stock = await storage.getStoreStock(
+        clientId,
+        departmentId as string,
+        dateFilter
+      );
+      res.json(stock);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/store-stock", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const data = insertStoreStockSchema.parse({
+        ...req.body,
+        clientId,
+        createdBy: req.session.userId!,
+      });
+      
+      const stock = await storage.upsertStoreStock(data);
+      res.json(stock);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== CLIENT-SCOPED STORE ISSUES ==============
+  app.get("/api/clients/:clientId/store-issues", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { date } = req.query;
+      
+      const dateFilter = date ? new Date(date as string) : undefined;
+      const issues = await storage.getStoreIssues(clientId, dateFilter);
+      res.json(issues);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/store-issues", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { fromDepartmentId, toDepartmentId, issueDate, notes, lines } = req.body;
+      
+      if (!fromDepartmentId || !toDepartmentId || !issueDate || !lines || lines.length === 0) {
+        return res.status(400).json({ error: "fromDepartmentId, toDepartmentId, issueDate, and lines are required" });
+      }
+      
+      const issue = await storage.createStoreIssue({
+        clientId,
+        fromDepartmentId,
+        toDepartmentId,
+        issueDate: new Date(issueDate),
+        notes: notes || null,
+        status: "posted",
+        createdBy: req.session.userId!,
+      });
+      
+      for (const line of lines) {
+        await storage.createStoreIssueLine({
+          storeIssueId: issue.id,
+          itemId: line.itemId,
+          qtyIssued: line.qtyIssued.toString(),
+        });
+        
+        const dateForStock = new Date(issueDate);
+        
+        const fromItem = await storage.getItem(line.itemId);
+        const costPrice = fromItem?.costPrice || "0.00";
+        
+        const existingFromStock = await storage.getStoreStockByItem(fromDepartmentId, line.itemId, dateForStock);
+        if (existingFromStock) {
+          const currentIssued = parseFloat(existingFromStock.issuedQty || "0");
+          const newIssued = currentIssued + parseFloat(line.qtyIssued);
+          await storage.updateStoreStock(existingFromStock.id, { issuedQty: newIssued.toString() });
+        } else {
+          await storage.createStoreStock({
+            clientId,
+            storeDepartmentId: fromDepartmentId,
+            itemId: line.itemId,
+            date: dateForStock,
+            openingQty: "0",
+            addedQty: "0",
+            issuedQty: line.qtyIssued.toString(),
+            closingQty: "0",
+            costPriceSnapshot: costPrice,
+            createdBy: req.session.userId!,
+          });
+        }
+        
+        const existingToStock = await storage.getStoreStockByItem(toDepartmentId, line.itemId, dateForStock);
+        if (existingToStock) {
+          const currentAdded = parseFloat(existingToStock.addedQty || "0");
+          const newAdded = currentAdded + parseFloat(line.qtyIssued);
+          await storage.updateStoreStock(existingToStock.id, { addedQty: newAdded.toString() });
+        } else {
+          await storage.createStoreStock({
+            clientId,
+            storeDepartmentId: toDepartmentId,
+            itemId: line.itemId,
+            date: dateForStock,
+            openingQty: "0",
+            addedQty: line.qtyIssued.toString(),
+            issuedQty: "0",
+            closingQty: "0",
+            costPriceSnapshot: costPrice,
+            createdBy: req.session.userId!,
+          });
+        }
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Store Issue",
+        entity: "StoreIssue",
+        entityId: issue.id,
+        details: `Issue from ${fromDepartmentId} to ${toDepartmentId}, ${lines.length} item(s)`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.status(201).json(issue);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== SALES ENTRIES ==============
   app.get("/api/sales-entries", requireAuth, async (req, res) => {
     try {
