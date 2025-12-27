@@ -453,6 +453,84 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
     enabled: !!clientId,
   });
 
+  const departmentIds = useMemo(() => 
+    departments.map(d => d.id), [departments]);
+
+  const { data: paymentDeclarations = [] } = useQuery({
+    queryKey: ["payment-declarations", clientId, departmentIds, dateStr],
+    queryFn: async () => {
+      if (!clientId) return [];
+      const results: any[] = [];
+      for (const deptId of departmentIds) {
+        try {
+          const declaration = await paymentDeclarationsApi.get(clientId, deptId, dateStr);
+          if (declaration) {
+            results.push(declaration);
+          }
+        } catch {
+          // Declaration may not exist for this department/date
+        }
+      }
+      return results;
+    },
+    enabled: !!clientId && departmentIds.length > 0,
+  });
+
+  const reportedPaymentsByDept = useMemo(() => {
+    const results: {
+      departmentId: string;
+      departmentName: string;
+      posSales: number; 
+      cashSales: number;
+      transferSales: number;
+      declaredCash: number;
+      declaredPos: number;
+      declaredTransfer: number;
+      hasDeclaration: boolean;
+      variance: number;
+    }[] = [];
+
+    entriesByDepartment.forEach(({ department, entries }) => {
+      if (!department) return;
+      const posSales = entries.reduce((sum, e) => sum + Number(e.posAmount || 0), 0);
+      const cashSales = entries.reduce((sum, e) => sum + Number(e.cashAmount || 0), 0);
+      const transferSales = entries.reduce((sum, e) => sum + Number(e.transferAmount || 0), 0);
+      const totalCaptured = posSales + cashSales + transferSales;
+      
+      const declaration = paymentDeclarations.find((d: any) => d.departmentId === department.id);
+      const hasDeclaration = !!declaration;
+      const declaredCash = Number(declaration?.cashDeclared || 0);
+      const declaredPos = Number(declaration?.posDeclared || 0);
+      const declaredTransfer = Number(declaration?.transferDeclared || 0);
+      const totalDeclared = declaredCash + declaredPos + declaredTransfer;
+      
+      const variance = hasDeclaration ? totalDeclared - totalCaptured : 0;
+      
+      results.push({
+        departmentId: department.id,
+        departmentName: department.name,
+        posSales,
+        cashSales,
+        transferSales,
+        declaredCash,
+        declaredPos,
+        declaredTransfer,
+        hasDeclaration,
+        variance,
+      });
+    });
+
+    return results;
+  }, [entriesByDepartment, paymentDeclarations]);
+
+  const totalFirstHitVariance = reportedPaymentsByDept.reduce((sum, r) => {
+    if (!r.hasDeclaration) {
+      const totalCaptured = r.cashSales + r.posSales + r.transferSales;
+      return sum - totalCaptured;
+    }
+    return sum + r.variance;
+  }, 0);
+
   const displaySummary = filteredSummary || salesSummary;
 
   return (
@@ -508,6 +586,83 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
           )}
         </CardContent>
       </Card>
+
+      {reportedPaymentsByDept.length > 0 && (
+        <Card className="bg-muted/20">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg">Reported Payments Summary</CardTitle>
+                <CardDescription>Declared payments vs captured sales - first hit variance</CardDescription>
+              </div>
+              <div className={cn(
+                "text-right px-3 py-1 rounded-lg",
+                totalFirstHitVariance === 0 ? "bg-emerald-100 dark:bg-emerald-900/30" : totalFirstHitVariance < 0 ? "bg-red-100 dark:bg-red-900/30" : "bg-amber-100 dark:bg-amber-900/30"
+              )}>
+                <div className="text-xs text-muted-foreground">First Hit Variance</div>
+                <div className={cn(
+                  "font-mono font-bold",
+                  totalFirstHitVariance === 0 ? "text-emerald-700" : totalFirstHitVariance < 0 ? "text-red-700" : "text-amber-700"
+                )}>
+                  ₦ {totalFirstHitVariance > 0 ? "+" : ""}{totalFirstHitVariance.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader className="bg-muted/30">
+                <TableRow>
+                  <TableHead>Department</TableHead>
+                  <TableHead className="text-right">Total Captured</TableHead>
+                  <TableHead className="text-right">Total Declared</TableHead>
+                  <TableHead className="text-right">First Hit Variance</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportedPaymentsByDept.map((report) => {
+                  const totalCaptured = report.cashSales + report.posSales + report.transferSales;
+                  const totalDeclared = report.declaredCash + report.declaredPos + report.declaredTransfer;
+                  return (
+                    <TableRow key={report.departmentId} data-testid={`row-payment-${report.departmentId}`}>
+                      <TableCell className="font-medium">{report.departmentName}</TableCell>
+                      <TableCell className="text-right font-mono">₦ {totalCaptured.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {report.hasDeclaration ? `₦ ${totalDeclared.toLocaleString()}` : <span className="text-muted-foreground">Pending</span>}
+                      </TableCell>
+                      <TableCell className={cn(
+                        "text-right font-mono font-medium",
+                        !report.hasDeclaration ? "text-amber-600" : report.variance === 0 ? "text-emerald-600" : report.variance < 0 ? "text-red-600" : "text-amber-600"
+                      )}>
+                        {!report.hasDeclaration 
+                          ? <span className="text-amber-600">₦ -{totalCaptured.toLocaleString()}</span>
+                          : report.variance === 0 
+                            ? "₦ 0" 
+                            : `₦ ${report.variance > 0 ? "+" : ""}${report.variance.toLocaleString()}`}
+                      </TableCell>
+                      <TableCell>
+                        {!report.hasDeclaration ? (
+                          <Badge variant="outline" className="text-amber-600 border-amber-600">Awaiting Declaration</Badge>
+                        ) : report.variance === 0 ? (
+                          <Badge variant="default" className="bg-emerald-600">Matched</Badge>
+                        ) : report.variance < 0 ? (
+                          <Badge variant="destructive">Short</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="bg-amber-100 text-amber-800">Over</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Variance = Declared - Captured. Negative means short (declared less than captured). Departments without declarations show potential deficit.
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-none shadow-none">
         <CardHeader className="px-0 pt-0 pb-4">
