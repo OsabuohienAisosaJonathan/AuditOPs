@@ -1,0 +1,84 @@
+) INVENTORY DEPARTMENTS MUST BE CREATED BY LINKING TO EXISTING STORE NAMES
+1.1 Add “Inventory Departments” subpage
+Add a subpage under Inventory Management called Inventory Departments.
+1.2 Create Inventory Department form (linked)
+When creating an Inventory Department, user must select:
+1.	Store Name (required dropdown)
+•	Populate from existing store names already in the system (Store list).
+•	Do NOT allow free-text store names.
+•	If the store name does not exist, user must create it from the Store Names page (or an “Add Store Name” modal that creates a store name first, then links).
+2.	Inventory Type (required)
+•	MAIN_STORE
+•	WAREHOUSE
+•	DEPARTMENT_STORE
+3.	Client (required)
+•	inventory departments are client-specific (same store name can exist across clients but link separately).
+Save rules:
+•	inventory department record stores storeNameId (foreign key) not a typed name.
+•	enforce uniqueness per client:
+o	only one MAIN_STORE
+o	only one WAREHOUSE
+o	a store name cannot be linked twice as the same type under the same client (no duplicates)
+________________________________________
+2) EXISTING STORE NAMES MANAGEMENT (IF NOT AVAILABLE, CREATE IT)
+If “store names list” does not exist yet:
+1.	Create a simple “Store Names” master list:
+•	id, name, status(active/inactive), createdAt
+2.	Use this list as the dropdown source for Inventory Departments.
+________________________________________
+MAIN STORE & MAIN WAREHOUSE LAYOUT (SPECIAL RULES)
+When inventory department type is MAIN_STORE or WAREHOUSE, display a special ledger grid:
+Columns (per day):
+1.	S/N
+2.	Item Name (pull from Item List)
+3.	Opening (auto from previous day closing; default 0 if none)
+4.	Purchase (button for add item form page)
+5.	Total (Opening + Purchase)
+6.	Dep1…Dep10 (issue quantities to linked departments; department can be hidden)
+7.	Closing (Total − sum(Dep1..Dep10))
+8.	Cost (pull from item cost price)
+9.	Value (Cost × Closing)
+4.1 Dep1…Dep10 linkage behavior
+•	Dep1..Dep10 are configurable columns representing department requisitions.
+•	Allow user to:
+1.	select which inventory departments appear as Dep columns
+2.	hide unused Dep columns
+3.	link each Dep column to an existing inventory department created in Inventory Departments subpage
+•	Posting quantities in Dep columns creates an automatic Issue/Transfer transaction from Main Store/Warehouse to that destination department.
+Important rules:
+1.	You cannot issue more than available stock (unless Super Admin override with reason).
+2.	Each Dep column posting must create store issue records with:
+o	fromInventoryDeptId
+o	toInventoryDeptId
+o	itemId
+o	qtyIssued
+o	date
+o	createdBy
+4.2 Closing auto-rollforward
+Closing for day D becomes Opening for day D+1 for that same inventory department.
+________________________________________
+5) OTHER INVENTORY DEPARTMENTS LAYOUT (KITCHEN/BAR/GRILL UNIT)
+When inventory department type is DEPARTMENT_STORE (e.g., Kitchen, Bar, Grill Unit), show this ledger:
+Columns (per day):
+1.	S/N
+2.	Item Name
+3.	Opening (auto from previous day closing; default 0)
+4.	Added (auto: sum of issues received from Main Store/Warehouse for that day)
+5.	Total (Opening + Added)
+6.	Sold (auto) = Total − Closing
+7.	Closing (pulled from Stock Count value for that department and item)
+5.1 Closing must come from Stock Count
+•	Closing is not manually typed in the ledger.
+•	Closing must be pulled from Audit Workspace Counts tab (or Stock Count page) for:
+o	same date
+o	same inventory department
+o	same item
+If no count exists yet, show Closing as blank/0 and mark as “Awaiting Stock Count”.
+5.2 Sold visibility
+Sold should compute only when Closing exists (after stock count is entered). Until then show “—”.
+________________________________________
+6) IMPORTANT INTEGRATION RULES (DO NOT BREAK EXISTING PAGES)
+1.	Keep current Items and Suppliers pages intact.
+2.	Add Inventory Departments 
+3.	Ensure date filtering aligns with Start Audit header date/range.
+
