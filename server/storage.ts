@@ -3,6 +3,7 @@ import {
   users, clients, categories, departments, salesEntries, purchases,
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
+  userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -11,7 +12,12 @@ import {
   type AuditLog, type InsertAuditLog, type AdminActivityLog, type InsertAdminActivityLog,
   type Supplier, type InsertSupplier, type Item, type InsertItem,
   type PurchaseLine, type InsertPurchaseLine, type StockCount, type InsertStockCount,
-  type PaymentDeclaration, type InsertPaymentDeclaration
+  type PaymentDeclaration, type InsertPaymentDeclaration,
+  type UserClientAccess, type InsertUserClientAccess,
+  type AuditContext, type InsertAuditContext,
+  type Audit, type InsertAudit,
+  type AuditReissuePermission, type InsertAuditReissuePermission,
+  type AuditChangeLog, type InsertAuditChangeLog
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum } from "drizzle-orm";
 
@@ -171,6 +177,41 @@ export interface IStorage {
   
   // Sales summary for reconciliation
   getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
+
+  // User-Client Access
+  getUserClientAccess(userId: string, clientId: string): Promise<UserClientAccess | undefined>;
+  getUserClientAccessList(userId: string): Promise<UserClientAccess[]>;
+  getClientUserAccessList(clientId: string): Promise<UserClientAccess[]>;
+  createUserClientAccess(access: InsertUserClientAccess): Promise<UserClientAccess>;
+  updateUserClientAccess(id: string, access: Partial<InsertUserClientAccess>): Promise<UserClientAccess | undefined>;
+  deleteUserClientAccess(id: string): Promise<boolean>;
+  getAssignedClientsForUser(userId: string): Promise<Client[]>;
+
+  // Audit Contexts
+  getActiveAuditContext(userId: string): Promise<AuditContext | undefined>;
+  getAuditContext(id: string): Promise<AuditContext | undefined>;
+  createAuditContext(context: InsertAuditContext): Promise<AuditContext>;
+  updateAuditContext(id: string, context: Partial<InsertAuditContext>): Promise<AuditContext | undefined>;
+  clearAuditContext(userId: string): Promise<boolean>;
+
+  // Audits
+  getAudit(id: string): Promise<Audit | undefined>;
+  getAuditByPeriod(clientId: string, departmentId: string, startDate: Date, endDate: Date): Promise<Audit | undefined>;
+  getAudits(filters?: { clientId?: string; departmentId?: string; status?: string }): Promise<Audit[]>;
+  createAudit(audit: InsertAudit): Promise<Audit>;
+  updateAudit(id: string, audit: Partial<InsertAudit>): Promise<Audit | undefined>;
+  submitAudit(id: string, submittedBy: string): Promise<Audit | undefined>;
+  lockAudit(id: string, lockedBy: string): Promise<Audit | undefined>;
+
+  // Audit Reissue Permissions
+  getAuditReissuePermission(auditId: string, userId: string): Promise<AuditReissuePermission | undefined>;
+  getAuditReissuePermissions(auditId: string): Promise<AuditReissuePermission[]>;
+  createAuditReissuePermission(permission: InsertAuditReissuePermission): Promise<AuditReissuePermission>;
+  revokeAuditReissuePermission(id: string): Promise<boolean>;
+
+  // Audit Change Log
+  createAuditChangeLog(log: InsertAuditChangeLog): Promise<AuditChangeLog>;
+  getAuditChangeLogs(auditId: string): Promise<AuditChangeLog[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -1043,6 +1084,208 @@ export class DbStorage implements IStorage {
       totalTransfer: parseFloat(result?.totalTransfer || "0"),
       totalSales: parseFloat(result?.totalSales || "0")
     };
+  }
+
+  // User-Client Access
+  async getUserClientAccess(userId: string, clientId: string): Promise<UserClientAccess | undefined> {
+    const [access] = await db.select().from(userClientAccess).where(
+      and(
+        eq(userClientAccess.userId, userId),
+        eq(userClientAccess.clientId, clientId)
+      )
+    );
+    return access;
+  }
+
+  async getUserClientAccessList(userId: string): Promise<UserClientAccess[]> {
+    return db.select().from(userClientAccess).where(eq(userClientAccess.userId, userId));
+  }
+
+  async getClientUserAccessList(clientId: string): Promise<UserClientAccess[]> {
+    return db.select().from(userClientAccess).where(eq(userClientAccess.clientId, clientId));
+  }
+
+  async createUserClientAccess(insertAccess: InsertUserClientAccess): Promise<UserClientAccess> {
+    const [access] = await db.insert(userClientAccess).values(insertAccess).returning();
+    return access;
+  }
+
+  async updateUserClientAccess(id: string, updateData: Partial<InsertUserClientAccess>): Promise<UserClientAccess | undefined> {
+    const [access] = await db.update(userClientAccess).set({
+      ...updateData,
+      updatedAt: new Date()
+    }).where(eq(userClientAccess.id, id)).returning();
+    return access;
+  }
+
+  async deleteUserClientAccess(id: string): Promise<boolean> {
+    await db.delete(userClientAccess).where(eq(userClientAccess.id, id));
+    return true;
+  }
+
+  async getAssignedClientsForUser(userId: string): Promise<Client[]> {
+    const accessRecords = await db.select().from(userClientAccess).where(
+      and(
+        eq(userClientAccess.userId, userId),
+        eq(userClientAccess.status, "assigned")
+      )
+    );
+    
+    if (accessRecords.length === 0) return [];
+    
+    const clientIds = accessRecords.map(a => a.clientId);
+    return db.select().from(clients).where(
+      sql`${clients.id} IN (${sql.join(clientIds.map(id => sql`${id}`), sql`, `)})`
+    );
+  }
+
+  // Audit Contexts
+  async getActiveAuditContext(userId: string): Promise<AuditContext | undefined> {
+    const [context] = await db.select().from(auditContexts).where(
+      and(
+        eq(auditContexts.userId, userId),
+        eq(auditContexts.status, "active")
+      )
+    ).orderBy(desc(auditContexts.createdAt)).limit(1);
+    return context;
+  }
+
+  async getAuditContext(id: string): Promise<AuditContext | undefined> {
+    const [context] = await db.select().from(auditContexts).where(eq(auditContexts.id, id));
+    return context;
+  }
+
+  async createAuditContext(insertContext: InsertAuditContext): Promise<AuditContext> {
+    await db.update(auditContexts).set({ status: "cleared" }).where(
+      and(
+        eq(auditContexts.userId, insertContext.userId),
+        eq(auditContexts.status, "active")
+      )
+    );
+    const [context] = await db.insert(auditContexts).values(insertContext).returning();
+    return context;
+  }
+
+  async updateAuditContext(id: string, updateData: Partial<InsertAuditContext>): Promise<AuditContext | undefined> {
+    const [context] = await db.update(auditContexts).set({
+      ...updateData,
+      lastActiveAt: new Date()
+    }).where(eq(auditContexts.id, id)).returning();
+    return context;
+  }
+
+  async clearAuditContext(userId: string): Promise<boolean> {
+    await db.update(auditContexts).set({ status: "cleared" }).where(
+      and(
+        eq(auditContexts.userId, userId),
+        eq(auditContexts.status, "active")
+      )
+    );
+    return true;
+  }
+
+  // Audits
+  async getAudit(id: string): Promise<Audit | undefined> {
+    const [audit] = await db.select().from(audits).where(eq(audits.id, id));
+    return audit;
+  }
+
+  async getAuditByPeriod(clientId: string, departmentId: string, startDate: Date, endDate: Date): Promise<Audit | undefined> {
+    const [audit] = await db.select().from(audits).where(
+      and(
+        eq(audits.clientId, clientId),
+        eq(audits.departmentId, departmentId),
+        eq(audits.startDate, startDate),
+        eq(audits.endDate, endDate)
+      )
+    );
+    return audit;
+  }
+
+  async getAudits(filters?: { clientId?: string; departmentId?: string; status?: string }): Promise<Audit[]> {
+    let conditions = [];
+    if (filters?.clientId) conditions.push(eq(audits.clientId, filters.clientId));
+    if (filters?.departmentId) conditions.push(eq(audits.departmentId, filters.departmentId));
+    if (filters?.status) conditions.push(eq(audits.status, filters.status));
+    
+    if (conditions.length > 0) {
+      return db.select().from(audits).where(and(...conditions)).orderBy(desc(audits.createdAt));
+    }
+    return db.select().from(audits).orderBy(desc(audits.createdAt));
+  }
+
+  async createAudit(insertAudit: InsertAudit): Promise<Audit> {
+    const [audit] = await db.insert(audits).values(insertAudit).returning();
+    return audit;
+  }
+
+  async updateAudit(id: string, updateData: Partial<InsertAudit>): Promise<Audit | undefined> {
+    const [audit] = await db.update(audits).set({
+      ...updateData,
+      updatedAt: new Date()
+    }).where(eq(audits.id, id)).returning();
+    return audit;
+  }
+
+  async submitAudit(id: string, submittedBy: string): Promise<Audit | undefined> {
+    const [audit] = await db.update(audits).set({
+      status: "submitted",
+      submittedBy,
+      submittedAt: new Date(),
+      updatedAt: new Date()
+    }).where(eq(audits.id, id)).returning();
+    return audit;
+  }
+
+  async lockAudit(id: string, lockedBy: string): Promise<Audit | undefined> {
+    const [audit] = await db.update(audits).set({
+      status: "locked",
+      lockedBy,
+      lockedAt: new Date(),
+      updatedAt: new Date()
+    }).where(eq(audits.id, id)).returning();
+    return audit;
+  }
+
+  // Audit Reissue Permissions
+  async getAuditReissuePermission(auditId: string, userId: string): Promise<AuditReissuePermission | undefined> {
+    const now = new Date();
+    const [permission] = await db.select().from(auditReissuePermissions).where(
+      and(
+        eq(auditReissuePermissions.auditId, auditId),
+        eq(auditReissuePermissions.grantedTo, userId),
+        eq(auditReissuePermissions.active, true),
+        or(
+          sql`${auditReissuePermissions.expiresAt} IS NULL`,
+          gte(auditReissuePermissions.expiresAt, now)
+        )
+      )
+    );
+    return permission;
+  }
+
+  async getAuditReissuePermissions(auditId: string): Promise<AuditReissuePermission[]> {
+    return db.select().from(auditReissuePermissions).where(eq(auditReissuePermissions.auditId, auditId));
+  }
+
+  async createAuditReissuePermission(insertPermission: InsertAuditReissuePermission): Promise<AuditReissuePermission> {
+    const [permission] = await db.insert(auditReissuePermissions).values(insertPermission).returning();
+    return permission;
+  }
+
+  async revokeAuditReissuePermission(id: string): Promise<boolean> {
+    await db.update(auditReissuePermissions).set({ active: false }).where(eq(auditReissuePermissions.id, id));
+    return true;
+  }
+
+  // Audit Change Log
+  async createAuditChangeLog(insertLog: InsertAuditChangeLog): Promise<AuditChangeLog> {
+    const [log] = await db.insert(auditChangeLog).values(insertLog).returning();
+    return log;
+  }
+
+  async getAuditChangeLogs(auditId: string): Promise<AuditChangeLog[]> {
+    return db.select().from(auditChangeLog).where(eq(auditChangeLog.auditId, auditId)).orderBy(desc(auditChangeLog.createdAt));
   }
 }
 
