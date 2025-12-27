@@ -20,6 +20,7 @@ import Settings from "@/pages/Settings";
 import AuditTrail from "@/pages/AuditTrail";
 import UserManagement from "@/pages/UserManagement";
 import AdminActivityLog from "@/pages/AdminActivityLog";
+import ClientAccess from "@/pages/ClientAccess";
 import AppLayout from "@/components/layout/AppLayout";
 import { useEffect } from "react";
 
@@ -96,6 +97,9 @@ function Router() {
         </Route>
         <Route path="/admin-activity">
           <ProtectedRoute component={AdminActivityLog} requiredRole="super_admin" />
+        </Route>
+        <Route path="/client-access">
+          <ProtectedRoute component={ClientAccess} requiredRole="super_admin" />
         </Route>
         <Route component={NotFound} />
       </Switch>

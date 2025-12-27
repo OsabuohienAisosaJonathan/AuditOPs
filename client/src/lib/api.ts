@@ -807,3 +807,146 @@ export const passwordApi = {
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
 };
+
+export interface UserClientAccess {
+  id: string;
+  userId: string;
+  clientId: string;
+  status: "assigned" | "suspended" | "removed";
+  assignedBy: string;
+  notes: string | null;
+  suspendReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AuditContext {
+  id: string;
+  userId: string;
+  clientId: string;
+  departmentId: string | null;
+  period: string;
+  startDate: Date;
+  endDate: Date;
+  status: string;
+  createdAt: Date;
+  lastActiveAt: Date;
+}
+
+export interface Audit {
+  id: string;
+  clientId: string;
+  departmentId: string | null;
+  period: string;
+  startDate: Date;
+  endDate: Date;
+  status: "draft" | "submitted" | "locked";
+  notes: string | null;
+  createdBy: string;
+  submittedBy: string | null;
+  submittedAt: Date | null;
+  lockedBy: string | null;
+  lockedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AuditReissuePermission {
+  id: string;
+  auditId: string;
+  grantedTo: string;
+  grantedBy: string;
+  expiresAt: Date | null;
+  scope: string;
+  reason: string | null;
+  active: boolean;
+  createdAt: Date;
+}
+
+export interface AuditChangeLog {
+  id: string;
+  auditId: string;
+  userId: string;
+  clientId: string | null;
+  departmentId: string | null;
+  actionType: string;
+  entityType: string | null;
+  entityId: string | null;
+  beforeState: any;
+  afterState: any;
+  notes: string | null;
+  createdAt: Date;
+}
+
+export const userClientAccessApi = {
+  getByUser: (userId: string) => fetchApi<UserClientAccess[]>(`/user-client-access/user/${userId}`),
+  getByClient: (clientId: string) => fetchApi<UserClientAccess[]>(`/user-client-access/client/${clientId}`),
+  check: (userId: string, clientId: string) => fetchApi<UserClientAccess | null>(`/user-client-access/${userId}/${clientId}`),
+  assign: (data: { userId: string; clientId: string; status?: string; notes?: string }) =>
+    fetchApi<UserClientAccess>("/user-client-access", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { status?: string; notes?: string; suspendReason?: string }) =>
+    fetchApi<UserClientAccess>(`/user-client-access/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/user-client-access/${id}`, {
+      method: "DELETE",
+    }),
+};
+
+export const auditContextApi = {
+  getCurrent: () => fetchApi<AuditContext | null>("/audit-context"),
+  set: (data: { clientId: string; departmentId?: string; period?: string; startDate: string; endDate: string }) =>
+    fetchApi<AuditContext>("/audit-context", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  clear: () =>
+    fetchApi<{ success: boolean }>("/audit-context", {
+      method: "DELETE",
+    }),
+};
+
+export const auditsApi = {
+  getAll: (filters?: { clientId?: string; departmentId?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.clientId) params.append("clientId", filters.clientId);
+    if (filters?.departmentId) params.append("departmentId", filters.departmentId);
+    if (filters?.status) params.append("status", filters.status);
+    return fetchApi<Audit[]>(`/audits${params.toString() ? `?${params}` : ""}`);
+  },
+  get: (id: string) => fetchApi<Audit>(`/audits/${id}`),
+  create: (data: { clientId: string; departmentId?: string; period?: string; startDate: string; endDate: string; notes?: string }) =>
+    fetchApi<Audit>("/audits", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<Audit>) =>
+    fetchApi<Audit>(`/audits/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  submit: (id: string) =>
+    fetchApi<Audit>(`/audits/${id}/submit`, {
+      method: "POST",
+    }),
+  lock: (id: string) =>
+    fetchApi<Audit>(`/audits/${id}/lock`, {
+      method: "POST",
+    }),
+  getReissuePermissions: (auditId: string) => fetchApi<AuditReissuePermission[]>(`/audits/${auditId}/reissue-permissions`),
+  grantReissuePermission: (auditId: string, data: { grantedTo: string; expiresAt?: string; scope?: string; reason?: string }) =>
+    fetchApi<AuditReissuePermission>(`/audits/${auditId}/reissue-permissions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  revokeReissuePermission: (auditId: string, permissionId: string) =>
+    fetchApi<{ success: boolean }>(`/audits/${auditId}/reissue-permissions/${permissionId}`, {
+      method: "DELETE",
+    }),
+  getChangeLog: (auditId: string) => fetchApi<AuditChangeLog[]>(`/audits/${auditId}/change-log`),
+};
