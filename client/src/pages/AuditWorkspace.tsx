@@ -944,6 +944,10 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
   totalPurchases: number;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState<string>("");
+  const [invoiceRef, setInvoiceRef] = useState<string>("");
+  const [invoiceDate, setInvoiceDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [totalAmount, setTotalAmount] = useState<string>("");
   const queryClient = useQueryClient();
 
   const createMutation = useMutation({
@@ -951,21 +955,36 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["purchases"] });
       setCreateOpen(false);
-      toast.success("Purchase recorded");
+      resetForm();
+      toast.success("Purchase recorded successfully");
     },
     onError: (error: any) => toast.error(error.message || "Failed to create purchase"),
   });
 
+  const resetForm = () => {
+    setSelectedSupplier("");
+    setInvoiceRef("");
+    setInvoiceDate(format(new Date(), "yyyy-MM-dd"));
+    setTotalAmount("");
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    if (!selectedSupplier) {
+      toast.error("Please select a supplier");
+      return;
+    }
+    if (!departmentId) {
+      toast.error("Please select a department from the header");
+      return;
+    }
     createMutation.mutate({
       clientId,
       departmentId,
-      supplierName: formData.get("supplier"),
-      invoiceRef: formData.get("invoiceRef"),
-      invoiceDate: formData.get("invoiceDate"),
-      totalAmount: formData.get("totalAmount"),
+      supplierName: selectedSupplier,
+      invoiceRef,
+      invoiceDate: new Date(invoiceDate).toISOString(),
+      totalAmount,
     });
   };
 
@@ -1035,7 +1054,7 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
         </div>
       </CardContent>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm(); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Record Purchase</DialogTitle>
@@ -1044,29 +1063,63 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="supplier">Supplier</Label>
-                <Input id="supplier" name="supplier" placeholder="Supplier name" required data-testid="input-supplier" />
+                <Label>Supplier</Label>
+                <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
+                  <SelectTrigger data-testid="select-supplier">
+                    <SelectValue placeholder="Select supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No suppliers found. Add suppliers in Inventory & Purchases.
+                      </div>
+                    ) : (
+                      suppliers.map(supplier => (
+                        <SelectItem key={supplier.id} value={supplier.name}>{supplier.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="invoiceRef">Invoice Reference</Label>
-                  <Input id="invoiceRef" name="invoiceRef" placeholder="INV-001" required />
+                  <Label>Invoice Reference</Label>
+                  <Input 
+                    placeholder="INV-001" 
+                    value={invoiceRef}
+                    onChange={(e) => setInvoiceRef(e.target.value)}
+                    required 
+                    data-testid="input-invoice-ref"
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="invoiceDate">Invoice Date</Label>
-                  <Input id="invoiceDate" name="invoiceDate" type="date" defaultValue={format(new Date(), "yyyy-MM-dd")} required />
+                  <Label>Invoice Date</Label>
+                  <Input 
+                    type="date" 
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    required 
+                    data-testid="input-invoice-date"
+                  />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="totalAmount">Total Amount (₦)</Label>
-                <Input id="totalAmount" name="totalAmount" type="number" step="0.01" placeholder="0.00" required />
+                <Label>Total Amount (₦)</Label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="0.00" 
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
+                  required 
+                  data-testid="input-total-amount"
+                />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
-                Save Purchase
+              <Button type="button" variant="outline" onClick={() => { setCreateOpen(false); resetForm(); }}>Cancel</Button>
+              <Button type="submit" disabled={createMutation.isPending || !selectedSupplier}>
+                {createMutation.isPending ? "Saving..." : "Save Purchase"}
               </Button>
             </DialogFooter>
           </form>
