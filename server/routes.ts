@@ -1589,10 +1589,13 @@ export async function registerRoutes(
 
   app.post("/api/sales-entries", requireAuth, async (req, res) => {
     try {
-      const data = insertSalesEntrySchema.parse({
+      // Convert date string to Date object if needed
+      const bodyWithDate = {
         ...req.body,
+        date: req.body.date ? new Date(req.body.date) : undefined,
         createdBy: req.session.userId!,
-      });
+      };
+      const data = insertSalesEntrySchema.parse(bodyWithDate);
       const entry = await storage.createSalesEntry(data);
       
       await storage.createAuditLog({
@@ -1612,10 +1615,13 @@ export async function registerRoutes(
 
   app.post("/api/sales", requireAuth, async (req, res) => {
     try {
-      const data = insertSalesEntrySchema.parse({
+      // Convert date string to Date object if needed
+      const bodyWithDate = {
         ...req.body,
+        date: req.body.date ? new Date(req.body.date) : undefined,
         createdBy: req.session.userId!,
-      });
+      };
+      const data = insertSalesEntrySchema.parse(bodyWithDate);
       const entry = await storage.createSalesEntry(data);
       
       await storage.createAuditLog({
