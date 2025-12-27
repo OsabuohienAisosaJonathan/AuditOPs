@@ -2,7 +2,7 @@ import { db } from "./db";
 import { 
   users, clients, outlets, departments, outletDepartmentLinks, salesEntries, purchases,
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
-  suppliers, items, purchaseLines, stockCounts,
+  suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   type User, type InsertUser, type Client, type InsertClient,
   type Outlet, type InsertOutlet, type Department, type InsertDepartment,
   type OutletDepartmentLink, type InsertOutletDepartmentLink,
@@ -11,7 +11,8 @@ import {
   type Exception, type InsertException, type ExceptionComment, type InsertExceptionComment,
   type AuditLog, type InsertAuditLog, type AdminActivityLog, type InsertAdminActivityLog,
   type Supplier, type InsertSupplier, type Item, type InsertItem,
-  type PurchaseLine, type InsertPurchaseLine, type StockCount, type InsertStockCount
+  type PurchaseLine, type InsertPurchaseLine, type StockCount, type InsertStockCount,
+  type PaymentDeclaration, type InsertPaymentDeclaration
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum } from "drizzle-orm";
 
@@ -166,6 +167,17 @@ export interface IStorage {
   
   // Departments by Client
   getDepartmentsByClient(clientId: string): Promise<Department[]>;
+  
+  // Payment Declarations
+  getPaymentDeclaration(clientId: string, outletId: string, date: Date): Promise<PaymentDeclaration | undefined>;
+  getPaymentDeclarationById(id: string): Promise<PaymentDeclaration | undefined>;
+  getPaymentDeclarations(outletId: string, startDate?: Date, endDate?: Date): Promise<PaymentDeclaration[]>;
+  createPaymentDeclaration(declaration: InsertPaymentDeclaration): Promise<PaymentDeclaration>;
+  updatePaymentDeclaration(id: string, declaration: Partial<InsertPaymentDeclaration>): Promise<PaymentDeclaration | undefined>;
+  deletePaymentDeclaration(id: string): Promise<boolean>;
+  
+  // Sales summary for reconciliation
+  getSalesSummaryForOutlet(outletId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
 }
 
 export class DbStorage implements IStorage {
@@ -935,6 +947,121 @@ export class DbStorage implements IStorage {
     const outletDepts = allDepts.filter(d => d.scope === "outlet" && d.outletId && outletIds.includes(d.outletId));
     
     return [...clientDepts, ...outletDepts].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  
+  // Payment Declarations
+  async getPaymentDeclaration(clientId: string, outletId: string, date: Date): Promise<PaymentDeclaration | undefined> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const [declaration] = await db.select().from(paymentDeclarations).where(
+      and(
+        eq(paymentDeclarations.clientId, clientId),
+        eq(paymentDeclarations.outletId, outletId),
+        gte(paymentDeclarations.date, startOfDay),
+        lte(paymentDeclarations.date, endOfDay)
+      )
+    );
+    return declaration;
+  }
+  
+  async getPaymentDeclarationById(id: string): Promise<PaymentDeclaration | undefined> {
+    const [declaration] = await db.select().from(paymentDeclarations).where(eq(paymentDeclarations.id, id));
+    return declaration;
+  }
+  
+  async getPaymentDeclarations(outletId: string, startDate?: Date, endDate?: Date): Promise<PaymentDeclaration[]> {
+    let conditions = [eq(paymentDeclarations.outletId, outletId)];
+    
+    if (startDate) {
+      conditions.push(gte(paymentDeclarations.date, startDate));
+    }
+    if (endDate) {
+      conditions.push(lte(paymentDeclarations.date, endDate));
+    }
+    
+    return db.select().from(paymentDeclarations)
+      .where(and(...conditions))
+      .orderBy(desc(paymentDeclarations.date));
+  }
+  
+  async createPaymentDeclaration(declaration: InsertPaymentDeclaration): Promise<PaymentDeclaration> {
+    const total = parseFloat(declaration.reportedCash || "0") + 
+                  parseFloat(declaration.reportedPosSettlement || "0") + 
+                  parseFloat(declaration.reportedTransfers || "0");
+    
+    const [created] = await db.insert(paymentDeclarations).values({
+      ...declaration,
+      totalReported: total.toFixed(2)
+    }).returning();
+    return created;
+  }
+  
+  async updatePaymentDeclaration(id: string, declaration: Partial<InsertPaymentDeclaration>): Promise<PaymentDeclaration | undefined> {
+    const existing = await this.getPaymentDeclarationById(id);
+    if (!existing) return undefined;
+    
+    const reportedCash = declaration.reportedCash ?? existing.reportedCash;
+    const reportedPos = declaration.reportedPosSettlement ?? existing.reportedPosSettlement;
+    const reportedTransfers = declaration.reportedTransfers ?? existing.reportedTransfers;
+    
+    const total = parseFloat(reportedCash || "0") + 
+                  parseFloat(reportedPos || "0") + 
+                  parseFloat(reportedTransfers || "0");
+    
+    const [updated] = await db.update(paymentDeclarations)
+      .set({ 
+        ...declaration, 
+        totalReported: total.toFixed(2),
+        updatedAt: new Date() 
+      })
+      .where(eq(paymentDeclarations.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deletePaymentDeclaration(id: string): Promise<boolean> {
+    await db.delete(paymentDeclarations).where(eq(paymentDeclarations.id, id));
+    return true;
+  }
+  
+  // Get sales summary for an outlet on a specific date (for reconciliation)
+  async getSalesSummaryForOutlet(outletId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    // Get departments for this outlet
+    const outlet = await this.getOutlet(outletId);
+    if (!outlet) {
+      return { totalCash: 0, totalPos: 0, totalTransfer: 0, totalSales: 0 };
+    }
+    
+    const effectiveDepts = await this.getEffectiveDepartmentsForOutlet(outletId);
+    const activeDeptIds = effectiveDepts.filter(d => d.isActive).map(d => d.id);
+    
+    if (activeDeptIds.length === 0) {
+      return { totalCash: 0, totalPos: 0, totalTransfer: 0, totalSales: 0 };
+    }
+    
+    const allSales = await db.select().from(salesEntries).where(
+      and(
+        gte(salesEntries.date, startOfDay),
+        lte(salesEntries.date, endOfDay)
+      )
+    );
+    
+    const outletSales = allSales.filter(s => activeDeptIds.includes(s.departmentId));
+    
+    const totalCash = outletSales.reduce((sum, s) => sum + parseFloat(s.cashAmount || "0"), 0);
+    const totalPos = outletSales.reduce((sum, s) => sum + parseFloat(s.posAmount || "0"), 0);
+    const totalTransfer = outletSales.reduce((sum, s) => sum + parseFloat(s.transferAmount || "0"), 0);
+    const totalSales = outletSales.reduce((sum, s) => sum + parseFloat(s.totalSales || "0"), 0);
+    
+    return { totalCash, totalPos, totalTransfer, totalSales };
   }
 }
 

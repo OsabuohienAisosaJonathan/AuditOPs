@@ -238,6 +238,22 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const paymentDeclarations = pgTable("payment_declarations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  outletId: varchar("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  reportedCash: decimal("reported_cash", { precision: 12, scale: 2 }).default("0.00"),
+  reportedPosSettlement: decimal("reported_pos_settlement", { precision: 12, scale: 2 }).default("0.00"),
+  reportedTransfers: decimal("reported_transfers", { precision: 12, scale: 2 }).default("0.00"),
+  totalReported: decimal("total_reported", { precision: 12, scale: 2 }).default("0.00"),
+  notes: text("notes"),
+  supportingDocuments: jsonb("supporting_documents").$type<{ name: string; url: string; type: string }[]>(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
@@ -256,6 +272,7 @@ export const insertExceptionSchema = createInsertSchema(exceptions).omit({ id: t
 export const insertExceptionCommentSchema = createInsertSchema(exceptionComments).omit({ id: true, createdAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 export const insertAdminActivityLogSchema = createInsertSchema(adminActivityLogs).omit({ id: true, createdAt: true });
+export const insertPaymentDeclarationSchema = createInsertSchema(paymentDeclarations).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -292,3 +309,5 @@ export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAdminActivityLog = z.infer<typeof insertAdminActivityLogSchema>;
 export type AdminActivityLog = typeof adminActivityLogs.$inferSelect;
+export type InsertPaymentDeclaration = z.infer<typeof insertPaymentDeclarationSchema>;
+export type PaymentDeclaration = typeof paymentDeclarations.$inferSelect;
