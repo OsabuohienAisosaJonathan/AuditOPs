@@ -10,7 +10,7 @@ import {
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, 
   insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
-  insertPaymentDeclarationSchema,
+  insertPaymentDeclarationSchema, insertStoreIssueSchema, insertStoreIssueLineSchema, insertStoreStockSchema,
   type UserRole 
 } from "@shared/schema";
 import { randomBytes } from "crypto";
@@ -1897,6 +1897,205 @@ export async function registerRoutes(
       });
 
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== STORE ISSUES ==============
+  app.get("/api/store-issues", requireAuth, async (req, res) => {
+    try {
+      const { clientId, date, toDepartmentId } = req.query;
+      
+      if (toDepartmentId) {
+        const dateFilter = date ? new Date(date as string) : undefined;
+        const issues = await storage.getStoreIssuesByDepartment(toDepartmentId as string, dateFilter);
+        return res.json(issues);
+      }
+      
+      if (!clientId) {
+        return res.status(400).json({ error: "clientId is required" });
+      }
+      
+      const dateFilter = date ? new Date(date as string) : undefined;
+      const issues = await storage.getStoreIssues(clientId as string, dateFilter);
+      res.json(issues);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/store-issues/:id", requireAuth, async (req, res) => {
+    try {
+      const issue = await storage.getStoreIssue(req.params.id);
+      if (!issue) {
+        return res.status(404).json({ error: "Store issue not found" });
+      }
+      res.json(issue);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/store-issues/:id/lines", requireAuth, async (req, res) => {
+    try {
+      const lines = await storage.getStoreIssueLines(req.params.id);
+      res.json(lines);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/store-issues", requireAuth, async (req, res) => {
+    try {
+      const { lines, ...issueData } = req.body;
+      
+      const data = insertStoreIssueSchema.parse({
+        ...issueData,
+        createdBy: req.session.userId!,
+      });
+      
+      const issue = await storage.createStoreIssue(data);
+      
+      if (lines && Array.isArray(lines) && lines.length > 0) {
+        const lineData = lines.map((line: any) => 
+          insertStoreIssueLineSchema.parse({
+            storeIssueId: issue.id,
+            itemId: line.itemId,
+            qtyIssued: line.qtyIssued,
+            costPriceSnapshot: line.costPriceSnapshot || "0.00",
+          })
+        );
+        await storage.createStoreIssueLinesBulk(lineData);
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Store Issue",
+        entity: "StoreIssue",
+        entityId: issue.id,
+        details: `Store issue created for ${issue.issueDate}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(issue);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/store-issues/:id", requireAuth, async (req, res) => {
+    try {
+      const { lines, ...updateData } = req.body;
+      
+      const issue = await storage.updateStoreIssue(req.params.id, updateData);
+      if (!issue) {
+        return res.status(404).json({ error: "Store issue not found" });
+      }
+      
+      if (lines && Array.isArray(lines)) {
+        await storage.deleteStoreIssueLines(req.params.id);
+        if (lines.length > 0) {
+          const lineData = lines.map((line: any) => 
+            insertStoreIssueLineSchema.parse({
+              storeIssueId: issue.id,
+              itemId: line.itemId,
+              qtyIssued: line.qtyIssued,
+              costPriceSnapshot: line.costPriceSnapshot || "0.00",
+            })
+          );
+          await storage.createStoreIssueLinesBulk(lineData);
+        }
+      }
+      
+      res.json(issue);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/store-issues/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      await storage.deleteStoreIssue(req.params.id);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Store Issue",
+        entity: "StoreIssue",
+        entityId: req.params.id,
+        details: `Store issue deleted`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get issued qty for a department/item on a specific date
+  app.get("/api/store-issues/issued-qty", requireAuth, async (req, res) => {
+    try {
+      const { departmentId, itemId, date } = req.query;
+      
+      if (!departmentId || !itemId || !date) {
+        return res.status(400).json({ error: "departmentId, itemId, and date are required" });
+      }
+      
+      const issuedQty = await storage.getIssuedQtyForDepartment(
+        departmentId as string,
+        itemId as string,
+        new Date(date as string)
+      );
+      
+      res.json({ issuedQty });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== STORE STOCK ==============
+  app.get("/api/store-stock", requireAuth, async (req, res) => {
+    try {
+      const { clientId, storeDepartmentId, date } = req.query;
+      
+      if (!clientId || !storeDepartmentId) {
+        return res.status(400).json({ error: "clientId and storeDepartmentId are required" });
+      }
+      
+      const dateFilter = date ? new Date(date as string) : undefined;
+      const stock = await storage.getStoreStock(
+        clientId as string,
+        storeDepartmentId as string,
+        dateFilter
+      );
+      res.json(stock);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/store-stock", requireAuth, async (req, res) => {
+    try {
+      const data = insertStoreStockSchema.parse({
+        ...req.body,
+        createdBy: req.session.userId!,
+      });
+      
+      const stock = await storage.upsertStoreStock(data);
+      res.json(stock);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/store-stock/:id", requireAuth, async (req, res) => {
+    try {
+      const stock = await storage.updateStoreStock(req.params.id, req.body);
+      if (!stock) {
+        return res.status(404).json({ error: "Store stock not found" });
+      }
+      res.json(stock);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
