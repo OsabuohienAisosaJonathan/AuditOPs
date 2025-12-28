@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save } from "lucide-react";
+import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useClientContext } from "@/lib/client-context";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -118,6 +119,53 @@ export default function InventoryLedger() {
   // Editable ledger state: { itemId: { opening, purchase, closing } }
   const [ledgerEdits, setLedgerEdits] = useState<Record<string, { opening?: string; purchase?: string; closing?: string }>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // Hidden categories state - keyed by SRD department ID
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+  const [hiddenCategoriesOpen, setHiddenCategoriesOpen] = useState(false);
+  
+  // Load hidden categories from localStorage when SRD changes
+  useEffect(() => {
+    if (selectedInvDept) {
+      const stored = localStorage.getItem(`hiddenCategories_${selectedInvDept}`);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setHiddenCategories(new Set(parsed));
+        } catch {
+          setHiddenCategories(new Set());
+        }
+      } else {
+        setHiddenCategories(new Set());
+      }
+    }
+  }, [selectedInvDept]);
+  
+  // Save hidden categories to localStorage
+  const saveHiddenCategories = (categories: Set<string>) => {
+    if (selectedInvDept) {
+      localStorage.setItem(`hiddenCategories_${selectedInvDept}`, JSON.stringify(Array.from(categories)));
+    }
+  };
+  
+  // Hide a category
+  const hideCategory = (category: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSet = new Set(hiddenCategories);
+    newSet.add(category);
+    setHiddenCategories(newSet);
+    saveHiddenCategories(newSet);
+    toast.success(`Category "${category}" hidden`);
+  };
+  
+  // Unhide a category
+  const unhideCategory = (category: string) => {
+    const newSet = new Set(hiddenCategories);
+    newSet.delete(category);
+    setHiddenCategories(newSet);
+    saveHiddenCategories(newSet);
+    toast.success(`Category "${category}" is now visible`);
+  };
 
   const selectedClientId = selectedClient?.id || clients[0]?.id;
 
@@ -612,6 +660,41 @@ export default function InventoryLedger() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            {hiddenCategories.size > 0 && (
+              <div className="px-4 py-2 border-b bg-muted/20">
+                <Popover open={hiddenCategoriesOpen} onOpenChange={setHiddenCategoriesOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2" data-testid="button-hidden-categories">
+                      <EyeOff className="h-4 w-4" />
+                      Hidden Categories ({hiddenCategories.size})
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64" align="start">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm">Hidden Categories</h4>
+                      <p className="text-xs text-muted-foreground">Click to unhide and show in the ledger</p>
+                      <div className="space-y-1 mt-2">
+                        {Array.from(hiddenCategories).map(cat => (
+                          <div key={cat} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted">
+                            <span className="text-sm">{cat}</span>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => unhideCategory(cat)}
+                              className="h-7 px-2"
+                              data-testid={`button-unhide-${cat}`}
+                            >
+                              <Eye className="h-3 w-3 mr-1" />
+                              Show
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -641,7 +724,9 @@ export default function InventoryLedger() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    mainStoreLedgerByCategory.map(([category, rows]) => {
+                    mainStoreLedgerByCategory
+                      .filter(([category]) => !hiddenCategories.has(category))
+                      .map(([category, rows]) => {
                       const isExpanded = expandedCategories.has(category);
                       return (
                         <React.Fragment key={`cat-${category}`}>
@@ -651,9 +736,21 @@ export default function InventoryLedger() {
                             data-testid={`category-header-${category}`}
                           >
                             <TableCell colSpan={11 + visibleDeptList.length} className="font-semibold text-sm py-2 sticky left-0 text-white">
-                              <div className="flex items-center gap-2">
-                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                {category}
+                              <div className="flex items-center justify-between w-full">
+                                <div className="flex items-center gap-2">
+                                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  {category}
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 text-white/70 hover:text-white hover:bg-white/10"
+                                  onClick={(e) => hideCategory(category, e)}
+                                  title="Hide this category"
+                                  data-testid={`button-hide-${category}`}
+                                >
+                                  <EyeOff className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -747,6 +844,41 @@ export default function InventoryLedger() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
+            {hiddenCategories.size > 0 && (
+              <div className="px-4 py-2 border-b bg-muted/20">
+                <Popover open={hiddenCategoriesOpen} onOpenChange={setHiddenCategoriesOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2" data-testid="button-hidden-categories-dept">
+                      <EyeOff className="h-4 w-4" />
+                      Hidden Categories ({hiddenCategories.size})
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64" align="start">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm">Hidden Categories</h4>
+                      <p className="text-xs text-muted-foreground">Click to unhide and show in the ledger</p>
+                      <div className="space-y-1 mt-2">
+                        {Array.from(hiddenCategories).map(cat => (
+                          <div key={cat} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted">
+                            <span className="text-sm">{cat}</span>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => unhideCategory(cat)}
+                              className="h-7 px-2"
+                              data-testid={`button-unhide-dept-${cat}`}
+                            >
+                              <Eye className="h-3 w-3 mr-1" />
+                              Show
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -769,7 +901,9 @@ export default function InventoryLedger() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        deptStoreLedgerByCategory.map(([category, rows]) => {
+                        deptStoreLedgerByCategory
+                          .filter(([category]) => !hiddenCategories.has(category))
+                          .map(([category, rows]) => {
                           const isExpanded = expandedCategories.has(category);
                           return (
                             <React.Fragment key={`cat-${category}`}>
@@ -779,9 +913,21 @@ export default function InventoryLedger() {
                                 data-testid={`category-header-dept-${category}`}
                               >
                                 <TableCell colSpan={8} className="font-semibold text-sm py-2 text-white">
-                                  <div className="flex items-center gap-2">
-                                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                    {category}
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-2">
+                                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                      {category}
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 text-white/70 hover:text-white hover:bg-white/10"
+                                      onClick={(e) => hideCategory(category, e)}
+                                      title="Hide this category"
+                                      data-testid={`button-hide-dept-${category}`}
+                                    >
+                                      <EyeOff className="h-3.5 w-3.5" />
+                                    </Button>
                                   </div>
                                 </TableCell>
                               </TableRow>
