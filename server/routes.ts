@@ -1794,7 +1794,7 @@ export async function registerRoutes(
 
   app.patch("/api/items/:id", requireAuth, async (req, res) => {
     try {
-      const { purchaseQty, ...updateData } = req.body;
+      const { purchaseQty, purchaseDate, ...updateData } = req.body;
       
       const existingItem = await storage.getItem(req.params.id);
       if (!existingItem) {
@@ -1807,8 +1807,48 @@ export async function registerRoutes(
       }
       
       if (purchaseQty && parseFloat(purchaseQty) > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        // Use provided date or default to today
+        let targetDate: Date;
+        if (purchaseDate) {
+          // Parse date in UTC-safe way to preserve the exact date the user selected
+          // purchaseDate comes as "YYYY-MM-DD" from the HTML date input
+          const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(purchaseDate);
+          if (!dateMatch) {
+            return res.status(400).json({ error: "Invalid date format. Expected YYYY-MM-DD" });
+          }
+          const [, year, month, day] = dateMatch;
+          const yearNum = parseInt(year);
+          const monthNum = parseInt(month);
+          const dayNum = parseInt(day);
+          
+          // Create date at midnight UTC to preserve the exact calendar date
+          targetDate = new Date(Date.UTC(yearNum, monthNum - 1, dayNum));
+          
+          // Validate: check if date is valid
+          if (isNaN(targetDate.getTime())) {
+            return res.status(400).json({ error: "Invalid purchase date" });
+          }
+          
+          // Validate: ensure date components match (Date.UTC normalizes invalid dates)
+          if (
+            targetDate.getUTCFullYear() !== yearNum ||
+            targetDate.getUTCMonth() !== monthNum - 1 ||
+            targetDate.getUTCDate() !== dayNum
+          ) {
+            return res.status(400).json({ error: "Invalid date - day/month out of range" });
+          }
+          
+          // Validate: don't allow future dates (compare in UTC)
+          const today = new Date();
+          const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+          if (targetDate > todayUTC) {
+            return res.status(400).json({ error: "Purchase date cannot be in the future" });
+          }
+        } else {
+          // Default to today at midnight UTC
+          const today = new Date();
+          targetDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+        }
         
         console.log(`[Purchase Capture] Client: ${item.clientId}, Item: ${item.name}, Qty: ${purchaseQty}`);
         
@@ -1847,15 +1887,16 @@ export async function registerRoutes(
             item.id,
             parseFloat(purchaseQty),
             item.costPrice || "0.00",
-            today
+            targetDate
           );
           
+          const dateStr = targetDate.toISOString().split('T')[0];
           await storage.createAuditLog({
             userId: req.session.userId!,
             action: "Item Purchase Captured",
             entity: "Item",
             entityId: item.id,
-            details: `Purchase of ${purchaseQty} ${item.unit} posted to Main Store SRD`,
+            details: `Purchase of ${purchaseQty} ${item.unit} posted to Main Store SRD for ${dateStr}`,
             ipAddress: req.ip || "Unknown",
           });
           

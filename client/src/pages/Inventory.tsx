@@ -93,7 +93,7 @@ export default function Inventory() {
   });
 
   const updateItemMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Item> & { purchaseQty?: string } }) => itemsApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<Item> & { purchaseQty?: string; purchaseDate?: string } }) => itemsApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
       setEditItemOpen(false);
@@ -1284,6 +1284,7 @@ export default function Inventory() {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const purchaseQty = formData.get("purchaseQty") as string;
+              const purchaseDate = formData.get("purchaseDate") as string;
               updateItemMutation.mutate({
                 id: selectedItem.id,
                 data: {
@@ -1295,6 +1296,7 @@ export default function Inventory() {
                   sellingPrice: formData.get("sellingPrice") as string,
                   reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
                   purchaseQty: purchaseQty && parseFloat(purchaseQty) > 0 ? purchaseQty : undefined,
+                  purchaseDate: purchaseQty && parseFloat(purchaseQty) > 0 && purchaseDate ? purchaseDate : undefined,
                 },
               });
             }}>
@@ -1321,9 +1323,16 @@ export default function Inventory() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-purchaseQty">Purchase Quantity</Label>
-                  <Input id="edit-purchaseQty" name="purchaseQty" type="number" step="0.01" min="0" defaultValue="" placeholder="Enter qty to add to stock" data-testid="input-edit-item-purchase-qty" />
-                  <p className="text-xs text-muted-foreground">Quantity added to Main Store SRD</p>
+                  <Label>Purchase Quantity</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Input id="edit-purchaseQty" name="purchaseQty" type="number" step="0.01" min="0" defaultValue="" placeholder="Qty to add" data-testid="input-edit-item-purchase-qty" />
+                    </div>
+                    <div>
+                      <Input id="edit-purchaseDate" name="purchaseDate" type="date" defaultValue={format(new Date(), "yyyy-MM-dd")} max={format(new Date(), "yyyy-MM-dd")} data-testid="input-edit-item-purchase-date" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Quantity added to Main Store SRD on the selected date</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
