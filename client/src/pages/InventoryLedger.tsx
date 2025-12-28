@@ -353,44 +353,72 @@ export default function InventoryLedger() {
 
   // Save ledger edits mutation
   const saveLedgerMutation = useMutation({
-    mutationFn: async (edits: { itemId: string; opening?: string; purchase?: string; closing?: string }[]) => {
+    mutationFn: async (edits: { itemId: string; opening?: string; purchase?: string; added?: string; closing?: string; isMainStore?: boolean }[]) => {
       const promises = edits.map(async (edit) => {
         const item = items?.find(i => i.id === edit.itemId);
         if (!item) return null;
         
-        // Calculate closing from opening + purchase - issued
         const opening = parseFloat(edit.opening || "0");
-        const purchase = parseFloat(edit.purchase || "0");
-        const total = opening + purchase;
+        const isMainStore = edit.isMainStore !== false;
         
-        // Get issued quantity from existing breakdown
-        let totalIssued = 0;
-        departmentStores.forEach(dept => {
-          totalIssued += issueBreakdown[edit.itemId]?.[dept.id] || 0;
-        });
-        
-        const calculatedClosing = total - totalIssued;
-        const physicalClosing = edit.closing ? parseFloat(edit.closing) : null;
-        
-        const res = await fetch(`/api/clients/${selectedClientId}/store-stock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            storeDepartmentId: selectedInvDept,
-            itemId: edit.itemId,
-            date: new Date(selectedDate).toISOString(),
-            openingQty: opening.toString(),
-            addedQty: purchase.toString(),
-            closingQty: calculatedClosing.toString(),
-            physicalClosingQty: physicalClosing?.toString() || null,
-            costPriceSnapshot: item.costPrice || "0.00",
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed to save ledger");
+        if (isMainStore) {
+          // Main Store: purchase is addedQty, closing = total - issued
+          const purchase = parseFloat(edit.purchase || "0");
+          const total = opening + purchase;
+          
+          // Get issued quantity from existing breakdown
+          let totalIssued = 0;
+          departmentStores.forEach(dept => {
+            totalIssued += issueBreakdown[edit.itemId]?.[dept.id] || 0;
+          });
+          
+          const calculatedClosing = total - totalIssued;
+          
+          const res = await fetch(`/api/clients/${selectedClientId}/store-stock`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              storeDepartmentId: selectedInvDept,
+              itemId: edit.itemId,
+              date: new Date(selectedDate).toISOString(),
+              openingQty: opening.toString(),
+              addedQty: purchase.toString(),
+              closingQty: calculatedClosing.toString(),
+              costPriceSnapshot: item.costPrice || "0.00",
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || "Failed to save ledger");
+          }
+          return res.json();
+        } else {
+          // Department Store: only save opening, preserve added from store issues
+          const added = parseFloat(edit.added || "0");
+          const total = opening + added;
+          const physicalClosing = edit.closing ? parseFloat(edit.closing) : null;
+          const closingQty = physicalClosing !== null ? physicalClosing : total;
+          
+          const res = await fetch(`/api/clients/${selectedClientId}/store-stock`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              storeDepartmentId: selectedInvDept,
+              itemId: edit.itemId,
+              date: new Date(selectedDate).toISOString(),
+              openingQty: opening.toString(),
+              addedQty: added.toString(),
+              closingQty: closingQty.toString(),
+              physicalClosingQty: physicalClosing?.toString() || null,
+              costPriceSnapshot: item.costPrice || "0.00",
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || "Failed to save ledger");
+          }
+          return res.json();
         }
-        return res.json();
       });
       return Promise.all(promises);
     },
@@ -507,22 +535,31 @@ export default function InventoryLedger() {
         ? editedOpening 
         : getOpeningQty(item.id, stock).toString();
       
-      const purchase = editedPurchase !== undefined 
-        ? editedPurchase 
-        : (stock?.addedQty || "0");
-      
-      // For Department Store: closing is the physical count entered by user
-      // For Main Store: closing is calculated as Total - Issues
-      const closing = isMainStore 
-        ? undefined  // Main store closing is calculated server-side
-        : editedClosing || (stock?.physicalClosingQty || undefined);
-      
-      return {
-        itemId: item.id,
-        opening,
-        purchase,
-        closing,
-      };
+      if (isMainStore) {
+        // Main Store: purchase is what we edit
+        const purchase = editedPurchase !== undefined 
+          ? editedPurchase 
+          : (stock?.addedQty || "0");
+        
+        return {
+          itemId: item.id,
+          opening,
+          purchase,
+          isMainStore: true,
+        };
+      } else {
+        // Department Store: added comes from store issues (don't overwrite), only save opening
+        const added = stock?.addedQty || "0";
+        const closing = editedClosing || (stock?.physicalClosingQty || undefined);
+        
+        return {
+          itemId: item.id,
+          opening,
+          added,
+          closing,
+          isMainStore: false,
+        };
+      }
     });
     
     if (allItemsToSave.length > 0) {
@@ -1113,13 +1150,26 @@ export default function InventoryLedger() {
         /* Department Store Ledger */
         <Card>
           <CardHeader className="px-6 py-4 border-b">
-            <CardTitle className="flex items-center gap-2">
-              <ChefHat className="h-5 w-5" />
-              {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
-            </CardTitle>
-            <CardDescription>
-              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Added auto-filled from Store Issues • Closing from Stock Count
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <ChefHat className="h-5 w-5" />
+                  {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
+                </CardTitle>
+                <CardDescription>
+                  Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Edit Opening, Added auto-filled • Closing from Stock Count
+                </CardDescription>
+              </div>
+              <Button 
+                onClick={handleSaveLedger} 
+                disabled={!hasUnsavedChanges || saveLedgerMutation.isPending}
+                className="gap-2"
+                data-testid="button-save-dept-ledger"
+              >
+                {saveLedgerMutation.isPending ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                {saveLedgerMutation.isPending ? "Saving..." : "Save Ledger"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {hiddenCategories.size > 0 && (
@@ -1185,14 +1235,23 @@ export default function InventoryLedger() {
                           .filter(([category]) => !hiddenCategories.has(category))
                           .map(([category, rows]) => {
                           const isExpanded = expandedCategories.has(category);
-                          const catTotals = rows.reduce((acc, row) => ({
-                            opening: acc.opening + row.opening,
-                            added: acc.added + row.added,
-                            total: acc.total + row.total,
-                            sold: acc.sold + (row.sold || 0),
-                            closing: acc.closing + (row.closing || 0),
-                            amountSold: acc.amountSold + (row.amountSold || 0),
-                          }), { opening: 0, added: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
+                          const catTotals = rows.reduce((acc, row) => {
+                            const editedOpening = ledgerEdits[row.itemId]?.opening;
+                            const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
+                            const displayTotal = displayOpening + row.added;
+                            const displayClosing = row.closing !== null ? row.closing : null;
+                            const displaySold = displayClosing !== null ? displayTotal - displayClosing : null;
+                            const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
+                            
+                            return {
+                              opening: acc.opening + displayOpening,
+                              added: acc.added + row.added,
+                              total: acc.total + displayTotal,
+                              sold: acc.sold + (displaySold || 0),
+                              closing: acc.closing + (displayClosing || 0),
+                              amountSold: acc.amountSold + (displayAmountSold || 0),
+                            };
+                          }, { opening: 0, added: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
                           return (
                             <React.Fragment key={`cat-${category}`}>
                               <TableRow 
@@ -1219,16 +1278,35 @@ export default function InventoryLedger() {
                                   </div>
                                 </TableCell>
                               </TableRow>
-                              {isExpanded && rows.map((row) => (
+                              {isExpanded && rows.map((row) => {
+                                const editedOpening = ledgerEdits[row.itemId]?.opening;
+                                const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
+                                const displayTotal = displayOpening + row.added;
+                                const displayClosing = row.closing;
+                                const displaySold = displayClosing !== null ? displayTotal - displayClosing : null;
+                                const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
+                                
+                                return (
                                 <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
                                   <TableCell className="text-center">{row.sn}</TableCell>
                                   <TableCell className="font-medium">{row.itemName}</TableCell>
                                   <TableCell className="text-muted-foreground">{row.unit}</TableCell>
-                                  <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
+                                  <TableCell className="p-1">
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      className={cn("h-8 w-20 text-right", isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed")}
+                                      value={editedOpening !== undefined ? editedOpening : row.opening.toString()}
+                                      onChange={(e) => handleCellEdit(row.itemId, "opening", e.target.value)}
+                                      disabled={isPastDate && !isSuperAdmin}
+                                      title={isPastDate && !isSuperAdmin ? "Only Super Admin can edit past day records" : undefined}
+                                      data-testid={`input-dept-opening-${row.itemId}`}
+                                    />
+                                  </TableCell>
                                   <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
-                                  <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right bg-muted/30 font-medium">{displayTotal.toFixed(2)}</TableCell>
                                   <TableCell className="text-right">
-                                    {row.sold !== null ? row.sold.toFixed(2) : <span className="text-muted-foreground">—</span>}
+                                    {displaySold !== null ? displaySold.toFixed(2) : <span className="text-muted-foreground">—</span>}
                                   </TableCell>
                                   <TableCell className="text-right bg-muted/30">
                                     {row.awaitingCount ? (
@@ -1237,15 +1315,15 @@ export default function InventoryLedger() {
                                         Awaiting Count
                                       </span>
                                     ) : (
-                                      <span className="font-medium">{row.closing?.toFixed(2)}</span>
+                                      <span className="font-medium">{displayClosing?.toFixed(2)}</span>
                                     )}
                                   </TableCell>
                                   <TableCell className="text-right">{row.sellingPrice.toFixed(2)}</TableCell>
                                   <TableCell className="text-right bg-green-50 font-medium text-green-700">
-                                    {row.amountSold !== null ? row.amountSold.toFixed(2) : <span className="text-muted-foreground">—</span>}
+                                    {displayAmountSold !== null ? displayAmountSold.toFixed(2) : <span className="text-muted-foreground">—</span>}
                                   </TableCell>
                                 </TableRow>
-                              ))}
+                              );})}
                               {isExpanded && (
                                 <TableRow className="bg-gray-100 font-semibold border-t-2 border-gray-300">
                                   <TableCell className="text-center">—</TableCell>
