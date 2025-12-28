@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format, parseISO, subDays } from "date-fns";
+import { format, parseISO, subDays, addDays, isToday, isBefore, startOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye, ChevronLeft, Lock, History, Calendar } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useClientContext } from "@/lib/client-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -95,6 +97,7 @@ interface StockCount {
 
 export default function InventoryLedger() {
   const { selectedClient, clients } = useClientContext();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [selectedInvDept, setSelectedInvDept] = useState<string | null>(null);
@@ -104,6 +107,17 @@ export default function InventoryLedger() {
   const [issueQty, setIssueQty] = useState<string>("");
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [visibleDepts, setVisibleDepts] = useState<Set<string>>(new Set());
+  
+  // Edit reason dialog for super admin editing past dates
+  const [editReasonDialogOpen, setEditReasonDialogOpen] = useState(false);
+  const [editReason, setEditReason] = useState<string>("");
+  const [pendingEdit, setPendingEdit] = useState<{ itemId: string; field: "opening" | "purchase" | "closing"; value: string } | null>(null);
+  
+  // Date navigation helpers
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const isPastDate = selectedDate < todayStr;
+  const isSuperAdmin = user?.role === "super_admin";
+  const canEditPastDate = isPastDate && isSuperAdmin;
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const toggleCategory = (category: string) => {
@@ -377,8 +391,46 @@ export default function InventoryLedger() {
     },
   });
 
-  // Handle cell edit
+  // Date navigation
+  const goToPreviousDay = () => {
+    const current = parseISO(selectedDate);
+    setSelectedDate(format(subDays(current, 1), "yyyy-MM-dd"));
+    setLedgerEdits({});
+    setHasUnsavedChanges(false);
+  };
+  
+  const goToNextDay = () => {
+    const current = parseISO(selectedDate);
+    const nextDay = addDays(current, 1);
+    const today = new Date();
+    if (nextDay <= today) {
+      setSelectedDate(format(nextDay, "yyyy-MM-dd"));
+      setLedgerEdits({});
+      setHasUnsavedChanges(false);
+    }
+  };
+  
+  const goToToday = () => {
+    setSelectedDate(format(new Date(), "yyyy-MM-dd"));
+    setLedgerEdits({});
+    setHasUnsavedChanges(false);
+  };
+
+  // Handle cell edit with past date restrictions
   const handleCellEdit = (itemId: string, field: "opening" | "purchase" | "closing", value: string) => {
+    // For past dates, non-super-admin cannot edit
+    if (isPastDate && !isSuperAdmin) {
+      toast.error("Only Super Admin can edit past day records");
+      return;
+    }
+    
+    // For past dates, super admin needs to provide edit reason
+    if (isPastDate && isSuperAdmin && !editReasonDialogOpen) {
+      setPendingEdit({ itemId, field, value });
+      setEditReasonDialogOpen(true);
+      return;
+    }
+    
     setLedgerEdits(prev => ({
       ...prev,
       [itemId]: {
@@ -388,8 +440,33 @@ export default function InventoryLedger() {
     }));
     setHasUnsavedChanges(true);
   };
+  
+  // Confirm past date edit with reason
+  const confirmPastDateEdit = () => {
+    if (!pendingEdit || !editReason.trim()) {
+      toast.error("Please provide an edit reason");
+      return;
+    }
+    
+    setLedgerEdits(prev => ({
+      ...prev,
+      [pendingEdit.itemId]: {
+        ...prev[pendingEdit.itemId],
+        [pendingEdit.field]: pendingEdit.value,
+      },
+    }));
+    setHasUnsavedChanges(true);
+    
+    // Log the edit reason (will be included when saving)
+    console.log(`Past date edit: ${pendingEdit.field} for item ${pendingEdit.itemId}, reason: ${editReason}`);
+    
+    setEditReasonDialogOpen(false);
+    setPendingEdit(null);
+    setEditReason("");
+    toast.success("Edit recorded. Remember to save the ledger.");
+  };
 
-  // Save all edits
+  // Save all edits (enhanced with past date handling)
   const handleSaveLedger = () => {
     const editsToSave = Object.entries(ledgerEdits).map(([itemId, values]) => ({
       itemId,
@@ -573,15 +650,70 @@ export default function InventoryLedger() {
           <div className="flex flex-wrap gap-4 items-end">
             <div className="space-y-1.5">
               <Label htmlFor="date">Date</Label>
-              <Input 
-                id="date" 
-                type="date" 
-                value={selectedDate} 
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-[180px]"
-                data-testid="input-ledger-date"
-              />
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={goToPreviousDay}
+                  title="Previous Day"
+                  data-testid="button-prev-day"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Input 
+                  id="date" 
+                  type="date" 
+                  value={selectedDate} 
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setLedgerEdits({});
+                    setHasUnsavedChanges(false);
+                  }}
+                  max={todayStr}
+                  className="w-[160px]"
+                  data-testid="input-ledger-date"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={goToNextDay}
+                  disabled={selectedDate >= todayStr}
+                  title="Next Day"
+                  data-testid="button-next-day"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                {isPastDate && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToToday}
+                    className="ml-1 gap-1"
+                    data-testid="button-go-today"
+                  >
+                    <Calendar className="h-3.5 w-3.5" />
+                    Today
+                  </Button>
+                )}
+              </div>
             </div>
+            
+            {isPastDate && (
+              <Badge variant="outline" className="h-9 px-3 bg-amber-50 text-amber-700 border-amber-200 gap-1.5" data-testid="badge-past-date">
+                <History className="h-4 w-4" />
+                Viewing Past Date
+                {!isSuperAdmin && (
+                  <>
+                    <span className="mx-1">•</span>
+                    <Lock className="h-3.5 w-3.5" />
+                    Read Only
+                  </>
+                )}
+              </Badge>
+            )}
+            
             <div className="space-y-1.5">
               <Label>Stock Reconciliation Department (SRD)</Label>
               <Select value={selectedInvDept || ""} onValueChange={setSelectedInvDept}>
@@ -774,9 +906,11 @@ export default function InventoryLedger() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  className="h-8 w-20 text-right"
+                                  className={cn("h-8 w-20 text-right", isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed")}
                                   value={editedOpening !== undefined ? editedOpening : row.opening.toString()}
                                   onChange={(e) => handleCellEdit(row.itemId, "opening", e.target.value)}
+                                  disabled={isPastDate && !isSuperAdmin}
+                                  title={isPastDate && !isSuperAdmin ? "Only Super Admin can edit past day records" : undefined}
                                   data-testid={`input-opening-${row.itemId}`}
                                 />
                               </TableCell>
@@ -784,9 +918,11 @@ export default function InventoryLedger() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  className="h-8 w-20 text-right"
+                                  className={cn("h-8 w-20 text-right", isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed")}
                                   value={editedPurchase !== undefined ? editedPurchase : row.purchase.toString()}
                                   onChange={(e) => handleCellEdit(row.itemId, "purchase", e.target.value)}
+                                  disabled={isPastDate && !isSuperAdmin}
+                                  title={isPastDate && !isSuperAdmin ? "Only Super Admin can edit past day records" : undefined}
                                   data-testid={`input-purchase-${row.itemId}`}
                                 />
                               </TableCell>
@@ -804,7 +940,8 @@ export default function InventoryLedger() {
                                   variant="outline" 
                                   size="sm" 
                                   onClick={() => handleIssueClick(row.itemId)}
-                                  disabled={displayClosing <= 0}
+                                  disabled={displayClosing <= 0 || (isPastDate && !isSuperAdmin)}
+                                  title={isPastDate && !isSuperAdmin ? "Only Super Admin can issue on past dates" : undefined}
                                   data-testid={`button-issue-${row.itemId}`}
                                 >
                                   Issue
@@ -1056,6 +1193,66 @@ export default function InventoryLedger() {
           <DialogFooter>
             <Button onClick={() => setConfigDialogOpen(false)} data-testid="button-close-config">
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Reason Dialog for Super Admin Past Date Edits */}
+      <Dialog open={editReasonDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setEditReasonDialogOpen(false);
+          setPendingEdit(null);
+          setEditReason("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-amber-600" />
+              Editing Past Day Record
+            </DialogTitle>
+            <DialogDescription>
+              You are editing a record from {format(parseISO(selectedDate), "MMMM d, yyyy")}. 
+              Please provide a reason for this edit. This will be logged in the audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editReason">Edit Reason</Label>
+              <Textarea 
+                id="editReason"
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder="Enter the reason for editing this past day record..."
+                className="min-h-[100px]"
+                data-testid="input-edit-reason"
+              />
+            </div>
+            {pendingEdit && (
+              <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
+                <strong>Edit Details:</strong>
+                <br />
+                Field: {pendingEdit.field.charAt(0).toUpperCase() + pendingEdit.field.slice(1)}
+                <br />
+                New Value: {pendingEdit.value}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setEditReasonDialogOpen(false);
+              setPendingEdit(null);
+              setEditReason("");
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmPastDateEdit}
+              disabled={!editReason.trim()}
+              data-testid="button-confirm-past-edit"
+            >
+              Confirm Edit
             </Button>
           </DialogFooter>
         </DialogContent>

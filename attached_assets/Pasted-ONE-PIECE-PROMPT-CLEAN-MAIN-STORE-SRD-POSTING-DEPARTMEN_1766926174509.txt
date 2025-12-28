@@ -1,0 +1,106 @@
+ONE-PIECE PROMPT (CLEAN) — MAIN STORE (SRD) POSTING + DEPARTMENT ADDED + DAY-TO-DAY ROLL FORWARD + PREVIOUS DAY VIEW + CLIENT-SCOPED RULES
+
+You are improving Miemploya AuditOps → Inventory Ledger. Make the Main Store (SRD) ledger fully functional for issuing/requisitioning items to departments using Dep1–Dep10, and ensure the data rolls forward day-to-day and is always scoped by client.
+
+1) CLIENT-SCOPED RULES (VERY IMPORTANT)
+
+Every SRD (Inventory Department) must be saved with clientId.
+
+SRD names (e.g., “Main Store 1”) can repeat across different clients, but must be unique within the same client.
+
+OK: Client A “Main Store 1” and Client B “Main Store 1”
+
+Not OK: Client A has two “Main Store 1”
+
+All dropdowns (SRD selector, Dep1–Dep10 mapping) must load only records belonging to the selected clientId.
+
+Ledger records must never mix between clients.
+
+2) STORE ISSUE / REQUISITION POSTING (DEP1–DEP10)
+
+On Inventory Ledger → Main Store (SRD) (like the screenshot):
+
+Dep1–Dep10 are mapped to destination SRDs (departments) for the same client.
+
+Keep the “Configure Columns” button:
+
+Let user assign which SRD goes to Dep1…Dep10
+
+Allow hide/unhide unused Dep columns
+
+Add full posting logic:
+
+When user clicks Issue on an item row, open a small modal:
+a) Select destination (Dep1–Dep10 / mapped SRD)
+b) Enter quantity to issue
+c) Save
+
+On save:
+
+The issued quantity must appear immediately in the correct Dep column for that item + date.
+
+Store Closing must reduce accordingly (cannot issue more than available “Total”).
+
+Create a Store Issue transaction record: fromSRD(Main Store) → toSRD(Department), itemId, qty, date, userId.
+
+3) AUTO “ADDED” IN DEPARTMENT LEDGER
+
+For any SRD that is a department (e.g., Bar, Kitchen, Grill Unit):
+
+The department ledger “Added” column must automatically show the total quantity issued to it from Main Store for that date and item.
+
+“Added” must be read-only in department ledger (because it comes from store issues).
+
+Department Closing comes from Stock Count, and Sold auto-calculates after Closing is available.
+
+4) DAY-TO-DAY ROLL FORWARD (CLOSING → OPENING)
+
+For every SRD (Main Store and departments):
+
+Closing stock on date D must automatically become Opening stock on date D+1 for the same SRD + item.
+
+If no previous day exists, Opening defaults to 0.
+
+This must work even when user navigates dates from the same page.
+
+5) PREVIOUS DAY VIEW + NAVIGATION
+
+On Inventory Ledger page:
+
+Add simple navigation near the date:
+
+Previous Day and Next Day buttons (or arrows)
+
+When a user loads a previous day, show all balances and figures for that day:
+
+Opening, Purchase, Total, Dep issues, Closing, Cost, Value
+
+Previous day data must be pulled from DB and displayed clearly.
+
+6) PERMISSIONS (PAST DAYS LOCKED)
+
+Only Super Admin can edit any record for a previous date.
+
+Non-super admin can:
+
+View previous day ledger
+
+Export/Print
+
+But cannot edit Opening, Purchase, Dep issues, or Closing
+
+If Super Admin edits a past day, require a short “Edit reason” note and log it in Audit Trail.
+
+7) SAVE + REFRESH RELIABILITY
+
+“Save Ledger” must persist all changes to DB.
+
+Refreshing the page must show the same values.
+
+All calculations must stay consistent:
+
+Total = Opening + Purchase
+
+Closing = Total − sum(Dep1..Dep10)
+
+Value = Cost × Closing
