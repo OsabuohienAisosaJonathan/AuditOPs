@@ -11,9 +11,12 @@ import {
   insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
   insertPaymentDeclarationSchema, insertStoreIssueSchema, insertStoreIssueLineSchema, insertStoreStockSchema,
-  insertStoreNameSchema, insertInventoryDepartmentSchema, INVENTORY_TYPES,
+  insertStoreNameSchema, insertInventoryDepartmentSchema, insertGoodsReceivedNoteSchema, INVENTORY_TYPES,
   type UserRole 
 } from "@shared/schema";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { randomBytes } from "crypto";
 
 declare module "express-session" {
@@ -3164,6 +3167,188 @@ export async function registerRoutes(
       res.status(400).json({ error: error.message });
     }
   });
+
+  // ============== GOODS RECEIVED NOTES (GRN) ==============
+  const grnUploadsDir = path.join(process.cwd(), "uploads", "grn");
+  if (!fs.existsSync(grnUploadsDir)) {
+    fs.mkdirSync(grnUploadsDir, { recursive: true });
+  }
+
+  const grnUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => cb(null, grnUploadsDir),
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        cb(null, uniqueSuffix + "-" + file.originalname);
+      }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "application/pdf"];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error("Invalid file type. Only JPEG, PNG, GIF, and PDF are allowed."));
+      }
+    }
+  });
+
+  app.get("/api/grn", requireAuth, async (req, res) => {
+    try {
+      const { clientId, date } = req.query;
+      if (!clientId) {
+        return res.status(400).json({ error: "clientId is required" });
+      }
+      const grns = await storage.getGoodsReceivedNotes(
+        clientId as string, 
+        date ? new Date(date as string) : undefined
+      );
+      res.json(grns);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/grn/daily-total", requireAuth, async (req, res) => {
+    try {
+      const { clientId, date } = req.query;
+      if (!clientId || !date) {
+        return res.status(400).json({ error: "clientId and date are required" });
+      }
+      const total = await storage.getDailyGRNTotal(clientId as string, new Date(date as string));
+      res.json({ total });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/grn/:id", requireAuth, async (req, res) => {
+    try {
+      const grn = await storage.getGoodsReceivedNote(req.params.id);
+      if (!grn) {
+        return res.status(404).json({ error: "GRN not found" });
+      }
+      res.json(grn);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/grn", requireAuth, grnUpload.single("evidence"), async (req, res) => {
+    try {
+      const file = req.file;
+      const data = insertGoodsReceivedNoteSchema.parse({
+        clientId: req.body.clientId,
+        supplierId: req.body.supplierId || null,
+        supplierName: req.body.supplierName,
+        date: new Date(req.body.date),
+        invoiceRef: req.body.invoiceRef,
+        amount: req.body.amount,
+        status: req.body.status || "pending",
+        evidenceUrl: file ? `/uploads/grn/${file.filename}` : null,
+        evidenceFileName: file ? file.originalname : null,
+        createdBy: req.session.userId!,
+      });
+
+      const grn = await storage.createGoodsReceivedNote(data);
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created GRN",
+        entity: "GoodsReceivedNote",
+        entityId: grn.id,
+        details: `Invoice: ${grn.invoiceRef}, Amount: ${grn.amount}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(grn);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/grn/:id", requireAuth, grnUpload.single("evidence"), async (req, res) => {
+    try {
+      const existing = await storage.getGoodsReceivedNote(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "GRN not found" });
+      }
+
+      const file = req.file;
+      const updateData: any = {
+        supplierId: req.body.supplierId || null,
+        supplierName: req.body.supplierName,
+        date: new Date(req.body.date),
+        invoiceRef: req.body.invoiceRef,
+        amount: req.body.amount,
+        status: req.body.status,
+      };
+
+      if (file) {
+        updateData.evidenceUrl = `/uploads/grn/${file.filename}`;
+        updateData.evidenceFileName = file.originalname;
+        if (existing.evidenceUrl) {
+          const oldPath = path.join(process.cwd(), existing.evidenceUrl);
+          if (fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
+          }
+        }
+      }
+
+      const grn = await storage.updateGoodsReceivedNote(req.params.id, updateData);
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Updated GRN",
+        entity: "GoodsReceivedNote",
+        entityId: req.params.id,
+        details: `Invoice: ${grn?.invoiceRef}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(grn);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/grn/:id", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const grn = await storage.getGoodsReceivedNote(req.params.id);
+      if (!grn) {
+        return res.status(404).json({ error: "GRN not found" });
+      }
+
+      if (grn.evidenceUrl) {
+        const filePath = path.join(process.cwd(), grn.evidenceUrl);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+
+      await storage.deleteGoodsReceivedNote(req.params.id);
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted GRN",
+        entity: "GoodsReceivedNote",
+        entityId: req.params.id,
+        details: `Invoice: ${grn.invoiceRef}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.use("/uploads", (req, res, next) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    next();
+  }, require("express").static(path.join(process.cwd(), "uploads")));
 
   // ============== REPORTS ==============
   app.get("/api/reports/generate", requireAuth, async (req, res) => {
