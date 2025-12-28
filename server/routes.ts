@@ -1807,19 +1807,17 @@ export async function registerRoutes(
       }
       
       if (purchaseQty && parseFloat(purchaseQty) > 0) {
-        // Find departments where name contains "Main Store" or "Warehouse" OR inventoryType is MAIN_STORE/WAREHOUSE
-        const allDepts = await storage.getInventoryDepartments(item.clientId);
+        // Find inventory departments
+        const invDepts = await storage.getInventoryDepartments(item.clientId);
         const storeNamesList = await storage.getStoreNames();
         const storeNameMap = new Map(storeNamesList.map(s => [s.id, s.name]));
 
-        // Get the client-level departments (the "SRD" departments the user likely refers to)
+        // Get actual client departments (to find IDs for store_stock)
         const clientDepts = await storage.getDepartments(item.clientId);
-        const clientDeptMap = new Map(clientDepts.map(d => [d.id, d]));
+        const clientDeptNameMap = new Map(clientDepts.map(d => [d.name.toLowerCase(), d.id]));
 
-        const qualifyingDepts = allDepts.filter(d => {
+        const qualifyingDepts = invDepts.filter(d => {
           const storeName = storeNameMap.get(d.storeNameId)?.toLowerCase() || "";
-          // Check if this inventory department links to a department named "Main Store" or "Warehouse"
-          // In this schema, inventory_departments link to store_names, which might be linked to departments
           return (
             d.inventoryType === "MAIN_STORE" || 
             d.inventoryType === "WAREHOUSE" ||
@@ -1831,15 +1829,31 @@ export async function registerRoutes(
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        for (const dept of qualifyingDepts) {
-          await storage.addPurchaseToStoreStock(
-            item.clientId,
-            dept.id,
-            item.id,
-            parseFloat(purchaseQty),
-            item.costPrice || "0.00",
-            today
-          );
+        for (const invDept of qualifyingDepts) {
+          const storeName = storeNameMap.get(invDept.storeNameId);
+          // Try to find the corresponding 'SRD' department ID
+          let targetDeptId = clientDeptNameMap.get(storeName?.toLowerCase() || "");
+          
+          // Fallback logic if names don't match exactly
+          if (!targetDeptId && storeName?.toLowerCase().includes("main store")) {
+            targetDeptId = clientDeptNameMap.get("main store");
+          }
+          if (!targetDeptId && storeName?.toLowerCase().includes("warehouse")) {
+            targetDeptId = clientDeptNameMap.get("warehouse");
+          }
+
+          if (targetDeptId) {
+            await storage.addPurchaseToStoreStock(
+              item.clientId,
+              targetDeptId, // This must be a valid department ID
+              item.id,
+              parseFloat(purchaseQty),
+              item.costPrice || "0.00",
+              today
+            );
+          } else {
+            console.error(`[Purchase Capture] Could not find department ID for store name: ${storeName}`);
+          }
         }
         
         if (qualifyingDepts.length > 0) {
