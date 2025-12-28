@@ -93,15 +93,9 @@ export default function AuditWorkspace() {
     enabled: !!clientId,
   });
 
-  const { data: salesSummary } = useQuery({
-    queryKey: ["sales-summary", clientId, dateStr],
-    queryFn: () => salesEntriesApi.getSummary({ clientId: clientId!, date: dateStr }),
-    enabled: !!clientId,
-  });
-
-  const { data: purchases = [] } = useQuery({
-    queryKey: ["purchases", clientId, departmentId],
-    queryFn: () => purchasesApi.getAll(clientId || undefined, departmentId || undefined),
+  const { data: grns = [] } = useQuery({
+    queryKey: ["grn", clientId, dateStr],
+    queryFn: () => clientId ? grnApi.getByClient(clientId, dateStr) : Promise.resolve([]),
     enabled: !!clientId,
   });
 
@@ -156,8 +150,8 @@ export default function AuditWorkspace() {
         id: "purchases", 
         label: "Purchases Captured", 
         tab: "purchases",
-        status: getStepStatus(purchases.length > 0, purchases.length),
-        lastUpdated: purchases.length > 0 ? format(new Date(purchases[0].createdAt), "HH:mm") : undefined,
+        status: getStepStatus(grns.length > 0, grns.length),
+        lastUpdated: grns.length > 0 ? format(new Date(grns[0].createdAt), "HH:mm") : undefined,
       },
       { 
         id: "stock", 
@@ -181,7 +175,7 @@ export default function AuditWorkspace() {
         lastUpdated: reconciliations.length > 0 ? format(new Date(reconciliations[0].createdAt), "HH:mm") : undefined,
       },
     ];
-  }, [salesEntries, purchases, stockMovements, stockCounts, reconciliations]);
+  }, [salesEntries, grns, stockMovements, stockCounts, reconciliations]);
 
   const handleStepClick = (step: AuditStep) => {
     setActiveTab(step.tab);
@@ -221,7 +215,7 @@ export default function AuditWorkspace() {
     }
   };
 
-  const totalPurchases = purchases.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0);
+  const totalPurchases = useMemo(() => grns.reduce((sum, g) => sum + Number(g.amount || 0), 0), [grns]);
   const totalMovements = stockMovements.reduce((sum, m) => sum + Number(m.totalValue || 0), 0);
   const totalVariance = stockCounts.reduce((sum, c) => sum + Number(c.varianceQty || 0), 0);
 
@@ -323,11 +317,8 @@ export default function AuditWorkspace() {
 
               <TabsContent value="purchases" className="mt-0">
                 <PurchasesTab 
-                  purchases={purchases}
-                  suppliers={suppliers}
-                  items={items}
+                  grns={grns}
                   clientId={clientId}
-                  departmentId={departmentId}
                   totalPurchases={totalPurchases}
                 />
               </TabsContent>
@@ -935,70 +926,19 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
   );
 }
 
-function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, totalPurchases }: {
-  purchases: Purchase[];
-  suppliers: Supplier[];
-  items: Item[];
+function PurchasesTab({ grns, clientId, totalPurchases }: {
+  grns: GoodsReceivedNote[];
   clientId: string | null;
-  departmentId: string | null;
   totalPurchases: number;
 }) {
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedSupplier, setSelectedSupplier] = useState<string>("");
-  const [invoiceRef, setInvoiceRef] = useState<string>("");
-  const [invoiceDate, setInvoiceDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const [totalAmount, setTotalAmount] = useState<string>("");
-  const queryClient = useQueryClient();
-
-  const createMutation = useMutation({
-    mutationFn: (data: any) => purchasesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchases"] });
-      setCreateOpen(false);
-      resetForm();
-      toast.success("Purchase recorded successfully");
-    },
-    onError: (error: any) => toast.error(error.message || "Failed to create purchase"),
-  });
-
-  const resetForm = () => {
-    setSelectedSupplier("");
-    setInvoiceRef("");
-    setInvoiceDate(format(new Date(), "yyyy-MM-dd"));
-    setTotalAmount("");
-  };
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedSupplier) {
-      toast.error("Please select a supplier");
-      return;
-    }
-    if (!departmentId) {
-      toast.error("Please select a department from the header");
-      return;
-    }
-    createMutation.mutate({
-      clientId,
-      departmentId,
-      supplierName: selectedSupplier,
-      invoiceRef,
-      invoiceDate: new Date(invoiceDate).toISOString(),
-      totalAmount,
-    });
-  };
-
   return (
     <Card className="border-none shadow-none">
       <CardHeader className="px-0 pt-0 pb-4">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Purchases & GRN</CardTitle>
-            <CardDescription>Record purchases and goods received</CardDescription>
+            <CardDescription>View goods received note details</CardDescription>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2" disabled={!clientId} data-testid="button-add-purchase">
-            <Plus className="h-4 w-4" /> Record Purchase
-          </Button>
         </div>
       </CardHeader>
       <CardContent className="px-0">
@@ -1015,26 +955,26 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
               </TableRow>
             </TableHeader>
             <TableBody>
-              {purchases.length === 0 ? (
+              {grns.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No purchases recorded. Click "Record Purchase" to add.
+                    No GRN records found for this date.
                   </TableCell>
                 </TableRow>
               ) : (
-                purchases.map((purchase) => (
-                  <TableRow key={purchase.id} data-testid={`row-purchase-${purchase.id}`}>
-                    <TableCell>{format(new Date(purchase.invoiceDate), "MMM d, yyyy")}</TableCell>
-                    <TableCell className="font-medium">{purchase.supplierName}</TableCell>
-                    <TableCell>{purchase.invoiceRef}</TableCell>
-                    <TableCell className="text-right font-mono font-medium">{Number(purchase.totalAmount || 0).toLocaleString()}</TableCell>
+                grns.map((grn) => (
+                  <TableRow key={grn.id} data-testid={`row-grn-${grn.id}`}>
+                    <TableCell>{format(new Date(grn.date), "MMM d, yyyy")}</TableCell>
+                    <TableCell className="font-medium">{grn.supplierName}</TableCell>
+                    <TableCell>{grn.invoiceRef}</TableCell>
+                    <TableCell className="text-right font-mono font-medium">{Number(grn.amount || 0).toLocaleString()}</TableCell>
                     <TableCell>
-                      <Badge variant={purchase.status === "received" ? "default" : "secondary"}>
-                        {purchase.status || "pending"}
+                      <Badge variant={grn.status === "received" ? "default" : "secondary"}>
+                        {grn.status || "pending"}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {purchase.evidenceUrl ? (
+                      {grn.evidenceUrl ? (
                         <FileText className="h-4 w-4 text-emerald-500" />
                       ) : (
                         <span className="text-muted-foreground text-xs">None</span>
@@ -1053,78 +993,6 @@ function PurchasesTab({ purchases, suppliers, items, clientId, departmentId, tot
           </div>
         </div>
       </CardContent>
-
-      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm(); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Record Purchase</DialogTitle>
-            <DialogDescription>Enter purchase details and attach invoice if available</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Supplier</Label>
-                <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
-                  <SelectTrigger data-testid="select-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.length === 0 ? (
-                      <div className="p-2 text-sm text-muted-foreground text-center">
-                        No suppliers found. Add suppliers in Inventory & Purchases.
-                      </div>
-                    ) : (
-                      suppliers.map(supplier => (
-                        <SelectItem key={supplier.id} value={supplier.name}>{supplier.name}</SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Invoice Reference</Label>
-                  <Input 
-                    placeholder="INV-001" 
-                    value={invoiceRef}
-                    onChange={(e) => setInvoiceRef(e.target.value)}
-                    required 
-                    data-testid="input-invoice-ref"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Invoice Date</Label>
-                  <Input 
-                    type="date" 
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                    required 
-                    data-testid="input-invoice-date"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Total Amount (₦)</Label>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="0.00" 
-                  value={totalAmount}
-                  onChange={(e) => setTotalAmount(e.target.value)}
-                  required 
-                  data-testid="input-total-amount"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setCreateOpen(false); resetForm(); }}>Cancel</Button>
-              <Button type="submit" disabled={createMutation.isPending || !selectedSupplier}>
-                {createMutation.isPending ? "Saving..." : "Save Purchase"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }
