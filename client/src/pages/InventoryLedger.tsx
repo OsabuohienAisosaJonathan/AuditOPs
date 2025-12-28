@@ -599,15 +599,39 @@ export default function InventoryLedger() {
 
   const handleIssueClick = (itemId: string) => {
     setIssueItemId(itemId);
+    setIssueQty("");
+    setIssueToDeptId(null);
     setIssueDialogOpen(true);
   };
 
+  // Get available quantity for the selected issue item
+  const getAvailableQty = useMemo(() => {
+    if (!issueItemId) return 0;
+    const ledgerRow = mainStoreLedger.find(r => r.itemId === issueItemId);
+    if (!ledgerRow) return 0;
+    return ledgerRow.closing > 0 ? ledgerRow.closing : 0;
+  }, [issueItemId, mainStoreLedger]);
+
   const handleIssueSubmit = () => {
     if (!issueItemId || !issueToDeptId || !issueQty) return;
+    
+    const qtyToIssue = parseFloat(issueQty);
+    
+    // Validate quantity doesn't exceed available
+    if (qtyToIssue > getAvailableQty) {
+      toast.error(`Cannot issue more than available stock (${getAvailableQty.toFixed(2)})`);
+      return;
+    }
+    
+    if (qtyToIssue <= 0) {
+      toast.error("Please enter a valid quantity greater than zero");
+      return;
+    }
+    
     createIssueMutation.mutate({
       itemId: issueItemId,
       toDeptId: issueToDeptId,
-      qty: parseFloat(issueQty),
+      qty: qtyToIssue,
     });
   };
 
@@ -977,7 +1001,7 @@ export default function InventoryLedger() {
               {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
             </CardTitle>
             <CardDescription>
-              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Closing from Stock Count
+              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Added auto-filled from Store Issues • Closing from Stock Count
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -1121,13 +1145,18 @@ export default function InventoryLedger() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="toDept">Destination Department</Label>
+              <Label htmlFor="toDept">Destination Department (Dep1-Dep10)</Label>
               <Select value={issueToDeptId || ""} onValueChange={setIssueToDeptId}>
                 <SelectTrigger data-testid="select-issue-to-dept">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departmentStores.map(dept => (
+                  {visibleDeptList.map((dept, idx) => (
+                    <SelectItem key={dept.id} value={dept.id}>
+                      Dep{idx + 1}: {getStoreNameById(dept.storeNameId)?.name || "Unknown"}
+                    </SelectItem>
+                  ))}
+                  {visibleDeptList.length === 0 && departmentStores.map(dept => (
                     <SelectItem key={dept.id} value={dept.id}>
                       {getStoreNameById(dept.storeNameId)?.name || "Unknown"}
                     </SelectItem>
@@ -1136,23 +1165,34 @@ export default function InventoryLedger() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="qty">Quantity to Issue</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="qty">Quantity to Issue</Label>
+                <span className="text-sm text-muted-foreground">
+                  Available: <strong className="text-foreground">{getAvailableQty.toFixed(2)}</strong>
+                </span>
+              </div>
               <Input 
                 id="qty" 
                 type="number" 
                 step="0.01" 
+                min="0.01"
+                max={getAvailableQty}
                 value={issueQty} 
                 onChange={(e) => setIssueQty(e.target.value)}
                 placeholder="Enter quantity"
+                className={cn(parseFloat(issueQty || "0") > getAvailableQty && "border-red-500 focus-visible:ring-red-500")}
                 data-testid="input-issue-qty"
               />
+              {parseFloat(issueQty || "0") > getAvailableQty && (
+                <p className="text-xs text-red-500">Quantity exceeds available stock</p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIssueDialogOpen(false)}>Cancel</Button>
             <Button 
               onClick={handleIssueSubmit} 
-              disabled={!issueToDeptId || !issueQty || createIssueMutation.isPending}
+              disabled={!issueToDeptId || !issueQty || createIssueMutation.isPending || parseFloat(issueQty || "0") > getAvailableQty}
               data-testid="button-confirm-issue"
             >
               {createIssueMutation.isPending && <Spinner className="mr-2" />}
