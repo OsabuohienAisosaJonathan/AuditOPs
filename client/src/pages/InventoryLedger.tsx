@@ -272,14 +272,18 @@ export default function InventoryLedger() {
     return 0;
   };
 
-  // Build ledger data for Main Store/Warehouse with Dep columns
+  // Build ledger data for Main Store/Warehouse with Dep columns, grouped by category
   const mainStoreLedger = useMemo(() => {
     if (!items || !selectedDept || (selectedDept.inventoryType !== "MAIN_STORE" && selectedDept.inventoryType !== "WAREHOUSE")) {
       return [];
     }
     
     const activeItems = items.filter(i => i.status === "active");
-    return activeItems.map((item, index) => {
+    const sortedItems = [...activeItems].sort((a, b) => a.category.localeCompare(b.category));
+    
+    let sn = 0;
+    return sortedItems.map((item) => {
+      sn++;
       const stock = storeStockData?.find(s => s.itemId === item.id);
       const opening = getOpeningQty(item.id, stock);
       const purchase = parseFloat(stock?.addedQty || "0");
@@ -299,9 +303,10 @@ export default function InventoryLedger() {
       const value = closing * cost;
       
       return {
-        sn: index + 1,
+        sn,
         itemId: item.id,
         itemName: item.name,
+        category: item.category,
         unit: item.unit,
         opening,
         purchase,
@@ -316,14 +321,28 @@ export default function InventoryLedger() {
     });
   }, [items, selectedDept, storeStockData, prevDayStock, departmentStores, issueBreakdown]);
 
-  // Build ledger data for Department Store
+  // Group main store ledger by category
+  const mainStoreLedgerByCategory = useMemo(() => {
+    const groups: Record<string, typeof mainStoreLedger> = {};
+    mainStoreLedger.forEach(row => {
+      if (!groups[row.category]) groups[row.category] = [];
+      groups[row.category].push(row);
+    });
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [mainStoreLedger]);
+
+  // Build ledger data for Department Store, grouped by category
   const deptStoreLedger = useMemo(() => {
     if (!items || !selectedDept || selectedDept.inventoryType !== "DEPARTMENT_STORE") {
       return [];
     }
     
     const activeItems = items.filter(i => i.status === "active");
-    return activeItems.map((item, index) => {
+    const sortedItems = [...activeItems].sort((a, b) => a.category.localeCompare(b.category));
+    
+    let sn = 0;
+    return sortedItems.map((item) => {
+      sn++;
       const stock = storeStockData?.find(s => s.itemId === item.id);
       const opening = getOpeningQty(item.id, stock);
       const added = parseFloat(stock?.addedQty || "0");
@@ -334,9 +353,10 @@ export default function InventoryLedger() {
       const sold = closing !== null ? total - closing : null;
       
       return {
-        sn: index + 1,
+        sn,
         itemId: item.id,
         itemName: item.name,
+        category: item.category,
         unit: item.unit,
         opening,
         added,
@@ -348,6 +368,16 @@ export default function InventoryLedger() {
       };
     });
   }, [items, selectedDept, storeStockData, prevDayStock]);
+
+  // Group dept store ledger by category
+  const deptStoreLedgerByCategory = useMemo(() => {
+    const groups: Record<string, typeof deptStoreLedger> = {};
+    deptStoreLedger.forEach(row => {
+      if (!groups[row.category]) groups[row.category] = [];
+      groups[row.category].push(row);
+    });
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [deptStoreLedger]);
 
   const handleIssueClick = (itemId: string) => {
     setIssueItemId(itemId);
@@ -508,34 +538,43 @@ export default function InventoryLedger() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    mainStoreLedger.map((row) => (
-                      <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
-                        <TableCell className="text-center sticky left-0 bg-background">{row.sn}</TableCell>
-                        <TableCell className="font-medium sticky left-[50px] bg-background">{row.itemName}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{row.unit}</TableCell>
-                        <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{row.purchase.toFixed(2)}</TableCell>
-                        <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
-                        {visibleDeptList.map(dept => (
-                          <TableCell key={dept.id} className="text-right text-orange-600">
-                            {(row.depIssues[dept.id] || 0).toFixed(2)}
+                    mainStoreLedgerByCategory.map(([category, rows]) => (
+                      <>
+                        <TableRow key={`cat-${category}`} className="bg-muted/50">
+                          <TableCell colSpan={11 + visibleDeptList.length} className="font-semibold text-sm py-2 sticky left-0">
+                            {category}
                           </TableCell>
+                        </TableRow>
+                        {rows.map((row) => (
+                          <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
+                            <TableCell className="text-center sticky left-0 bg-background">{row.sn}</TableCell>
+                            <TableCell className="font-medium sticky left-[50px] bg-background">{row.itemName}</TableCell>
+                            <TableCell className="text-muted-foreground text-xs">{row.unit}</TableCell>
+                            <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">{row.purchase.toFixed(2)}</TableCell>
+                            <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
+                            {visibleDeptList.map(dept => (
+                              <TableCell key={dept.id} className="text-right text-orange-600">
+                                {(row.depIssues[dept.id] || 0).toFixed(2)}
+                              </TableCell>
+                            ))}
+                            <TableCell className="text-right bg-muted/30 font-medium">{row.closing.toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
+                            <TableCell className="text-right font-medium">{row.value.toFixed(2)}</TableCell>
+                            <TableCell>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => handleIssueClick(row.itemId)}
+                                disabled={row.closing <= 0}
+                                data-testid={`button-issue-${row.itemId}`}
+                              >
+                                Issue
+                              </Button>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                        <TableCell className="text-right bg-muted/30 font-medium">{row.closing.toFixed(2)}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-medium">{row.value.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleIssueClick(row.itemId)}
-                            disabled={row.closing <= 0}
-                            data-testid={`button-issue-${row.itemId}`}
-                          >
-                            Issue
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                      </>
                     ))
                   )}
                 </TableBody>
@@ -588,28 +627,37 @@ export default function InventoryLedger() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    deptStoreLedger.map((row) => (
-                      <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
-                        <TableCell className="text-center">{row.sn}</TableCell>
-                        <TableCell className="font-medium">{row.itemName}</TableCell>
-                        <TableCell className="text-muted-foreground">{row.unit}</TableCell>
-                        <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
-                        <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
-                        <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">
-                          {row.sold !== null ? row.sold.toFixed(2) : <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        <TableCell className="text-right bg-muted/30">
-                          {row.awaitingCount ? (
-                            <span className="flex items-center justify-end gap-1 text-amber-600">
-                              <AlertCircle className="h-3.5 w-3.5" />
-                              Awaiting Count
-                            </span>
-                          ) : (
-                            <span className="font-medium">{row.closing?.toFixed(2)}</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                    deptStoreLedgerByCategory.map(([category, rows]) => (
+                      <>
+                        <TableRow key={`cat-${category}`} className="bg-muted/50">
+                          <TableCell colSpan={8} className="font-semibold text-sm py-2">
+                            {category}
+                          </TableCell>
+                        </TableRow>
+                        {rows.map((row) => (
+                          <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
+                            <TableCell className="text-center">{row.sn}</TableCell>
+                            <TableCell className="font-medium">{row.itemName}</TableCell>
+                            <TableCell className="text-muted-foreground">{row.unit}</TableCell>
+                            <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
+                            <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">
+                              {row.sold !== null ? row.sold.toFixed(2) : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                            <TableCell className="text-right bg-muted/30">
+                              {row.awaitingCount ? (
+                                <span className="flex items-center justify-end gap-1 text-amber-600">
+                                  <AlertCircle className="h-3.5 w-3.5" />
+                                  Awaiting Count
+                                </span>
+                              ) : (
+                                <span className="font-medium">{row.closing?.toFixed(2)}</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </>
                     ))
                   )}
                 </TableBody>

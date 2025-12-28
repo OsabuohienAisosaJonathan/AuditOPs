@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -247,6 +247,18 @@ export default function Inventory() {
     setDeleteSupplierOpen(true);
   };
 
+  // Group items by category for display
+  const itemsByCategory = useMemo(() => {
+    if (!items || items.length === 0) return [];
+    const sortedItems = [...items].sort((a, b) => a.category.localeCompare(b.category));
+    const groups: Record<string, Item[]> = {};
+    sortedItems.forEach(item => {
+      if (!groups[item.category]) groups[item.category] = [];
+      groups[item.category].push(item);
+    });
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [items]);
+
   if (!clients || clients.length === 0) {
     return (
       <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -408,7 +420,6 @@ export default function Inventory() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>SKU</TableHead>
-                      <TableHead>Category</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Cost Price</TableHead>
                       <TableHead className="text-right">Selling Price</TableHead>
@@ -417,47 +428,55 @@ export default function Inventory() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => (
-                      <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
-                        <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
-                        <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell>{item.unit}</TableCell>
-                        <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={cn(
-                            item.status === "active" 
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                              : "bg-muted text-muted-foreground"
-                          )} data-testid={`badge-item-status-${item.id}`}>
-                            {item.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-item-actions-${item.id}`}>
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid={`button-edit-item-${item.id}`}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => handleDeleteItem(item)} 
-                                className="text-red-600"
-                                data-testid={`button-delete-item-${item.id}`}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
+                    {itemsByCategory.map(([category, categoryItems]) => (
+                      <>
+                        <TableRow key={`cat-${category}`} className="bg-muted/50">
+                          <TableCell colSpan={7} className="font-semibold text-sm py-2">
+                            {category} ({categoryItems.length})
+                          </TableCell>
+                        </TableRow>
+                        {categoryItems.map((item) => (
+                          <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
+                            <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
+                            <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
+                            <TableCell>{item.unit}</TableCell>
+                            <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
+                            <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={cn(
+                                item.status === "active" 
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                  : "bg-muted text-muted-foreground"
+                              )} data-testid={`badge-item-status-${item.id}`}>
+                                {item.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-item-actions-${item.id}`}>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid={`button-edit-item-${item.id}`}>
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleDeleteItem(item)} 
+                                    className="text-red-600"
+                                    data-testid={`button-delete-item-${item.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </>
                     ))}
                   </TableBody>
                 </Table>
