@@ -1807,10 +1807,26 @@ export async function registerRoutes(
       }
       
       if (purchaseQty && parseFloat(purchaseQty) > 0) {
-        const qualifyingDepts = await storage.getInventoryDepartmentsByTypes(
-          item.clientId,
-          ["MAIN_STORE", "WAREHOUSE"]
-        );
+        // Find departments where name contains "Main Store" or "Warehouse" OR inventoryType is MAIN_STORE/WAREHOUSE
+        const allDepts = await storage.getInventoryDepartments(item.clientId);
+        const storeNamesList = await storage.getStoreNames();
+        const storeNameMap = new Map(storeNamesList.map(s => [s.id, s.name]));
+
+        // Get the client-level departments (the "SRD" departments the user likely refers to)
+        const clientDepts = await storage.getDepartments(item.clientId);
+        const clientDeptMap = new Map(clientDepts.map(d => [d.id, d]));
+
+        const qualifyingDepts = allDepts.filter(d => {
+          const storeName = storeNameMap.get(d.storeNameId)?.toLowerCase() || "";
+          // Check if this inventory department links to a department named "Main Store" or "Warehouse"
+          // In this schema, inventory_departments link to store_names, which might be linked to departments
+          return (
+            d.inventoryType === "MAIN_STORE" || 
+            d.inventoryType === "WAREHOUSE" ||
+            storeName.includes("main store") ||
+            storeName.includes("warehouse")
+          );
+        });
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -1821,19 +1837,21 @@ export async function registerRoutes(
             dept.id,
             item.id,
             parseFloat(purchaseQty),
-            item.costPrice,
+            item.costPrice || "0.00",
             today
           );
         }
         
-        await storage.createAuditLog({
-          userId: req.session.userId!,
-          action: "Item Purchase Captured",
-          entity: "Item",
-          entityId: item.id,
-          details: `Purchase of ${purchaseQty} ${item.purchaseUnit || item.unit} captured for ${qualifyingDepts.length} store(s)`,
-          ipAddress: req.ip || "Unknown",
-        });
+        if (qualifyingDepts.length > 0) {
+          await storage.createAuditLog({
+            userId: req.session.userId!,
+            action: "Item Purchase Captured",
+            entity: "Item",
+            entityId: item.id,
+            details: `Purchase of ${purchaseQty} ${item.purchaseUnit || item.unit} captured for ${qualifyingDepts.length} store(s)`,
+            ipAddress: req.ip || "Unknown",
+          });
+        }
       }
       
       res.json(item);
