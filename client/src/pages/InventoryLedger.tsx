@@ -334,6 +334,10 @@ export default function InventoryLedger() {
       setIssueItemId(null);
       setIssueToDeptId(null);
       setIssueQty("");
+      toast.success("Stock issued successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to issue stock");
     },
   });
 
