@@ -1964,8 +1964,12 @@ export async function registerRoutes(
     try {
       const { storeDepartmentId, ...stockCountData } = req.body;
       
+      // Convert date string to Date object for Zod validation
+      const dateValue = stockCountData.date ? new Date(stockCountData.date) : undefined;
+      
       const data = insertStockCountSchema.parse({
         ...stockCountData,
+        date: dateValue,
         createdBy: req.session.userId!,
       });
       const stockCount = await storage.createStockCount(data);

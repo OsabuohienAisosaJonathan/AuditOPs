@@ -1557,7 +1557,7 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
       departmentId,
       storeDepartmentId: selectedSrdId, // This triggers storeStock update on backend
       itemId: selectedItemId,
-      date: dateStr,
+      date: new Date(dateStr).toISOString(),
       openingQty: String(opening),
       addedQty: String(added),
       soldQty: String(sold > 0 ? sold : 0),
