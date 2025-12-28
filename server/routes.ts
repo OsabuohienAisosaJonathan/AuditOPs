@@ -1807,20 +1807,43 @@ export async function registerRoutes(
       }
       
       if (purchaseQty && parseFloat(purchaseQty) > 0) {
-        // Find the Main Store inventory department for this client
-        const mainStoreInvDept = await storage.getInventoryDepartmentByType(item.clientId, "MAIN_STORE");
-        
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         console.log(`[Purchase Capture] Client: ${item.clientId}, Item: ${item.name}, Qty: ${purchaseQty}`);
         
-        if (mainStoreInvDept && mainStoreInvDept.departmentId) {
-          // Use the linked department ID from inventory_departments
-          console.log(`[Purchase Capture] Posting to Main Store department: ${mainStoreInvDept.departmentId}`);
+        // Find the target department for posting purchases
+        let targetDepartmentId: string | null = null;
+        
+        // First, try the Main Store inventory department's linked departmentId
+        const mainStoreInvDept = await storage.getInventoryDepartmentByType(item.clientId, "MAIN_STORE");
+        if (mainStoreInvDept?.departmentId) {
+          targetDepartmentId = mainStoreInvDept.departmentId;
+          console.log(`[Purchase Capture] Using linked department: ${targetDepartmentId}`);
+        }
+        
+        // Fallback: find a department named "Main Store" for this client
+        if (!targetDepartmentId) {
+          const clientDepts = await storage.getDepartments(item.clientId);
+          const mainStoreDept = clientDepts.find(d => 
+            d.name.toLowerCase().includes("main store") && d.status === "active"
+          );
+          if (mainStoreDept) {
+            targetDepartmentId = mainStoreDept.id;
+            console.log(`[Purchase Capture] Using fallback Main Store department: ${targetDepartmentId}`);
+            
+            // Auto-link for future use if Main Store inventory dept exists
+            if (mainStoreInvDept && !mainStoreInvDept.departmentId) {
+              await storage.updateInventoryDepartment(mainStoreInvDept.id, { departmentId: mainStoreDept.id });
+              console.log(`[Purchase Capture] Auto-linked inventory department to Main Store SRD`);
+            }
+          }
+        }
+        
+        if (targetDepartmentId) {
           await storage.addPurchaseToStoreStock(
             item.clientId,
-            mainStoreInvDept.departmentId,
+            targetDepartmentId,
             item.id,
             parseFloat(purchaseQty),
             item.costPrice || "0.00",
@@ -1835,8 +1858,10 @@ export async function registerRoutes(
             details: `Purchase of ${purchaseQty} ${item.unit} posted to Main Store SRD`,
             ipAddress: req.ip || "Unknown",
           });
+          
+          console.log(`[Purchase Capture] Successfully posted to store_stock`);
         } else {
-          console.warn(`[Purchase Capture] No Main Store inventory department with linked SRD found for client ${item.clientId}`);
+          console.warn(`[Purchase Capture] No Main Store department found for client ${item.clientId}`);
         }
       }
       
