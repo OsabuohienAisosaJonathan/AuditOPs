@@ -409,77 +409,71 @@ export default function Inventory() {
                       <Plus className="h-4 w-4" /> Add Item
                     </Button>
                   </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create New Item</DialogTitle>
-                      <DialogDescription>Add a new inventory item.</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={(e) => {
-                      e.preventDefault();
-                      const formData = new FormData(e.currentTarget);
-                      createItemMutation.mutate({
-                        name: formData.get("name") as string,
-                        sku: formData.get("sku") as string || null,
-                        category: formData.get("category") as string,
-                        unit: formData.get("unit") as string,
-                        purchaseUnit: formData.get("unit") as string, // Default to unit on creation
-                        costPrice: formData.get("costPrice") as string,
-                        sellingPrice: formData.get("sellingPrice") as string,
-                        reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
-                        status: "active",
-                      });
-                    }}>
-                      <div className="space-y-4 py-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="name">Item Name</Label>
-                            <Input id="name" name="name" required data-testid="input-item-name" />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create New Item</DialogTitle>
+                        <DialogDescription>Add a new inventory item.</DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={(e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.currentTarget);
+                        createItemMutation.mutate({
+                          name: formData.get("name") as string,
+                          sku: formData.get("sku") as string || null,
+                          category: formData.get("category") as string,
+                          unit: formData.get("unit") as string,
+                          purchaseUnit: formData.get("unit") as string, // Default to unit on creation
+                          costPrice: formData.get("costPrice") as string,
+                          sellingPrice: formData.get("sellingPrice") as string,
+                          reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
+                          status: "active",
+                        });
+                      }}>
+                        <div className="space-y-4 py-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="name">Item Name</Label>
+                              <Input id="name" name="name" required data-testid="input-item-name" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="sku">SKU</Label>
+                              <Input id="sku" name="sku" data-testid="input-item-sku" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="category">Category</Label>
+                              <Input id="category" name="category" required data-testid="input-item-category" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="unit">Unit</Label>
+                              <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="costPrice">Cost Price</Label>
+                              <Input id="costPrice" name="costPrice" type="number" step="0.01" required data-testid="input-item-cost" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="sellingPrice">Selling Price</Label>
+                              <Input id="sellingPrice" name="sellingPrice" type="number" step="0.01" required data-testid="input-item-price" />
+                            </div>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="sku">SKU</Label>
-                            <Input id="sku" name="sku" data-testid="input-item-sku" />
+                            <Label htmlFor="reorderLevel">Reorder Level</Label>
+                            <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue="10" data-testid="input-item-reorder" />
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="category">Category</Label>
-                            <Input id="category" name="category" required data-testid="input-item-category" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="unit">Unit</Label>
-                            <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="costPrice">Cost Price</Label>
-                            <Input id="costPrice" name="costPrice" type="number" step="0.01" required data-testid="input-item-cost" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="sellingPrice">Selling Price</Label>
-                            <Input id="sellingPrice" name="sellingPrice" type="number" step="0.01" required data-testid="input-item-price" />
-                          </div>
-                        </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="sellingPrice">Selling Price</Label>
-                            <Input id="sellingPrice" name="sellingPrice" type="number" step="0.01" required data-testid="input-item-price" />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="reorderLevel">Reorder Level</Label>
-                          <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue="0" data-testid="input-item-reorder" />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setCreateItemOpen(false)}>Cancel</Button>
-                        <Button type="submit" disabled={createItemMutation.isPending} data-testid="button-submit-item">
-                          {createItemMutation.isPending && <Spinner className="mr-2" />}
-                          Create Item
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={() => setCreateItemOpen(false)}>Cancel</Button>
+                          <Button type="submit" disabled={createItemMutation.isPending} data-testid="button-submit-item">
+                            {createItemMutation.isPending && <Spinner className="mr-2" />}
+                            Create Item
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
                 </Dialog>
               </div>
             </CardHeader>
@@ -1267,19 +1261,19 @@ export default function Inventory() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-                  updateItemMutation.mutate({
-                    id: selectedItem.id,
-                    data: {
-                      name: formData.get("name") as string,
-                      sku: formData.get("sku") as string || null,
-                      category: formData.get("category") as string,
-                      unit: formData.get("unit") as string,
-                      purchaseUnit: formData.get("purchaseUnit") as string,
-                      costPrice: formData.get("costPrice") as string,
-                      sellingPrice: formData.get("sellingPrice") as string,
-                      reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
-                    },
-                  });
+              updateItemMutation.mutate({
+                id: selectedItem.id,
+                data: {
+                  name: formData.get("name") as string,
+                  sku: formData.get("sku") as string || null,
+                  category: formData.get("category") as string,
+                  unit: selectedItem.unit, // Unit is non-editable, use original value
+                  purchaseUnit: formData.get("purchaseUnit") as string,
+                  costPrice: formData.get("costPrice") as string,
+                  sellingPrice: formData.get("sellingPrice") as string,
+                  reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
+                },
+              });
             }}>
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -1300,12 +1294,12 @@ export default function Inventory() {
                   <div className="space-y-2">
                     <Label htmlFor="edit-unit">Unit (Base Unit)</Label>
                     <Input id="edit-unit" name="unit" defaultValue={selectedItem.unit} disabled className="bg-muted cursor-not-allowed" data-testid="input-edit-item-unit" />
-                    <p className="text-xs text-muted-foreground">The base unit cannot be changed once registered.</p>
+                    <p className="text-xs text-muted-foreground">Registered unit cannot be changed.</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
-                    <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required placeholder="e.g., box, carton" data-testid="input-edit-item-purchase-unit" />
-                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
+                  <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required placeholder="e.g., pcs, kg, bottle" data-testid="input-edit-item-purchase-unit" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1325,7 +1319,7 @@ export default function Inventory() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEditItemOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={updateItemMutation.isPending} data-testid="button-save-item">
-                  {updateItemMutation.isPending ? "Saving..." : "Save Changes"}
+                  {updateItemMutation.isPending ? "Saving..." : "Update Item"}
                 </Button>
               </DialogFooter>
             </form>
