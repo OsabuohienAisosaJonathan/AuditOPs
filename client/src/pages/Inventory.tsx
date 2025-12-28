@@ -1225,8 +1225,6 @@ export default function Inventory() {
                           <Badge variant="outline" className={cn(
                             dept.inventoryType === "MAIN_STORE" 
                               ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : dept.inventoryType === "WAREHOUSE"
-                              ? "bg-purple-50 text-purple-700 border-purple-200"
                               : "bg-amber-50 text-amber-700 border-amber-200"
                           )} data-testid={`badge-inv-dept-type-${dept.id}`}>
                             {dept.inventoryType.replace("_", " ")}
