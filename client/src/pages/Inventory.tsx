@@ -274,7 +274,7 @@ export default function Inventory() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Inventory Management</h1>
-          <p className="text-muted-foreground">Manage Registered items, suppliers and for {selectedClient?.name || clients[0]?.name || "All Clients"}</p>
+          <p className="text-muted-foreground">Manage Registered items, suppliers and goods received note for {selectedClient?.name || clients[0]?.name || "All Clients"}</p>
         </div>
       </div>
 
@@ -282,7 +282,7 @@ export default function Inventory() {
         <TabsList className="grid w-full max-w-[600px] grid-cols-4">
           <TabsTrigger value="items" data-testid="tab-items">
             <Package className="h-4 w-4 mr-2" />
-            Items
+            Reg. Items
           </TabsTrigger>
           <TabsTrigger value="suppliers" data-testid="tab-suppliers">
             <Truck className="h-4 w-4 mr-2" />
