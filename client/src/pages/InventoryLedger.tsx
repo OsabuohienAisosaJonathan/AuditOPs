@@ -378,7 +378,7 @@ export default function InventoryLedger() {
           body: JSON.stringify({
             storeDepartmentId: selectedInvDept,
             itemId: edit.itemId,
-            date: selectedDate,
+            date: new Date(selectedDate).toISOString(),
             openingQty: opening.toString(),
             addedQty: purchase.toString(),
             closingQty: calculatedClosing.toString(),
@@ -688,14 +688,14 @@ export default function InventoryLedger() {
     
     const qtyToIssue = parseFloat(issueQty);
     
-    // Validate quantity doesn't exceed available
-    if (qtyToIssue > getAvailableQty) {
+    // Validate quantity doesn't exceed available (only for positive issues)
+    if (qtyToIssue > 0 && qtyToIssue > getAvailableQty) {
       toast.error(`Cannot issue more than available stock (${getAvailableQty.toFixed(2)})`);
       return;
     }
     
-    if (qtyToIssue <= 0) {
-      toast.error("Please enter a valid quantity greater than zero");
+    if (qtyToIssue === 0) {
+      toast.error("Please enter a non-zero quantity");
       return;
     }
     

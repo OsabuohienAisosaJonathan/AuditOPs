@@ -483,7 +483,9 @@ export const insertAuditReissuePermissionSchema = createInsertSchema(auditReissu
 export const insertAuditChangeLogSchema = createInsertSchema(auditChangeLog).omit({ id: true, createdAt: true });
 export const insertStoreIssueSchema = createInsertSchema(storeIssues).omit({ id: true, createdAt: true });
 export const insertStoreIssueLineSchema = createInsertSchema(storeIssueLines).omit({ id: true, createdAt: true });
-export const insertStoreStockSchema = createInsertSchema(storeStock).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertStoreStockSchema = createInsertSchema(storeStock).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  date: z.coerce.date(),
+});
 export const insertGoodsReceivedNoteSchema = createInsertSchema(goodsReceivedNotes).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
