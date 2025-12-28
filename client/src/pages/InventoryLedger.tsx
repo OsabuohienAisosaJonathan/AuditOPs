@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, subDays } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -539,8 +539,8 @@ export default function InventoryLedger() {
                     </TableRow>
                   ) : (
                     mainStoreLedgerByCategory.map(([category, rows]) => (
-                      <>
-                        <TableRow key={`cat-${category}`} className="bg-muted/50">
+                      <React.Fragment key={`cat-${category}`}>
+                        <TableRow className="bg-muted/50">
                           <TableCell colSpan={11 + visibleDeptList.length} className="font-semibold text-sm py-2 sticky left-0">
                             {category}
                           </TableCell>
@@ -574,7 +574,7 @@ export default function InventoryLedger() {
                             </TableCell>
                           </TableRow>
                         ))}
-                      </>
+                      </React.Fragment>
                     ))
                   )}
                 </TableBody>
@@ -628,8 +628,8 @@ export default function InventoryLedger() {
                     </TableRow>
                   ) : (
                     deptStoreLedgerByCategory.map(([category, rows]) => (
-                      <>
-                        <TableRow key={`cat-${category}`} className="bg-muted/50">
+                      <React.Fragment key={`cat-${category}`}>
+                        <TableRow className="bg-muted/50">
                           <TableCell colSpan={8} className="font-semibold text-sm py-2">
                             {category}
                           </TableCell>
@@ -657,7 +657,7 @@ export default function InventoryLedger() {
                             </TableCell>
                           </TableRow>
                         ))}
-                      </>
+                      </React.Fragment>
                     ))
                   )}
                 </TableBody>

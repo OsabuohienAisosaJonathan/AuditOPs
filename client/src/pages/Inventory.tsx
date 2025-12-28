@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -429,8 +429,8 @@ export default function Inventory() {
                   </TableHeader>
                   <TableBody>
                     {itemsByCategory.map(([category, categoryItems]) => (
-                      <>
-                        <TableRow key={`cat-${category}`} className="bg-muted/50">
+                      <React.Fragment key={`cat-group-${category}`}>
+                        <TableRow className="bg-muted/50">
                           <TableCell colSpan={7} className="font-semibold text-sm py-2">
                             {category} ({categoryItems.length})
                           </TableCell>
@@ -476,7 +476,7 @@ export default function Inventory() {
                             </TableCell>
                           </TableRow>
                         ))}
-                      </>
+                      </React.Fragment>
                     ))}
                   </TableBody>
                 </Table>
