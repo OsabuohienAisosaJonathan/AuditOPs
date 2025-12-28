@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, subDays } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight } from "lucide-react";
+import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save } from "lucide-react";
 import { useClientContext } from "@/lib/client-context";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 function Spinner({ className }: { className?: string }) {
   return (
@@ -113,6 +114,10 @@ export default function InventoryLedger() {
     }
     setExpandedCategories(newSet);
   };
+  
+  // Editable ledger state: { itemId: { opening, purchase, closing } }
+  const [ledgerEdits, setLedgerEdits] = useState<Record<string, { opening?: string; purchase?: string; closing?: string }>>({});
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const selectedClientId = selectedClient?.id || clients[0]?.id;
 
@@ -269,6 +274,83 @@ export default function InventoryLedger() {
       setIssueQty("");
     },
   });
+
+  // Save ledger edits mutation
+  const saveLedgerMutation = useMutation({
+    mutationFn: async (edits: { itemId: string; opening?: string; purchase?: string; closing?: string }[]) => {
+      const promises = edits.map(async (edit) => {
+        const item = items?.find(i => i.id === edit.itemId);
+        if (!item) return null;
+        
+        // Calculate closing from opening + purchase - issued
+        const opening = parseFloat(edit.opening || "0");
+        const purchase = parseFloat(edit.purchase || "0");
+        const total = opening + purchase;
+        
+        // Get issued quantity from existing breakdown
+        let totalIssued = 0;
+        departmentStores.forEach(dept => {
+          totalIssued += issueBreakdown[edit.itemId]?.[dept.id] || 0;
+        });
+        
+        const calculatedClosing = total - totalIssued;
+        const physicalClosing = edit.closing ? parseFloat(edit.closing) : null;
+        
+        const res = await fetch(`/api/clients/${selectedClientId}/store-stock`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeDepartmentId: selectedInvDept,
+            itemId: edit.itemId,
+            date: selectedDate,
+            openingQty: opening.toString(),
+            addedQty: purchase.toString(),
+            closingQty: calculatedClosing.toString(),
+            physicalClosingQty: physicalClosing?.toString() || null,
+            costPriceSnapshot: item.costPrice || "0.00",
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to save ledger");
+        }
+        return res.json();
+      });
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      setLedgerEdits({});
+      setHasUnsavedChanges(false);
+      toast.success("Ledger saved successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to save ledger");
+    },
+  });
+
+  // Handle cell edit
+  const handleCellEdit = (itemId: string, field: "opening" | "purchase" | "closing", value: string) => {
+    setLedgerEdits(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        [field]: value,
+      },
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  // Save all edits
+  const handleSaveLedger = () => {
+    const editsToSave = Object.entries(ledgerEdits).map(([itemId, values]) => ({
+      itemId,
+      ...values,
+    }));
+    if (editsToSave.length > 0) {
+      saveLedgerMutation.mutate(editsToSave);
+    }
+  };
 
   // Get opening from previous day closing (rollforward)
   const getOpeningQty = (itemId: string, currentStock?: StoreStock) => {
@@ -508,13 +590,26 @@ export default function InventoryLedger() {
         /* Main Store Ledger with Dep Columns */
         <Card>
           <CardHeader className="px-6 py-4 border-b">
-            <CardTitle className="flex items-center gap-2">
-              <Store className="h-5 w-5" />
-              {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
-            </CardTitle>
-            <CardDescription>
-              Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Opening auto-populated from previous day
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Store className="h-5 w-5" />
+                  {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
+                </CardTitle>
+                <CardDescription>
+                  Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Edit Opening & Purchase directly
+                </CardDescription>
+              </div>
+              <Button 
+                onClick={handleSaveLedger} 
+                disabled={!hasUnsavedChanges || saveLedgerMutation.isPending}
+                className="gap-2"
+                data-testid="button-save-ledger"
+              >
+                {saveLedgerMutation.isPending ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                {saveLedgerMutation.isPending ? "Saving..." : "Save Ledger"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -562,35 +657,64 @@ export default function InventoryLedger() {
                               </div>
                             </TableCell>
                           </TableRow>
-                          {isExpanded && rows.map((row) => (
+                          {isExpanded && rows.map((row) => {
+                            const editedOpening = ledgerEdits[row.itemId]?.opening;
+                            const editedPurchase = ledgerEdits[row.itemId]?.purchase;
+                            const editedClosing = ledgerEdits[row.itemId]?.closing;
+                            
+                            const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
+                            const displayPurchase = editedPurchase !== undefined ? parseFloat(editedPurchase || "0") : row.purchase;
+                            const displayTotal = displayOpening + displayPurchase;
+                            const displayClosing = displayTotal - row.totalIssued;
+                            const displayValue = displayClosing * row.cost;
+                            
+                            return (
                             <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
-                            <TableCell className="text-center sticky left-0 bg-background">{row.sn}</TableCell>
-                            <TableCell className="font-medium sticky left-[50px] bg-background">{row.itemName}</TableCell>
-                            <TableCell className="text-muted-foreground text-xs">{row.unit}</TableCell>
-                            <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{row.purchase.toFixed(2)}</TableCell>
-                            <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
-                            {visibleDeptList.map(dept => (
-                              <TableCell key={dept.id} className="text-right text-orange-600">
-                                {(row.depIssues[dept.id] || 0).toFixed(2)}
+                              <TableCell className="text-center sticky left-0 bg-background">{row.sn}</TableCell>
+                              <TableCell className="font-medium sticky left-[50px] bg-background">{row.itemName}</TableCell>
+                              <TableCell className="text-muted-foreground text-xs">{row.unit}</TableCell>
+                              <TableCell className="p-1">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  className="h-8 w-20 text-right"
+                                  value={editedOpening !== undefined ? editedOpening : row.opening.toString()}
+                                  onChange={(e) => handleCellEdit(row.itemId, "opening", e.target.value)}
+                                  data-testid={`input-opening-${row.itemId}`}
+                                />
                               </TableCell>
-                            ))}
-                            <TableCell className="text-right bg-muted/30 font-medium">{row.closing.toFixed(2)}</TableCell>
-                            <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
-                            <TableCell className="text-right font-medium">{row.value.toFixed(2)}</TableCell>
-                            <TableCell>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => handleIssueClick(row.itemId)}
-                                disabled={row.closing <= 0}
-                                data-testid={`button-issue-${row.itemId}`}
-                              >
-                                Issue
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              <TableCell className="p-1">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  className="h-8 w-20 text-right"
+                                  value={editedPurchase !== undefined ? editedPurchase : row.purchase.toString()}
+                                  onChange={(e) => handleCellEdit(row.itemId, "purchase", e.target.value)}
+                                  data-testid={`input-purchase-${row.itemId}`}
+                                />
+                              </TableCell>
+                              <TableCell className="text-right bg-muted/30 font-medium">{displayTotal.toFixed(2)}</TableCell>
+                              {visibleDeptList.map(dept => (
+                                <TableCell key={dept.id} className="text-right text-orange-600">
+                                  {(row.depIssues[dept.id] || 0).toFixed(2)}
+                                </TableCell>
+                              ))}
+                              <TableCell className="text-right bg-muted/30 font-medium">{displayClosing.toFixed(2)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-medium">{displayValue.toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => handleIssueClick(row.itemId)}
+                                  disabled={displayClosing <= 0}
+                                  data-testid={`button-issue-${row.itemId}`}
+                                >
+                                  Issue
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );})}
                       </React.Fragment>
                     );
                   })
