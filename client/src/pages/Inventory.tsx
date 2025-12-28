@@ -284,9 +284,9 @@ export default function Inventory() {
             <Truck className="h-4 w-4 mr-2" />
             Suppliers
           </TabsTrigger>
-          <TabsTrigger value="store-names" data-testid="tab-store-names">
-            <Building className="h-4 w-4 mr-2" />
-            Link Department/Create New
+          <TabsTrigger value="store-names" data-testid="tab-store-names" className="h-auto py-2 leading-tight text-center">
+            <Building className="h-4 w-4 mr-2 flex-shrink-0" />
+            <span className="whitespace-normal">Link Department/Create New</span>
           </TabsTrigger>
           <TabsTrigger value="inv-departments" data-testid="tab-inv-departments">
             <Warehouse className="h-4 w-4 mr-2" />
