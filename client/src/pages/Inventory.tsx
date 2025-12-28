@@ -442,13 +442,17 @@ export default function Inventory() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
+                            <Label htmlFor="category">Category</Label>
+                            <Input id="category" name="category" required data-testid="input-item-category" />
+                          </div>
+                          <div className="space-y-2">
                             <Label htmlFor="unit">Unit</Label>
                             <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="purchaseUnit">Purchase Unit</Label>
-                            <Input id="purchaseUnit" name="purchaseUnit" required placeholder="e.g., box, carton" data-testid="input-item-purchase-unit" />
-                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="purchaseUnit">Purchase Unit</Label>
+                          <Input id="purchaseUnit" name="purchaseUnit" required placeholder="e.g., box, carton" data-testid="input-item-purchase-unit" />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
@@ -528,45 +532,46 @@ export default function Inventory() {
                           </TableRow>
                           {isExpanded && categoryItems.map((item) => (
                             <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
-                            <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
-                            <TableCell>{item.unit}</TableCell>
-                            <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
-                            <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={cn(
-                                item.status === "active" 
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                                  : "bg-muted text-muted-foreground"
-                              )} data-testid={`badge-item-status-${item.id}`}>
-                                {item.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-item-actions-${item.id}`}>
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid={`button-edit-item-${item.id}`}>
-                                    <Pencil className="h-4 w-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem 
-                                    onClick={() => handleDeleteItem(item)} 
-                                    className="text-red-600"
-                                    data-testid={`button-delete-item-${item.id}`}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
+                              <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
+                              <TableCell>{item.purchaseUnit || "-"}</TableCell>
+                              <TableCell>{item.unit}</TableCell>
+                              <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
+                              <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn(
+                                  item.status === "active" 
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                    : "bg-muted text-muted-foreground"
+                                )} data-testid={`badge-item-status-${item.id}`}>
+                                  {item.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-item-actions-${item.id}`}>
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid={`button-edit-item-${item.id}`}>
+                                      <Pencil className="h-4 w-4 mr-2" />
+                                      Update
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleDeleteItem(item)} 
+                                      className="text-red-600"
+                                      data-testid={`button-delete-item-${item.id}`}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
                       </React.Fragment>
                     );
                   })}
@@ -705,7 +710,7 @@ export default function Inventory() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => handleEditSupplier(supplier)} data-testid={`button-edit-supplier-${supplier.id}`}>
                                 <Pencil className="h-4 w-4 mr-2" />
-                                Edit
+                                Update
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 onClick={() => handleDeleteSupplier(supplier)} 
@@ -910,7 +915,7 @@ export default function Inventory() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => handleEditGrn(grn)} data-testid={`button-edit-grn-${grn.id}`}>
                                 <Pencil className="h-4 w-4 mr-2" />
-                                Edit
+                                Update
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 onClick={() => handleDeleteGrn(grn)} 
@@ -1069,7 +1074,7 @@ export default function Inventory() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setSelectedStoreName(sn); setEditStoreNameOpen(true); }} data-testid={`button-edit-store-name-${sn.id}`}>
                                 <Pencil className="h-4 w-4 mr-2" />
-                                Edit
+                                Update
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 onClick={() => { setSelectedStoreName(sn); setDeleteStoreNameOpen(true); }} 
@@ -1226,7 +1231,7 @@ export default function Inventory() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setSelectedInvDept(dept); setEditInvDeptOpen(true); }} data-testid={`button-edit-inv-dept-${dept.id}`}>
                                 <Pencil className="h-4 w-4 mr-2" />
-                                Edit
+                                Update
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 onClick={() => { setSelectedInvDept(dept); setDeleteInvDeptOpen(true); }} 
