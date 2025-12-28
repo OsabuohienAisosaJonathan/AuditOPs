@@ -314,7 +314,7 @@ export default function AuditWorkspace() {
               <TabsContent value="sales" className="mt-0 h-full">
                 <SalesTab 
                   salesEntries={salesEntries} 
-                  salesSummary={salesSummary}
+                  salesSummary={salesSummary || undefined}
                   clientId={clientId}
                   departments={departments}
                   dateStr={dateStr}
