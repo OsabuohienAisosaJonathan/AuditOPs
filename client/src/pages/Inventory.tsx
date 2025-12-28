@@ -1260,18 +1260,19 @@ export default function Inventory() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-              updateItemMutation.mutate({
-                id: selectedItem.id,
-                data: {
-                  name: formData.get("name") as string,
-                  sku: formData.get("sku") as string || null,
-                  category: formData.get("category") as string,
-                  unit: formData.get("unit") as string,
-                  costPrice: formData.get("costPrice") as string,
-                  sellingPrice: formData.get("sellingPrice") as string,
-                  reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
-                },
-              });
+                  updateItemMutation.mutate({
+                    id: selectedItem.id,
+                    data: {
+                      name: formData.get("name") as string,
+                      sku: formData.get("sku") as string || null,
+                      category: formData.get("category") as string,
+                      unit: formData.get("unit") as string,
+                      purchaseUnit: formData.get("purchaseUnit") as string,
+                      costPrice: formData.get("costPrice") as string,
+                      sellingPrice: formData.get("sellingPrice") as string,
+                      reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
+                    },
+                  });
             }}>
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -1292,6 +1293,10 @@ export default function Inventory() {
                   <div className="space-y-2">
                     <Label htmlFor="edit-unit">Unit</Label>
                     <Input id="edit-unit" name="unit" defaultValue={selectedItem.unit} required data-testid="input-edit-item-unit" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
+                    <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required data-testid="input-edit-item-purchase-unit" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
