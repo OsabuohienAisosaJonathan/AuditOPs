@@ -19,9 +19,9 @@ import { useClientContext } from "@/lib/client-context";
 import { 
   paymentDeclarationsApi, reconciliationHintApi, salesEntriesApi, clientsApi, departmentsApi, 
   purchasesApi, stockMovementsApi, stockCountsApi, reconciliationsApi, exceptionsApi, itemsApi, suppliersApi,
-  storeIssuesApi, storeStockApi,
+  storeIssuesApi, storeStockApi, grnApi,
   type SalesEntry, type SalesSummary, type Purchase, type StockMovement, type StockCount, type Reconciliation, type Item, type Supplier,
-  type StoreIssue, type StoreIssueLine, type StoreStock, type Department
+  type StoreIssue, type StoreIssueLine, type StoreStock, type Department, type GoodsReceivedNote
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
