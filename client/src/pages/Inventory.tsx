@@ -442,7 +442,20 @@ export default function Inventory() {
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <Label htmlFor="category">Category</Label>
-                              <Input id="category" name="category" required data-testid="input-item-category" />
+                              <Input 
+                                id="category" 
+                                name="category" 
+                                required 
+                                list="category-list"
+                                defaultValue="general"
+                                data-testid="input-item-category" 
+                              />
+                              <datalist id="category-list">
+                                {Array.from(new Set(items?.map(i => i.category) || [])).sort().map(cat => (
+                                  <option key={cat} value={cat} />
+                                ))}
+                              </datalist>
+                              <p className="text-[10px] text-muted-foreground">Select existing or type new</p>
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="unit">Unit</Label>

@@ -506,7 +506,58 @@ export class DbStorage implements IStorage {
   }
 
   async createItem(insertItem: InsertItem): Promise<Item> {
-    const [item] = await db.insert(items).values(insertItem).returning();
+    const client = await this.getClient(insertItem.clientId);
+    if (!client) throw new Error("Client not found");
+
+    const initials = client.name
+      .split(" ")
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase();
+    
+    const categoryPrefix = (insertItem.category || "GEN")
+      .substring(0, 3)
+      .toUpperCase();
+
+    // Query entire database (including archived/deleted if they existed, though here we just query all items)
+    // The requirement says "highest numerical value ever assigned to that specific client"
+    const clientItems = await db.select({ sku: items.sku })
+      .from(items)
+      .where(eq(items.clientId, insertItem.clientId));
+
+    let maxSerial = 0;
+    clientItems.forEach(item => {
+      if (item.sku) {
+        const parts = item.sku.split("-");
+        const serialStr = parts[parts.length - 1];
+        const serialNum = parseInt(serialStr);
+        if (!isNaN(serialNum) && serialNum > maxSerial) {
+          maxSerial = serialNum;
+        }
+      }
+    });
+
+    const nextSerial = (maxSerial + 1).toString().padStart(4, "0");
+    const generatedSku = `${initials}-${categoryPrefix}-${nextSerial}`;
+
+    const [item] = await db.insert(items).values({
+      ...insertItem,
+      sku: generatedSku
+    }).returning();
+    
+    // Log the creation for audit trail
+    try {
+      await this.createAuditLog({
+        userId: insertItem.clientId, 
+        action: "Created Item",
+        entity: "Item",
+        entityId: item.id,
+        details: `Generated SKU: ${generatedSku}`
+      });
+    } catch (e) {
+      console.error("Failed to create audit log for item creation:", e);
+    }
+
     return item;
   }
 
