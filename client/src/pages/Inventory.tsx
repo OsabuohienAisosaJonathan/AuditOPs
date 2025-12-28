@@ -286,7 +286,7 @@ export default function Inventory() {
           </TabsTrigger>
           <TabsTrigger value="store-names" data-testid="tab-store-names">
             <Building className="h-4 w-4 mr-2" />
-            Store Names
+            Link Department/Create New
           </TabsTrigger>
           <TabsTrigger value="inv-departments" data-testid="tab-inv-departments">
             <Warehouse className="h-4 w-4 mr-2" />
@@ -626,7 +626,7 @@ export default function Inventory() {
                 <Dialog open={createStoreNameOpen} onOpenChange={setCreateStoreNameOpen}>
                   <DialogTrigger asChild>
                     <Button className="gap-2" data-testid="button-add-store-name">
-                      <Plus className="h-4 w-4" /> Add Store Name
+                      <Plus className="h-4 w-4" /> Link/Create
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
