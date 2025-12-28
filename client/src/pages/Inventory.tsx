@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal, Warehouse, Building } from "lucide-react";
+import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal, Warehouse, Building, ChevronDown, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -41,6 +41,17 @@ export default function Inventory() {
   const [deleteInvDeptOpen, setDeleteInvDeptOpen] = useState(false);
   const [selectedInvDept, setSelectedInvDept] = useState<InventoryDepartment | null>(null);
   
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = (category: string) => {
+    const newSet = new Set(expandedCategories);
+    if (newSet.has(category)) {
+      newSet.delete(category);
+    } else {
+      newSet.add(category);
+    }
+    setExpandedCategories(newSet);
+  };
+
   const queryClient = useQueryClient();
   const { clients, selectedClientId: contextClientId, selectedClient, departments } = useClientContext();
 
@@ -428,15 +439,24 @@ export default function Inventory() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {itemsByCategory.map(([category, categoryItems]) => (
-                      <React.Fragment key={`cat-group-${category}`}>
-                        <TableRow className="bg-muted/50">
-                          <TableCell colSpan={7} className="font-semibold text-sm py-2">
-                            {category} ({categoryItems.length})
-                          </TableCell>
-                        </TableRow>
-                        {categoryItems.map((item) => (
-                          <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
+                    {itemsByCategory.map(([category, categoryItems]) => {
+                      const isExpanded = expandedCategories.has(category);
+                      return (
+                        <React.Fragment key={`cat-group-${category}`}>
+                          <TableRow 
+                            className="bg-black hover:bg-black/90 cursor-pointer transition-colors"
+                            onClick={() => toggleCategory(category)}
+                            data-testid={`category-header-${category}`}
+                          >
+                            <TableCell colSpan={7} className="font-semibold text-sm py-2 text-white">
+                              <div className="flex items-center gap-2">
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                {category} ({categoryItems.length})
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && categoryItems.map((item) => (
+                            <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
                             <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
                             <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
                             <TableCell>{item.unit}</TableCell>
@@ -477,8 +497,9 @@ export default function Inventory() {
                           </TableRow>
                         ))}
                       </React.Fragment>
-                    ))}
-                  </TableBody>
+                    );
+                  })}
+                </TableBody>
                 </Table>
               )}
             </CardContent>

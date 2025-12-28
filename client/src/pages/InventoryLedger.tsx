@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Warehouse, Store, ChefHat, AlertCircle, Package, Settings2 } from "lucide-react";
+import { Warehouse, Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight } from "lucide-react";
 import { useClientContext } from "@/lib/client-context";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +103,17 @@ export default function InventoryLedger() {
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [visibleDepts, setVisibleDepts] = useState<Set<string>>(new Set());
   
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = (category: string) => {
+    const newSet = new Set(expandedCategories);
+    if (newSet.has(category)) {
+      newSet.delete(category);
+    } else {
+      newSet.add(category);
+    }
+    setExpandedCategories(newSet);
+  };
+
   const selectedClientId = selectedClient?.id || clients[0]?.id;
 
   // Fetch inventory departments for the client
@@ -538,15 +549,24 @@ export default function InventoryLedger() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    mainStoreLedgerByCategory.map(([category, rows]) => (
-                      <React.Fragment key={`cat-${category}`}>
-                        <TableRow className="bg-muted/50">
-                          <TableCell colSpan={11 + visibleDeptList.length} className="font-semibold text-sm py-2 sticky left-0">
-                            {category}
-                          </TableCell>
-                        </TableRow>
-                        {rows.map((row) => (
-                          <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
+                    mainStoreLedgerByCategory.map(([category, rows]) => {
+                      const isExpanded = expandedCategories.has(category);
+                      return (
+                        <React.Fragment key={`cat-${category}`}>
+                          <TableRow 
+                            className="bg-black hover:bg-black/90 cursor-pointer transition-colors"
+                            onClick={() => toggleCategory(category)}
+                            data-testid={`category-header-${category}`}
+                          >
+                            <TableCell colSpan={11 + visibleDeptList.length} className="font-semibold text-sm py-2 sticky left-0 text-white">
+                              <div className="flex items-center gap-2">
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                {category}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && rows.map((row) => (
+                            <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
                             <TableCell className="text-center sticky left-0 bg-background">{row.sn}</TableCell>
                             <TableCell className="font-medium sticky left-[50px] bg-background">{row.itemName}</TableCell>
                             <TableCell className="text-muted-foreground text-xs">{row.unit}</TableCell>
@@ -575,9 +595,10 @@ export default function InventoryLedger() {
                           </TableRow>
                         ))}
                       </React.Fragment>
-                    ))
-                  )}
-                </TableBody>
+                    );
+                  })
+                )}
+              </TableBody>
               </Table>
             </div>
             {visibleDeptList.length > 0 && (
@@ -619,48 +640,58 @@ export default function InventoryLedger() {
                     <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {deptStoreLedger.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                        No items found. Add items in the Inventory page first.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    deptStoreLedgerByCategory.map(([category, rows]) => (
-                      <React.Fragment key={`cat-${category}`}>
-                        <TableRow className="bg-muted/50">
-                          <TableCell colSpan={8} className="font-semibold text-sm py-2">
-                            {category}
+                    <TableBody>
+                      {deptStoreLedger.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            No items found. Add items in the Inventory page first.
                           </TableCell>
                         </TableRow>
-                        {rows.map((row) => (
-                          <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
-                            <TableCell className="text-center">{row.sn}</TableCell>
-                            <TableCell className="font-medium">{row.itemName}</TableCell>
-                            <TableCell className="text-muted-foreground">{row.unit}</TableCell>
-                            <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
-                            <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
-                            <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">
-                              {row.sold !== null ? row.sold.toFixed(2) : <span className="text-muted-foreground">—</span>}
-                            </TableCell>
-                            <TableCell className="text-right bg-muted/30">
-                              {row.awaitingCount ? (
-                                <span className="flex items-center justify-end gap-1 text-amber-600">
-                                  <AlertCircle className="h-3.5 w-3.5" />
-                                  Awaiting Count
-                                </span>
-                              ) : (
-                                <span className="font-medium">{row.closing?.toFixed(2)}</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </React.Fragment>
-                    ))
-                  )}
-                </TableBody>
+                      ) : (
+                        deptStoreLedgerByCategory.map(([category, rows]) => {
+                          const isExpanded = expandedCategories.has(category);
+                          return (
+                            <React.Fragment key={`cat-${category}`}>
+                              <TableRow 
+                                className="bg-black hover:bg-black/90 cursor-pointer transition-colors"
+                                onClick={() => toggleCategory(category)}
+                                data-testid={`category-header-dept-${category}`}
+                              >
+                                <TableCell colSpan={8} className="font-semibold text-sm py-2 text-white">
+                                  <div className="flex items-center gap-2">
+                                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                    {category}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded && rows.map((row) => (
+                                <TableRow key={row.itemId} data-testid={`row-ledger-${row.itemId}`}>
+                                  <TableCell className="text-center">{row.sn}</TableCell>
+                                  <TableCell className="font-medium">{row.itemName}</TableCell>
+                                  <TableCell className="text-muted-foreground">{row.unit}</TableCell>
+                                  <TableCell className="text-right">{row.opening.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right">
+                                    {row.sold !== null ? row.sold.toFixed(2) : <span className="text-muted-foreground">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-right bg-muted/30">
+                                    {row.awaitingCount ? (
+                                      <span className="flex items-center justify-end gap-1 text-amber-600">
+                                        <AlertCircle className="h-3.5 w-3.5" />
+                                        Awaiting Count
+                                      </span>
+                                    ) : (
+                                      <span className="font-medium">{row.closing?.toFixed(2)}</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </TableBody>
               </Table>
             </div>
           </CardContent>
