@@ -93,7 +93,7 @@ export default function Inventory() {
   });
 
   const updateItemMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Item> }) => itemsApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<Item> & { purchaseQty?: string } }) => itemsApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
       setEditItemOpen(false);
@@ -1261,6 +1261,7 @@ export default function Inventory() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const purchaseQty = formData.get("purchaseQty") as string;
               updateItemMutation.mutate({
                 id: selectedItem.id,
                 data: {
@@ -1272,6 +1273,7 @@ export default function Inventory() {
                   costPrice: formData.get("costPrice") as string,
                   sellingPrice: formData.get("sellingPrice") as string,
                   reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
+                  purchaseQty: purchaseQty && parseFloat(purchaseQty) > 0 ? purchaseQty : undefined,
                 },
               });
             }}>
@@ -1297,9 +1299,16 @@ export default function Inventory() {
                     <p className="text-xs text-muted-foreground">Registered unit cannot be changed.</p>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
-                  <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required placeholder="e.g., pcs, kg, bottle" data-testid="input-edit-item-purchase-unit" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
+                    <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required placeholder="e.g., pcs, kg, bottle" data-testid="input-edit-item-purchase-unit" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-purchaseQty">Purchase Quantity</Label>
+                    <Input id="edit-purchaseQty" name="purchaseQty" type="number" step="0.01" min="0" defaultValue="" placeholder="Enter qty to add to stock" data-testid="input-edit-item-purchase-qty" />
+                    <p className="text-xs text-muted-foreground">Quantity added to Main Store / Warehouse</p>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
