@@ -4,7 +4,7 @@ import {
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
-  storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments,
+  storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, goodsReceivedNotes,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -23,7 +23,8 @@ import {
   type StoreIssueLine, type InsertStoreIssueLine,
   type StoreStock, type InsertStoreStock,
   type StoreName, type InsertStoreName,
-  type InventoryDepartment, type InsertInventoryDepartment
+  type InventoryDepartment, type InsertInventoryDepartment,
+  type GoodsReceivedNote, type InsertGoodsReceivedNote
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -261,6 +262,15 @@ export interface IStorage {
   createInventoryDepartment(dept: InsertInventoryDepartment): Promise<InventoryDepartment>;
   updateInventoryDepartment(id: string, dept: Partial<InsertInventoryDepartment>): Promise<InventoryDepartment | undefined>;
   deleteInventoryDepartment(id: string): Promise<boolean>;
+
+  // Goods Received Notes (GRN)
+  getGoodsReceivedNotes(clientId: string, date?: Date): Promise<GoodsReceivedNote[]>;
+  getGoodsReceivedNote(id: string): Promise<GoodsReceivedNote | undefined>;
+  getGoodsReceivedNotesByDate(clientId: string, date: Date): Promise<GoodsReceivedNote[]>;
+  getDailyGRNTotal(clientId: string, date: Date): Promise<number>;
+  createGoodsReceivedNote(grn: InsertGoodsReceivedNote): Promise<GoodsReceivedNote>;
+  updateGoodsReceivedNote(id: string, grn: Partial<InsertGoodsReceivedNote>): Promise<GoodsReceivedNote | undefined>;
+  deleteGoodsReceivedNote(id: string): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -1646,6 +1656,78 @@ export class DbStorage implements IStorage {
 
   async deleteInventoryDepartment(id: string): Promise<boolean> {
     await db.delete(inventoryDepartments).where(eq(inventoryDepartments.id, id));
+    return true;
+  }
+
+  // Goods Received Notes (GRN)
+  async getGoodsReceivedNotes(clientId: string, date?: Date): Promise<GoodsReceivedNote[]> {
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      return db.select().from(goodsReceivedNotes)
+        .where(and(
+          eq(goodsReceivedNotes.clientId, clientId),
+          gte(goodsReceivedNotes.date, startOfDay),
+          lte(goodsReceivedNotes.date, endOfDay)
+        ))
+        .orderBy(desc(goodsReceivedNotes.date));
+    }
+    return db.select().from(goodsReceivedNotes)
+      .where(eq(goodsReceivedNotes.clientId, clientId))
+      .orderBy(desc(goodsReceivedNotes.date));
+  }
+
+  async getGoodsReceivedNote(id: string): Promise<GoodsReceivedNote | undefined> {
+    const [grn] = await db.select().from(goodsReceivedNotes).where(eq(goodsReceivedNotes.id, id));
+    return grn;
+  }
+
+  async getGoodsReceivedNotesByDate(clientId: string, date: Date): Promise<GoodsReceivedNote[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    return db.select().from(goodsReceivedNotes)
+      .where(and(
+        eq(goodsReceivedNotes.clientId, clientId),
+        gte(goodsReceivedNotes.date, startOfDay),
+        lte(goodsReceivedNotes.date, endOfDay)
+      ))
+      .orderBy(desc(goodsReceivedNotes.createdAt));
+  }
+
+  async getDailyGRNTotal(clientId: string, date: Date): Promise<number> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    const result = await db.select({ total: sum(goodsReceivedNotes.amount) })
+      .from(goodsReceivedNotes)
+      .where(and(
+        eq(goodsReceivedNotes.clientId, clientId),
+        gte(goodsReceivedNotes.date, startOfDay),
+        lte(goodsReceivedNotes.date, endOfDay)
+      ));
+    return parseFloat(result[0]?.total || "0");
+  }
+
+  async createGoodsReceivedNote(insertGrn: InsertGoodsReceivedNote): Promise<GoodsReceivedNote> {
+    const [grn] = await db.insert(goodsReceivedNotes).values(insertGrn).returning();
+    return grn;
+  }
+
+  async updateGoodsReceivedNote(id: string, updateData: Partial<InsertGoodsReceivedNote>): Promise<GoodsReceivedNote | undefined> {
+    const [grn] = await db.update(goodsReceivedNotes)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(goodsReceivedNotes.id, id))
+      .returning();
+    return grn;
+  }
+
+  async deleteGoodsReceivedNote(id: string): Promise<boolean> {
+    await db.delete(goodsReceivedNotes).where(eq(goodsReceivedNotes.id, id));
     return true;
   }
 }

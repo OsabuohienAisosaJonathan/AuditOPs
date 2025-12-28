@@ -406,6 +406,29 @@ export const storeStock = pgTable("store_stock", {
 });
 
 // ============================================================
+// GOODS RECEIVED NOTES (GRN)
+// ============================================================
+
+export const GRN_STATUS = ["pending", "received"] as const;
+export type GRNStatus = typeof GRN_STATUS[number];
+
+export const goodsReceivedNotes = pgTable("goods_received_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  supplierId: varchar("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  supplierName: text("supplier_name").notNull(),
+  date: timestamp("date").notNull(),
+  invoiceRef: text("invoice_ref").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  status: text("status").notNull().default("pending"),
+  evidenceUrl: text("evidence_url"),
+  evidenceFileName: text("evidence_file_name"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================
 // STORE NAMES (Master list of store names for linking)
 // ============================================================
 
@@ -460,6 +483,7 @@ export const insertAuditChangeLogSchema = createInsertSchema(auditChangeLog).omi
 export const insertStoreIssueSchema = createInsertSchema(storeIssues).omit({ id: true, createdAt: true });
 export const insertStoreIssueLineSchema = createInsertSchema(storeIssueLines).omit({ id: true, createdAt: true });
 export const insertStoreStockSchema = createInsertSchema(storeStock).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertGoodsReceivedNoteSchema = createInsertSchema(goodsReceivedNotes).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -516,3 +540,5 @@ export type InsertStoreName = z.infer<typeof insertStoreNameSchema>;
 export type StoreName = typeof storeNames.$inferSelect;
 export type InsertInventoryDepartment = z.infer<typeof insertInventoryDepartmentSchema>;
 export type InventoryDepartment = typeof inventoryDepartments.$inferSelect;
+export type InsertGoodsReceivedNote = z.infer<typeof insertGoodsReceivedNoteSchema>;
+export type GoodsReceivedNote = typeof goodsReceivedNotes.$inferSelect;
