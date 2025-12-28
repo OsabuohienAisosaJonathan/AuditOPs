@@ -48,6 +48,7 @@ PostgreSQL database with the following core entities:
 - **outletDepartmentLinks**: Toggle inheritance of client departments per outlet
 - **salesEntries**: Daily sales records
 - **purchases/stockMovements**: Inventory tracking
+- **goodsReceivedNotes**: GRN records with supplier, invoice, amount, status, and evidence file upload
 - **reconciliations**: Daily stock comparisons
 - **exceptions/exceptionComments**: Audit discrepancy cases
 - **auditLogs/adminActivityLogs**: Compliance logging
