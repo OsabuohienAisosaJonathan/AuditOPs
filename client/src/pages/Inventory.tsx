@@ -290,7 +290,7 @@ export default function Inventory() {
           </TabsTrigger>
           <TabsTrigger value="store-names" data-testid="tab-store-names" className="h-auto py-2 leading-tight text-center">
             <Building className="h-4 w-4 mr-2 flex-shrink-0" />
-            <span className="whitespace-normal">Stock Reconciliation Department (SRD)</span>
+            <span className="whitespace-normal">SRD</span>
           </TabsTrigger>
           <TabsTrigger value="inv-departments" data-testid="tab-inv-departments">
             <Warehouse className="h-4 w-4 mr-2" />
