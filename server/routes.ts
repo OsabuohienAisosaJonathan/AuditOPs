@@ -1807,64 +1807,44 @@ export async function registerRoutes(
       }
       
       if (purchaseQty && parseFloat(purchaseQty) > 0) {
-        // Find inventory departments
-        const invDepts = await storage.getInventoryDepartments(item.clientId);
-        const storeNamesList = await storage.getStoreNames();
-        const storeNameMap = new Map(storeNamesList.map(s => [s.id, s.name]));
-
-        // Get actual client departments (to find IDs for store_stock)
+        // Get all client departments and find those named "Main Store" or "Warehouse"
         const clientDepts = await storage.getDepartments(item.clientId);
-        const clientDeptNameMap = new Map(clientDepts.map(d => [d.name.toLowerCase(), d.id]));
-
-        const qualifyingDepts = invDepts.filter(d => {
-          const storeName = storeNameMap.get(d.storeNameId)?.toLowerCase() || "";
-          return (
-            d.inventoryType === "MAIN_STORE" || 
-            d.inventoryType === "WAREHOUSE" ||
-            storeName.includes("main store") ||
-            storeName.includes("warehouse")
-          );
+        
+        // Find departments whose name contains "main store" or "warehouse" (case-insensitive)
+        const targetDepts = clientDepts.filter(d => {
+          const name = d.name.toLowerCase();
+          return name.includes("main store") || name.includes("warehouse");
         });
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        for (const invDept of qualifyingDepts) {
-          const storeName = storeNameMap.get(invDept.storeNameId);
-          // Try to find the corresponding 'SRD' department ID
-          let targetDeptId = clientDeptNameMap.get(storeName?.toLowerCase() || "");
-          
-          // Fallback logic if names don't match exactly
-          if (!targetDeptId && storeName?.toLowerCase().includes("main store")) {
-            targetDeptId = clientDeptNameMap.get("main store");
-          }
-          if (!targetDeptId && storeName?.toLowerCase().includes("warehouse")) {
-            targetDeptId = clientDeptNameMap.get("warehouse");
-          }
-
-          if (targetDeptId) {
-            await storage.addPurchaseToStoreStock(
-              item.clientId,
-              targetDeptId, // This must be a valid department ID
-              item.id,
-              parseFloat(purchaseQty),
-              item.costPrice || "0.00",
-              today
-            );
-          } else {
-            console.error(`[Purchase Capture] Could not find department ID for store name: ${storeName}`);
-          }
+        console.log(`[Purchase Capture] Client: ${item.clientId}, Item: ${item.name}, Qty: ${purchaseQty}`);
+        console.log(`[Purchase Capture] Target departments found: ${targetDepts.map(d => d.name).join(", ") || "NONE"}`);
+        
+        for (const dept of targetDepts) {
+          console.log(`[Purchase Capture] Posting to department: ${dept.name} (${dept.id})`);
+          await storage.addPurchaseToStoreStock(
+            item.clientId,
+            dept.id,
+            item.id,
+            parseFloat(purchaseQty),
+            item.costPrice || "0.00",
+            today
+          );
         }
         
-        if (qualifyingDepts.length > 0) {
+        if (targetDepts.length > 0) {
           await storage.createAuditLog({
             userId: req.session.userId!,
             action: "Item Purchase Captured",
             entity: "Item",
             entityId: item.id,
-            details: `Purchase of ${purchaseQty} ${item.purchaseUnit || item.unit} captured for ${qualifyingDepts.length} store(s)`,
+            details: `Purchase of ${purchaseQty} ${item.purchaseUnit || item.unit} posted to: ${targetDepts.map(d => d.name).join(", ")}`,
             ipAddress: req.ip || "Unknown",
           });
+        } else {
+          console.warn(`[Purchase Capture] No Main Store or Warehouse department found for client ${item.clientId}`);
         }
       }
       
