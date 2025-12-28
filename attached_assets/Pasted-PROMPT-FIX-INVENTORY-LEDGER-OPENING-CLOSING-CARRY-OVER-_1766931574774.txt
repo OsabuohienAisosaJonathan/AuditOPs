@@ -1,0 +1,89 @@
+PROMPT — FIX INVENTORY LEDGER (OPENING/CLOSING CARRY-OVER + SELLING PRICE + AMOUNT SOLD + CATEGORY TOTALS)
+
+You are working on Miemploya AuditOps. Fix the Inventory Ledger page (/inventory-ledger) so daily balances save correctly and roll forward correctly.
+
+A) BUG TO FIX (MAIN ISSUE)
+
+On 27/12/2025 and 28/12/2025, the system did not carry previous day Closing → next day Opening, and values like Opening, Purchase/Added, Total, Closing were not persisted as expected.
+
+Required behavior
+
+When I click Save Ledger, the ledger must persist (save to DB) for that:
+
+clientId
+
+SRD/Department Store Id
+
+date
+
+itemId
+
+and the row values (Opening, Purchase/Added, Dep1–Dep10 issues, Closing, etc.)
+
+When I open a new date (e.g., 28th) for the same SRD, the system must auto-fill:
+
+Opening(today) = Closing(yesterday) per item
+
+This should happen ONLY if today’s ledger row does not exist yet OR Opening is empty/uninitialized.
+
+Do NOT overwrite Opening if the row already exists and was saved.
+
+This carry-forward rule is mandatory for SRD/DEPARTMENT STORE ledgers (department stores).
+
+Keep the existing “Viewing Past Date” behavior: only Super Admin can edit past dates, others view only.
+
+Make sure Total is calculated correctly:
+
+Department Store: Total = Opening + Added
+
+Main Store: Total = Opening + Purchase
+
+Make sure Closing is consistent:
+
+Department Store: Closing is from Stock Count (if that is the current design), but it must still save and load correctly.
+
+Main Store: Closing must reflect Total - (Dep1..Dep10 issues sum).
+
+B) ADD 2 NEW COLUMNS (SRD/DEPARTMENT STORE TABLE)
+
+Pull prices from the Items table used in Inventory & Purchases page.
+
+Add these columns to the ledger table:
+
+Selling Price
+
+auto-load from the Item record (same source as cost price)
+
+Amount Sold
+
+Amount Sold = Sold × Selling Price
+
+Department Store Sold must remain: Sold = Total − Closing
+
+C) CATEGORY TOTALS (BOTTOM OF EACH CATEGORY)
+
+For each category section (black header row like FOOD, F&B):
+
+Add a Category Total row at the bottom of that category group.
+
+Sum the numeric columns (at minimum):
+
+Opening, Purchase/Added, Total, Sold, Closing, Amount Sold
+
+(and include Dep1–Dep10 totals on Main Store where applicable)
+
+Totals must update live when figures change, and must display clearly.
+
+D) WHERE TO APPLY CHANGES (IMPORTANT)
+
+Do not guess file locations. Instead:
+
+Search the codebase for the component/page responsible for Inventory Ledger (e.g. “InventoryLedger”, “inventory-ledger”, “Save Ledger”, “Issue Item to Department”).
+
+Show me:
+
+exact file path(s)
+
+first 10–15 lines of each file you modify
+
+the exact section you replaced (start/end markers)

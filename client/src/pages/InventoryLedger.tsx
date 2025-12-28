@@ -482,13 +482,20 @@ export default function InventoryLedger() {
   };
 
   // Get opening from previous day closing (rollforward)
+  // If current stock record exists for today, use its openingQty
+  // Otherwise, carry forward from previous day's closing
   const getOpeningQty = (itemId: string, currentStock?: StoreStock) => {
-    if (currentStock && parseFloat(currentStock.openingQty || "0") > 0) {
-      return parseFloat(currentStock.openingQty);
+    // If we have a stock record for today, use its saved opening
+    if (currentStock) {
+      return parseFloat(currentStock.openingQty || "0");
     }
+    // No stock record for today - carry forward from previous day's closing
     const prevStock = prevDayStock?.find(s => s.itemId === itemId);
     if (prevStock) {
-      const prevClosing = parseFloat(prevStock.closingQty || "0");
+      // Use physicalClosingQty if available (actual count), otherwise closingQty (calculated)
+      const prevClosing = prevStock.physicalClosingQty !== null && prevStock.physicalClosingQty !== undefined
+        ? parseFloat(prevStock.physicalClosingQty)
+        : parseFloat(prevStock.closingQty || "0");
       return prevClosing;
     }
     return 0;
@@ -573,6 +580,8 @@ export default function InventoryLedger() {
         ? parseFloat(stock.physicalClosingQty) 
         : null;
       const sold = closing !== null ? total - closing : null;
+      const sellingPrice = parseFloat(item.sellingPrice || "0");
+      const amountSold = sold !== null ? sold * sellingPrice : null;
       
       return {
         sn,
@@ -585,6 +594,8 @@ export default function InventoryLedger() {
         total,
         sold,
         closing,
+        sellingPrice,
+        amountSold,
         awaitingCount: closing === null,
         stockId: stock?.id,
       };
@@ -901,6 +912,27 @@ export default function InventoryLedger() {
                       .filter(([category]) => !hiddenCategories.has(category))
                       .map(([category, rows]) => {
                       const isExpanded = expandedCategories.has(category);
+                      const catTotals = rows.reduce((acc, row) => {
+                        const editedOpening = ledgerEdits[row.itemId]?.opening;
+                        const editedPurchase = ledgerEdits[row.itemId]?.purchase;
+                        const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
+                        const displayPurchase = editedPurchase !== undefined ? parseFloat(editedPurchase || "0") : row.purchase;
+                        const displayTotal = displayOpening + displayPurchase;
+                        const displayClosing = displayTotal - row.totalIssued;
+                        const displayValue = displayClosing * row.cost;
+                        const depTotals: Record<string, number> = {};
+                        visibleDeptList.forEach(dept => {
+                          depTotals[dept.id] = (acc.depIssues[dept.id] || 0) + (row.depIssues[dept.id] || 0);
+                        });
+                        return {
+                          opening: acc.opening + displayOpening,
+                          purchase: acc.purchase + displayPurchase,
+                          total: acc.total + displayTotal,
+                          closing: acc.closing + displayClosing,
+                          value: acc.value + displayValue,
+                          depIssues: depTotals,
+                        };
+                      }, { opening: 0, purchase: 0, total: 0, closing: 0, value: 0, depIssues: {} as Record<string, number> });
                       return (
                         <React.Fragment key={`cat-${category}`}>
                           <TableRow 
@@ -990,6 +1022,25 @@ export default function InventoryLedger() {
                               </TableCell>
                             </TableRow>
                           );})}
+                          {isExpanded && (
+                            <TableRow className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                              <TableCell className="text-center sticky left-0 bg-gray-100">—</TableCell>
+                              <TableCell className="font-bold sticky left-[50px] bg-gray-100">{category} Total</TableCell>
+                              <TableCell className="bg-gray-100">—</TableCell>
+                              <TableCell className="text-right bg-gray-100">{catTotals.opening.toFixed(2)}</TableCell>
+                              <TableCell className="text-right bg-gray-100">{catTotals.purchase.toFixed(2)}</TableCell>
+                              <TableCell className="text-right bg-muted/30 font-bold">{catTotals.total.toFixed(2)}</TableCell>
+                              {visibleDeptList.map(dept => (
+                                <TableCell key={`total-${dept.id}`} className="text-right text-orange-600 font-bold">
+                                  {(catTotals.depIssues[dept.id] || 0).toFixed(2)}
+                                </TableCell>
+                              ))}
+                              <TableCell className="text-right bg-muted/30 font-bold">{catTotals.closing.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">—</TableCell>
+                              <TableCell className="text-right font-bold">{catTotals.value.toFixed(2)}</TableCell>
+                              <TableCell>—</TableCell>
+                            </TableRow>
+                          )}
                       </React.Fragment>
                     );
                   })
@@ -1069,12 +1120,14 @@ export default function InventoryLedger() {
                     <TableHead className="w-[100px] text-right bg-muted/30">Total</TableHead>
                     <TableHead className="w-[100px] text-right">Sold</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
+                    <TableHead className="w-[100px] text-right">Selling Price</TableHead>
+                    <TableHead className="w-[120px] text-right bg-green-50">Amount Sold</TableHead>
                   </TableRow>
                 </TableHeader>
                     <TableBody>
                       {deptStoreLedger.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                             No items found. Add items in the Inventory page first.
                           </TableCell>
                         </TableRow>
@@ -1083,6 +1136,14 @@ export default function InventoryLedger() {
                           .filter(([category]) => !hiddenCategories.has(category))
                           .map(([category, rows]) => {
                           const isExpanded = expandedCategories.has(category);
+                          const catTotals = rows.reduce((acc, row) => ({
+                            opening: acc.opening + row.opening,
+                            added: acc.added + row.added,
+                            total: acc.total + row.total,
+                            sold: acc.sold + (row.sold || 0),
+                            closing: acc.closing + (row.closing || 0),
+                            amountSold: acc.amountSold + (row.amountSold || 0),
+                          }), { opening: 0, added: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
                           return (
                             <React.Fragment key={`cat-${category}`}>
                               <TableRow 
@@ -1090,7 +1151,7 @@ export default function InventoryLedger() {
                                 onClick={() => toggleCategory(category)}
                                 data-testid={`category-header-dept-${category}`}
                               >
-                                <TableCell colSpan={8} className="font-semibold text-sm py-2 text-white">
+                                <TableCell colSpan={10} className="font-semibold text-sm py-2 text-white">
                                   <div className="flex items-center justify-between w-full">
                                     <div className="flex items-center gap-2">
                                       {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -1130,8 +1191,26 @@ export default function InventoryLedger() {
                                       <span className="font-medium">{row.closing?.toFixed(2)}</span>
                                     )}
                                   </TableCell>
+                                  <TableCell className="text-right">{row.sellingPrice.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right bg-green-50 font-medium text-green-700">
+                                    {row.amountSold !== null ? row.amountSold.toFixed(2) : <span className="text-muted-foreground">—</span>}
+                                  </TableCell>
                                 </TableRow>
                               ))}
+                              {isExpanded && (
+                                <TableRow className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                                  <TableCell className="text-center">—</TableCell>
+                                  <TableCell className="font-bold">{category} Total</TableCell>
+                                  <TableCell>—</TableCell>
+                                  <TableCell className="text-right">{catTotals.opening.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right text-green-600">{catTotals.added.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right bg-muted/30 font-bold">{catTotals.total.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right">{catTotals.sold.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right bg-muted/30 font-bold">{catTotals.closing.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right">—</TableCell>
+                                  <TableCell className="text-right bg-green-50 font-bold text-green-700">{catTotals.amountSold.toFixed(2)}</TableCell>
+                                </TableRow>
+                              )}
                             </React.Fragment>
                           );
                         })
