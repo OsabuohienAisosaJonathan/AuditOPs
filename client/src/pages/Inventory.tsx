@@ -12,7 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { clientsApi, itemsApi, suppliersApi, storeNamesApi, inventoryDepartmentsApi, Item, Supplier, StoreName, InventoryDepartment } from "@/lib/api";
+import { clientsApi, itemsApi, suppliersApi, storeNamesApi, inventoryDepartmentsApi, grnApi, Item, Supplier, StoreName, InventoryDepartment, GoodsReceivedNote } from "@/lib/api";
+import { format } from "date-fns";
+import { Calendar as CalendarIcon, FileText, Upload, ExternalLink } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { toast } from "sonner";
@@ -40,6 +45,12 @@ export default function Inventory() {
   const [editInvDeptOpen, setEditInvDeptOpen] = useState(false);
   const [deleteInvDeptOpen, setDeleteInvDeptOpen] = useState(false);
   const [selectedInvDept, setSelectedInvDept] = useState<InventoryDepartment | null>(null);
+  
+  const [createGrnOpen, setCreateGrnOpen] = useState(false);
+  const [editGrnOpen, setEditGrnOpen] = useState(false);
+  const [deleteGrnOpen, setDeleteGrnOpen] = useState(false);
+  const [selectedGrn, setSelectedGrn] = useState<GoodsReceivedNote | null>(null);
+  const [grnFilterDate, setGrnFilterDate] = useState<Date | undefined>(undefined);
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const toggleCategory = (category: string) => {
@@ -236,6 +247,60 @@ export default function Inventory() {
     },
   });
 
+  const { data: grns, isLoading: grnsLoading } = useQuery({
+    queryKey: ["grn", selectedClientId, grnFilterDate?.toISOString()],
+    queryFn: () => selectedClientId ? grnApi.getByClient(selectedClientId, grnFilterDate?.toISOString()) : Promise.resolve([]),
+    enabled: !!selectedClientId,
+  });
+
+  const createGrnMutation = useMutation({
+    mutationFn: (data: FormData) => grnApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["grn"] });
+      setCreateGrnOpen(false);
+      toast.success("GRN created successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to create GRN");
+    },
+  });
+
+  const updateGrnMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: FormData }) => grnApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["grn"] });
+      setEditGrnOpen(false);
+      setSelectedGrn(null);
+      toast.success("GRN updated successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to update GRN");
+    },
+  });
+
+  const deleteGrnMutation = useMutation({
+    mutationFn: (id: string) => grnApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["grn"] });
+      setDeleteGrnOpen(false);
+      setSelectedGrn(null);
+      toast.success("GRN deleted successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to delete GRN");
+    },
+  });
+
+  const handleEditGrn = (grn: GoodsReceivedNote) => {
+    setSelectedGrn(grn);
+    setEditGrnOpen(true);
+  };
+
+  const handleDeleteGrn = (grn: GoodsReceivedNote) => {
+    setSelectedGrn(grn);
+    setDeleteGrnOpen(true);
+  };
+
   const getStoreNameById = (id: string) => storeNames?.find(sn => sn.id === id);
 
   const handleEditItem = (item: Item) => {
@@ -302,7 +367,7 @@ export default function Inventory() {
       </div>
 
       <Tabs defaultValue="items" className="w-full">
-        <TabsList className="grid w-full max-w-[600px] grid-cols-4">
+        <TabsList className="grid w-full max-w-[750px] grid-cols-5">
           <TabsTrigger value="items" data-testid="tab-items">
             <Package className="h-4 w-4 mr-2" />
             Reg. Items
@@ -310,6 +375,10 @@ export default function Inventory() {
           <TabsTrigger value="suppliers" data-testid="tab-suppliers">
             <Truck className="h-4 w-4 mr-2" />
             Suppliers
+          </TabsTrigger>
+          <TabsTrigger value="grn" data-testid="tab-grn">
+            <FileText className="h-4 w-4 mr-2" />
+            GRN
           </TabsTrigger>
           <TabsTrigger value="store-names" data-testid="tab-store-names" className="h-auto py-2 leading-tight text-center">
             <Building className="h-4 w-4 mr-2 flex-shrink-0" />
@@ -640,6 +709,211 @@ export default function Inventory() {
                                 onClick={() => handleDeleteSupplier(supplier)} 
                                 className="text-red-600"
                                 data-testid={`button-delete-supplier-${supplier.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* GRN Tab */}
+        <TabsContent value="grn" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader className="px-6 py-4 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4 items-center flex-1">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-[200px] justify-start text-left font-normal" data-testid="button-grn-date-filter">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {grnFilterDate ? format(grnFilterDate, "PPP") : "Filter by date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={grnFilterDate}
+                        onSelect={setGrnFilterDate}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  {grnFilterDate && (
+                    <Button variant="ghost" size="sm" onClick={() => setGrnFilterDate(undefined)} data-testid="button-clear-grn-date">
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <Dialog open={createGrnOpen} onOpenChange={setCreateGrnOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2" data-testid="button-add-grn">
+                      <Plus className="h-4 w-4" /> Add GRN
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Create Goods Received Note</DialogTitle>
+                      <DialogDescription>Record a new delivery from a supplier.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = e.currentTarget;
+                      const formData = new FormData(form);
+                      formData.append("clientId", selectedClientId!);
+                      createGrnMutation.mutate(formData);
+                    }}>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="grnSupplierName">Supplier Name</Label>
+                          <Select name="supplierId" onValueChange={(v) => {
+                            const supplier = suppliers?.find(s => s.id === v);
+                            const form = document.getElementById("create-grn-form") as HTMLFormElement;
+                            if (form && supplier) {
+                              const input = form.querySelector('[name="supplierName"]') as HTMLInputElement;
+                              if (input) input.value = supplier.name;
+                            }
+                          }}>
+                            <SelectTrigger data-testid="select-grn-supplier">
+                              <SelectValue placeholder="Select supplier (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {suppliers?.map(s => (
+                                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input name="supplierName" placeholder="Or enter supplier name manually" required data-testid="input-grn-supplier-name" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="grnDate">Date</Label>
+                          <Input type="date" name="date" required data-testid="input-grn-date" defaultValue={format(new Date(), "yyyy-MM-dd")} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="grnInvoiceRef">Invoice Reference</Label>
+                          <Input name="invoiceRef" required placeholder="e.g., INV-2024-001" data-testid="input-grn-invoice-ref" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="grnAmount">Amount</Label>
+                          <Input type="number" step="0.01" name="amount" required placeholder="0.00" data-testid="input-grn-amount" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="grnStatus">Status</Label>
+                          <Select name="status" defaultValue="pending">
+                            <SelectTrigger data-testid="select-grn-status">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="received">Received</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="grnEvidence">Evidence (Invoice/Receipt)</Label>
+                          <div className="flex items-center gap-2">
+                            <Input type="file" name="evidence" accept="image/*,application/pdf" className="flex-1" data-testid="input-grn-evidence" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">Optional: Upload invoice or receipt image (JPEG, PNG, GIF, PDF)</p>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setCreateGrnOpen(false)}>Cancel</Button>
+                        <Button type="submit" disabled={createGrnMutation.isPending} data-testid="button-submit-grn">
+                          {createGrnMutation.isPending && <Spinner className="mr-2" />}
+                          Create GRN
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {grnsLoading ? (
+                <div className="flex items-center justify-center py-12" data-testid="loading-grn">
+                  <Spinner className="h-8 w-8" />
+                </div>
+              ) : !grns || grns.length === 0 ? (
+                <Empty className="py-12" data-testid="empty-grn">
+                  <EmptyMedia variant="icon">
+                    <FileText className="h-6 w-6" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>No goods received notes</EmptyTitle>
+                    <EmptyDescription>Record your first GRN to track supplier deliveries.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button className="gap-2" onClick={() => setCreateGrnOpen(true)} data-testid="button-add-first-grn">
+                    <Plus className="h-4 w-4" /> Add First GRN
+                  </Button>
+                </Empty>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Invoice Ref</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Evidence</TableHead>
+                      <TableHead className="w-[80px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grns.map((grn) => (
+                      <TableRow key={grn.id} data-testid={`row-grn-${grn.id}`}>
+                        <TableCell data-testid={`text-grn-date-${grn.id}`}>{format(new Date(grn.date), "dd MMM yyyy")}</TableCell>
+                        <TableCell className="font-medium" data-testid={`text-grn-supplier-${grn.id}`}>{grn.supplierName}</TableCell>
+                        <TableCell data-testid={`text-grn-invoice-${grn.id}`}>{grn.invoiceRef}</TableCell>
+                        <TableCell className="text-right font-medium" data-testid={`text-grn-amount-${grn.id}`}>
+                          {parseFloat(grn.amount).toLocaleString("en-NG", { style: "currency", currency: "NGN" })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(
+                            grn.status === "received" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          )} data-testid={`badge-grn-status-${grn.id}`}>
+                            {grn.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {grn.evidenceUrl ? (
+                            <Button variant="ghost" size="sm" asChild data-testid={`button-view-evidence-${grn.id}`}>
+                              <a href={grn.evidenceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
+                                <ExternalLink className="h-4 w-4" />
+                                {grn.evidenceFileName || "View"}
+                              </a>
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-grn-actions-${grn.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditGrn(grn)} data-testid={`button-edit-grn-${grn.id}`}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleDeleteGrn(grn)} 
+                                className="text-red-600"
+                                data-testid={`button-delete-grn-${grn.id}`}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 Delete
@@ -1277,6 +1551,92 @@ export default function Inventory() {
               data-testid="button-confirm-delete-inv-dept"
             >
               {deleteInvDeptMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit GRN Dialog */}
+      <Dialog open={editGrnOpen} onOpenChange={setEditGrnOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Goods Received Note</DialogTitle>
+            <DialogDescription>Update the GRN details.</DialogDescription>
+          </DialogHeader>
+          {selectedGrn && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.currentTarget;
+              const formData = new FormData(form);
+              updateGrnMutation.mutate({ id: selectedGrn.id, data: formData });
+            }}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editGrnSupplierName">Supplier Name</Label>
+                  <Input name="supplierName" defaultValue={selectedGrn.supplierName} required data-testid="input-edit-grn-supplier-name" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editGrnDate">Date</Label>
+                  <Input type="date" name="date" required data-testid="input-edit-grn-date" defaultValue={format(new Date(selectedGrn.date), "yyyy-MM-dd")} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editGrnInvoiceRef">Invoice Reference</Label>
+                  <Input name="invoiceRef" defaultValue={selectedGrn.invoiceRef} required data-testid="input-edit-grn-invoice-ref" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editGrnAmount">Amount</Label>
+                  <Input type="number" step="0.01" name="amount" defaultValue={selectedGrn.amount} required data-testid="input-edit-grn-amount" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editGrnStatus">Status</Label>
+                  <Select name="status" defaultValue={selectedGrn.status}>
+                    <SelectTrigger data-testid="select-edit-grn-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="received">Received</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editGrnEvidence">Evidence (Invoice/Receipt)</Label>
+                  {selectedGrn.evidenceUrl && (
+                    <p className="text-sm text-muted-foreground">Current: {selectedGrn.evidenceFileName}</p>
+                  )}
+                  <Input type="file" name="evidence" accept="image/*,application/pdf" data-testid="input-edit-grn-evidence" />
+                  <p className="text-xs text-muted-foreground">Leave empty to keep current file</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditGrnOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateGrnMutation.isPending} data-testid="button-save-grn">
+                  {updateGrnMutation.isPending && <Spinner className="mr-2" />}
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete GRN Dialog */}
+      <AlertDialog open={deleteGrnOpen} onOpenChange={setDeleteGrnOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Goods Received Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete GRN "{selectedGrn?.invoiceRef}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => selectedGrn && deleteGrnMutation.mutate(selectedGrn.id)}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete-grn"
+            >
+              {deleteGrnMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

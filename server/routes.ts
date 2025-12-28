@@ -3343,12 +3343,13 @@ export async function registerRoutes(
     }
   });
 
+  const express = await import("express");
   app.use("/uploads", (req, res, next) => {
     if (!req.session.userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
     next();
-  }, require("express").static(path.join(process.cwd(), "uploads")));
+  }, express.default.static(path.join(process.cwd(), "uploads")));
 
   // ============== REPORTS ==============
   app.get("/api/reports/generate", requireAuth, async (req, res) => {

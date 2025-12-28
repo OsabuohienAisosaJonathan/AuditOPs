@@ -1146,3 +1146,59 @@ export const inventoryDepartmentsApi = {
       method: "DELETE",
     }),
 };
+
+export interface GoodsReceivedNote {
+  id: string;
+  clientId: string;
+  supplierId: string | null;
+  supplierName: string;
+  date: string;
+  invoiceRef: string;
+  amount: string;
+  status: "pending" | "received";
+  evidenceUrl: string | null;
+  evidenceFileName: string | null;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const grnApi = {
+  getByClient: (clientId: string, date?: string) => {
+    const params = new URLSearchParams();
+    params.append("clientId", clientId);
+    if (date) params.append("date", date);
+    return fetchApi<GoodsReceivedNote[]>(`/grn?${params}`);
+  },
+  get: (id: string) => fetchApi<GoodsReceivedNote>(`/grn/${id}`),
+  getDailyTotal: (clientId: string, date: string) => 
+    fetchApi<{ total: number }>(`/grn/daily-total?clientId=${clientId}&date=${date}`),
+  create: async (data: FormData) => {
+    const res = await fetch("/api/grn", {
+      method: "POST",
+      body: data,
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to create GRN");
+    }
+    return res.json() as Promise<GoodsReceivedNote>;
+  },
+  update: async (id: string, data: FormData) => {
+    const res = await fetch(`/api/grn/${id}`, {
+      method: "PUT",
+      body: data,
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to update GRN");
+    }
+    return res.json() as Promise<GoodsReceivedNote>;
+  },
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/grn/${id}`, {
+      method: "DELETE",
+    }),
+};
