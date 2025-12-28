@@ -422,7 +422,7 @@ export default function Inventory() {
                         sku: formData.get("sku") as string || null,
                         category: formData.get("category") as string,
                         unit: formData.get("unit") as string,
-                        purchaseUnit: formData.get("purchaseUnit") as string,
+                        purchaseUnit: formData.get("unit") as string, // Default to unit on creation
                         costPrice: formData.get("costPrice") as string,
                         sellingPrice: formData.get("sellingPrice") as string,
                         reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
@@ -450,14 +450,16 @@ export default function Inventory() {
                             <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
                           </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="purchaseUnit">Purchase Unit</Label>
-                          <Input id="purchaseUnit" name="purchaseUnit" required placeholder="e.g., box, carton" data-testid="input-item-purchase-unit" />
-                        </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label htmlFor="costPrice">Cost Price</Label>
                             <Input id="costPrice" name="costPrice" type="number" step="0.01" required data-testid="input-item-cost" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="sellingPrice">Selling Price</Label>
+                            <Input id="sellingPrice" name="sellingPrice" type="number" step="0.01" required data-testid="input-item-price" />
+                          </div>
+                        </div>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="sellingPrice">Selling Price</Label>
@@ -1296,12 +1298,13 @@ export default function Inventory() {
                     <Input id="edit-category" name="category" defaultValue={selectedItem.category} required data-testid="input-edit-item-category" />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-unit">Unit</Label>
-                    <Input id="edit-unit" name="unit" defaultValue={selectedItem.unit} required data-testid="input-edit-item-unit" />
+                    <Label htmlFor="edit-unit">Unit (Base Unit)</Label>
+                    <Input id="edit-unit" name="unit" defaultValue={selectedItem.unit} disabled className="bg-muted cursor-not-allowed" data-testid="input-edit-item-unit" />
+                    <p className="text-xs text-muted-foreground">The base unit cannot be changed once registered.</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
-                    <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required data-testid="input-edit-item-purchase-unit" />
+                    <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required placeholder="e.g., box, carton" data-testid="input-edit-item-purchase-unit" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
