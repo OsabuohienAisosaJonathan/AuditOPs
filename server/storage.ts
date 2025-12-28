@@ -258,10 +258,12 @@ export interface IStorage {
   getInventoryDepartments(clientId: string): Promise<InventoryDepartment[]>;
   getInventoryDepartment(id: string): Promise<InventoryDepartment | undefined>;
   getInventoryDepartmentByType(clientId: string, inventoryType: string): Promise<InventoryDepartment | undefined>;
+  getInventoryDepartmentsByTypes(clientId: string, inventoryTypes: string[]): Promise<InventoryDepartment[]>;
   checkInventoryDepartmentDuplicate(clientId: string, storeNameId: string, inventoryType: string, excludeId?: string): Promise<boolean>;
   createInventoryDepartment(dept: InsertInventoryDepartment): Promise<InventoryDepartment>;
   updateInventoryDepartment(id: string, dept: Partial<InsertInventoryDepartment>): Promise<InventoryDepartment | undefined>;
   deleteInventoryDepartment(id: string): Promise<boolean>;
+  addPurchaseToStoreStock(clientId: string, storeDepartmentId: string, itemId: string, quantity: number, costPrice: string, date: Date): Promise<StoreStock>;
 
   // Goods Received Notes (GRN)
   getGoodsReceivedNotes(clientId: string, date?: Date): Promise<GoodsReceivedNote[]>;
@@ -1657,6 +1659,51 @@ export class DbStorage implements IStorage {
   async deleteInventoryDepartment(id: string): Promise<boolean> {
     await db.delete(inventoryDepartments).where(eq(inventoryDepartments.id, id));
     return true;
+  }
+
+  async getInventoryDepartmentsByTypes(clientId: string, inventoryTypes: string[]): Promise<InventoryDepartment[]> {
+    if (inventoryTypes.length === 0) return [];
+    
+    const typeConditions = inventoryTypes.map(t => eq(inventoryDepartments.inventoryType, t));
+    return db.select().from(inventoryDepartments).where(
+      and(
+        eq(inventoryDepartments.clientId, clientId),
+        or(...typeConditions)
+      )
+    );
+  }
+
+  async addPurchaseToStoreStock(clientId: string, storeDepartmentId: string, itemId: string, quantity: number, costPrice: string, date: Date): Promise<StoreStock> {
+    const existing = await this.getStoreStockByItem(storeDepartmentId, itemId, date);
+    
+    if (existing) {
+      const currentAddedQty = parseFloat(existing.addedQty || "0");
+      const newAddedQty = (currentAddedQty + quantity).toString();
+      const currentClosing = parseFloat(existing.closingQty || "0");
+      const newClosing = (currentClosing + quantity).toString();
+      
+      const [updated] = await db.update(storeStock).set({
+        addedQty: newAddedQty,
+        closingQty: newClosing,
+        costPriceSnapshot: costPrice,
+        updatedAt: new Date()
+      }).where(eq(storeStock.id, existing.id)).returning();
+      return updated;
+    }
+    
+    return this.createStoreStock({
+      clientId,
+      storeDepartmentId,
+      itemId,
+      date,
+      openingQty: "0",
+      addedQty: quantity.toString(),
+      issuedQty: "0",
+      closingQty: quantity.toString(),
+      physicalClosingQty: null,
+      varianceQty: null,
+      costPriceSnapshot: costPrice
+    });
   }
 
   // Goods Received Notes (GRN)

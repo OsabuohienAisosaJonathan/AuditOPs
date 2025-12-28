@@ -1794,10 +1794,48 @@ export async function registerRoutes(
 
   app.patch("/api/items/:id", requireAuth, async (req, res) => {
     try {
-      const item = await storage.updateItem(req.params.id, req.body);
+      const { purchaseQty, ...updateData } = req.body;
+      
+      const existingItem = await storage.getItem(req.params.id);
+      if (!existingItem) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      
+      const item = await storage.updateItem(req.params.id, updateData);
       if (!item) {
         return res.status(404).json({ error: "Item not found" });
       }
+      
+      if (purchaseQty && parseFloat(purchaseQty) > 0) {
+        const qualifyingDepts = await storage.getInventoryDepartmentsByTypes(
+          item.clientId,
+          ["MAIN_STORE", "WAREHOUSE"]
+        );
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        for (const dept of qualifyingDepts) {
+          await storage.addPurchaseToStoreStock(
+            item.clientId,
+            dept.id,
+            item.id,
+            parseFloat(purchaseQty),
+            item.costPrice,
+            today
+          );
+        }
+        
+        await storage.createAuditLog({
+          userId: req.session.userId!,
+          action: "Item Purchase Captured",
+          entity: "Item",
+          entityId: item.id,
+          details: `Purchase of ${purchaseQty} ${item.purchaseUnit || item.unit} captured for ${qualifyingDepts.length} store(s)`,
+          ipAddress: req.ip || "Unknown",
+        });
+      }
+      
       res.json(item);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
