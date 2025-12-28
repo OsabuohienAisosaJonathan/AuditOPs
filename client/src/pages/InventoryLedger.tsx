@@ -604,13 +604,26 @@ export default function InventoryLedger() {
     setIssueDialogOpen(true);
   };
 
-  // Get available quantity for the selected issue item
+  // Get available quantity for the selected issue item (considering edited values)
   const getAvailableQty = useMemo(() => {
     if (!issueItemId) return 0;
     const ledgerRow = mainStoreLedger.find(r => r.itemId === issueItemId);
     if (!ledgerRow) return 0;
-    return ledgerRow.closing > 0 ? ledgerRow.closing : 0;
-  }, [issueItemId, mainStoreLedger]);
+    
+    // Check if there are pending edits for this item
+    const edits = ledgerEdits[issueItemId];
+    if (edits) {
+      const editedOpening = edits.opening !== undefined ? parseFloat(edits.opening || "0") : ledgerRow.opening;
+      const editedPurchase = edits.purchase !== undefined ? parseFloat(edits.purchase || "0") : ledgerRow.purchase;
+      const displayTotal = editedOpening + editedPurchase;
+      const displayClosing = displayTotal - ledgerRow.totalIssued;
+      return displayClosing > 0 ? displayClosing : 0;
+    }
+    
+    // Use the row's calculated closing (Total - sum of all Dep issues)
+    const available = ledgerRow.total - ledgerRow.totalIssued;
+    return available > 0 ? available : 0;
+  }, [issueItemId, mainStoreLedger, ledgerEdits]);
 
   const handleIssueSubmit = () => {
     if (!issueItemId || !issueToDeptId || !issueQty) return;
