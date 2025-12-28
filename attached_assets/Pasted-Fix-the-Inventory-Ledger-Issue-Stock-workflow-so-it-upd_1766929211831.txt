@@ -1,0 +1,77 @@
+Fix the Inventory Ledger “Issue Stock” workflow so it updates correctly and reflects immediately across Store and Department ledgers.
+
+Define the source of truth (Store Ledger availability)
+
+In Main Store Ledger, each item row has: Opening, Purchase, Total, Dep1…Dep10, Closing.
+
+Total = Opening + Purchase
+
+IssuedQty = sum(Dep1…Dep10)
+
+Closing = Total − IssuedQty
+
+The Available value inside the “Issue Item to Department” modal must always equal:
+Available = Total − IssuedQty for that item on that date (same client + same SRD store).
+
+Fix the Issue action so it actually posts
+When user clicks Issue Stock:
+
+Create a real “Store Issue” transaction record with fields like:
+clientId, date, storeSRDId (Main Store 1), itemId, destinationDepartmentId (Dep1–Dep10 mapped department), qty, createdBy, timestamp.
+
+Immediately update the Store Ledger row for that item/date:
+a) Increment the correct Dep column (Dep1/Dep2/…) by the qty issued
+b) Recompute IssuedQty and Closing
+c) Persist it in DB (not only UI state).
+
+Make departments receive stock automatically
+
+On the destination department ledger (e.g., Bar 1 SRD), the Added column for that date/item must auto-fill from the Store Issue transactions:
+Added = SUM(qty issued to that department for that date/item).
+
+So when I issue “malt 20” from Main Store 1 → Bar 1, the Bar 1 ledger must show Added = 20 for malt on that date.
+
+Fix UI refresh / stale data
+After issuing stock:
+
+The Store Ledger table must instantly refresh and show:
+
+Dep1 increased (e.g., Dep1 = 20)
+
+Closing reduced correctly (e.g., if Total was 130 and I issue 20, Closing becomes 110)
+
+“Available” should also reduce accordingly.
+
+The Bar 1 ledger must refresh and show Added = 20.
+
+Ensure frontend query invalidation/refetch is done after mutations so we don’t see old cached values.
+
+Prevent wrong validation
+
+The modal must not show Available: 0 when the Store Ledger row has Total/Closing already saved.
+
+Validation must compare requested qty against computed Available above.
+
+If qty > Available, block with “Quantity exceeds available stock”. Otherwise allow.
+
+Date + permissions rule
+
+Allow viewing previous days with the date navigator.
+
+Only Super Admin can edit previous-day Store Ledger values (Opening/Purchase/Dep/Closing).
+
+Issuing stock should be allowed only for the selected date, but if it’s a past date, restrict issuing to Super Admin (or disable Issue button for non-super admin).
+
+Acceptance test (must pass)
+
+Given Main Store 1 Ledger on 28/12/2025 has malt: Opening 100, Purchase 30 (Total 130).
+
+Open Issue modal → Available must show 130.
+
+Issue 20 to Dep1: Bar 1.
+
+Store row must update: Dep1 = 20, Closing = 110, Available becomes 110.
+
+Switch SRD to Bar 1 ledger same date → malt Added must show 20.
+
+Also remove any placeholder/mock calculations and ensure all values come from the database transactions and the ledger formulas above.
