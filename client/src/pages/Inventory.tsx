@@ -33,6 +33,8 @@ export default function Inventory() {
   const [editStoreNameOpen, setEditStoreNameOpen] = useState(false);
   const [deleteStoreNameOpen, setDeleteStoreNameOpen] = useState(false);
   const [selectedStoreName, setSelectedStoreName] = useState<StoreName | null>(null);
+  const [storeNameMode, setStoreNameMode] = useState<"link" | "create">("link");
+  const [selectedDeptToLink, setSelectedDeptToLink] = useState<string | null>(null);
   
   const [createInvDeptOpen, setCreateInvDeptOpen] = useState(false);
   const [editInvDeptOpen, setEditInvDeptOpen] = useState(false);
@@ -40,7 +42,7 @@ export default function Inventory() {
   const [selectedInvDept, setSelectedInvDept] = useState<InventoryDepartment | null>(null);
   
   const queryClient = useQueryClient();
-  const { clients, selectedClientId: contextClientId, selectedClient } = useClientContext();
+  const { clients, selectedClientId: contextClientId, selectedClient, departments } = useClientContext();
 
   const selectedClientId = contextClientId || clients?.[0]?.id;
 
@@ -148,6 +150,8 @@ export default function Inventory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-names"] });
       setCreateStoreNameOpen(false);
+      setSelectedDeptToLink(null);
+      setStoreNameMode("link");
       toast.success("Store name created successfully");
     },
     onError: (error: any) => {
@@ -623,7 +627,13 @@ export default function Inventory() {
                     <Input className="pl-9 bg-muted/30" placeholder="Search store names..." data-testid="input-search-store-names" />
                   </div>
                 </div>
-                <Dialog open={createStoreNameOpen} onOpenChange={setCreateStoreNameOpen}>
+                <Dialog open={createStoreNameOpen} onOpenChange={(open) => {
+                    setCreateStoreNameOpen(open);
+                    if (!open) {
+                      setStoreNameMode("link");
+                      setSelectedDeptToLink(null);
+                    }
+                  }}>
                   <DialogTrigger asChild>
                     <Button className="gap-2" data-testid="button-add-store-name">
                       <Plus className="h-4 w-4" /> Link/Create
@@ -631,30 +641,81 @@ export default function Inventory() {
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Create Store Name</DialogTitle>
-                      <DialogDescription>Add a new store name to the master list.</DialogDescription>
+                      <DialogTitle>Link or Create Store Name</DialogTitle>
+                      <DialogDescription>Select from registered departments or create a new store name.</DialogDescription>
                     </DialogHeader>
-                    <form onSubmit={(e) => {
-                      e.preventDefault();
-                      const formData = new FormData(e.currentTarget);
-                      createStoreNameMutation.mutate({
-                        name: formData.get("name") as string,
-                      });
-                    }}>
-                      <div className="space-y-4 py-4">
+                    <div className="space-y-4 py-4">
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={storeNameMode === "link" ? "default" : "outline"}
+                          className="flex-1"
+                          onClick={() => setStoreNameMode("link")}
+                          data-testid="button-mode-link"
+                        >
+                          Link from Registered
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={storeNameMode === "create" ? "default" : "outline"}
+                          className="flex-1"
+                          onClick={() => setStoreNameMode("create")}
+                          data-testid="button-mode-create"
+                        >
+                          Create New
+                        </Button>
+                      </div>
+                      
+                      {storeNameMode === "link" ? (
+                        <div className="space-y-2">
+                          <Label>Select Registered Department</Label>
+                          <Select value={selectedDeptToLink || ""} onValueChange={setSelectedDeptToLink}>
+                            <SelectTrigger data-testid="select-dept-to-link">
+                              <SelectValue placeholder="Choose a department" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {departments?.filter(d => d.status === "active").map(dept => (
+                                <SelectItem key={dept.id} value={dept.id}>
+                                  {dept.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {(!departments || departments.length === 0) && (
+                            <p className="text-xs text-muted-foreground">No departments registered for this client. Create departments in the Clients page first.</p>
+                          )}
+                        </div>
+                      ) : (
                         <div className="space-y-2">
                           <Label htmlFor="storeName">Store Name</Label>
-                          <Input id="storeName" name="name" required placeholder="e.g., Main Kitchen, Bar Area" data-testid="input-store-name" />
+                          <Input id="storeName" name="name" placeholder="e.g., Main Kitchen, Bar Area" data-testid="input-store-name" />
                         </div>
-                      </div>
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setCreateStoreNameOpen(false)}>Cancel</Button>
-                        <Button type="submit" disabled={createStoreNameMutation.isPending} data-testid="button-submit-store-name">
-                          {createStoreNameMutation.isPending && <Spinner className="mr-2" />}
-                          Create Store Name
-                        </Button>
-                      </DialogFooter>
-                    </form>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCreateStoreNameOpen(false)}>Cancel</Button>
+                      <Button 
+                        type="button"
+                        disabled={createStoreNameMutation.isPending || (storeNameMode === "link" && !selectedDeptToLink)}
+                        onClick={() => {
+                          if (storeNameMode === "link" && selectedDeptToLink) {
+                            const dept = departments?.find(d => d.id === selectedDeptToLink);
+                            if (dept) {
+                              createStoreNameMutation.mutate({ name: dept.name });
+                            }
+                          } else {
+                            const input = document.getElementById("storeName") as HTMLInputElement;
+                            if (input?.value) {
+                              createStoreNameMutation.mutate({ name: input.value });
+                            }
+                          }
+                        }}
+                        data-testid="button-submit-store-name"
+                      >
+                        {createStoreNameMutation.isPending && <Spinner className="mr-2" />}
+                        {storeNameMode === "link" ? "Link Department" : "Create Store Name"}
+                      </Button>
+                    </DialogFooter>
                   </DialogContent>
                 </Dialog>
               </div>
