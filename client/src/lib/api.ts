@@ -126,6 +126,7 @@ export interface Item {
   sku: string | null;
   category: string;
   unit: string;
+  purchaseUnit: string;
   costPrice: string;
   sellingPrice: string;
   reorderLevel: number;
