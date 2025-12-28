@@ -274,7 +274,7 @@ export default function Inventory() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Inventory Management</h1>
-          <p className="text-muted-foreground">Manage items and suppliers for {selectedClient?.name || clients[0]?.name || "All Clients"}</p>
+          <p className="text-muted-foreground">Manage Registered items, suppliers and for {selectedClient?.name || clients[0]?.name || "All Clients"}</p>
         </div>
       </div>
 
