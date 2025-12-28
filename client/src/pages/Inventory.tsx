@@ -422,6 +422,7 @@ export default function Inventory() {
                         sku: formData.get("sku") as string || null,
                         category: formData.get("category") as string,
                         unit: formData.get("unit") as string,
+                        purchaseUnit: formData.get("purchaseUnit") as string,
                         costPrice: formData.get("costPrice") as string,
                         sellingPrice: formData.get("sellingPrice") as string,
                         reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
@@ -441,12 +442,12 @@ export default function Inventory() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor="category">Category</Label>
-                            <Input id="category" name="category" required data-testid="input-item-category" />
-                          </div>
-                          <div className="space-y-2">
                             <Label htmlFor="unit">Unit</Label>
                             <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="purchaseUnit">Purchase Unit</Label>
+                            <Input id="purchaseUnit" name="purchaseUnit" required placeholder="e.g., box, carton" data-testid="input-item-purchase-unit" />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -500,6 +501,7 @@ export default function Inventory() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>SKU</TableHead>
+                      <TableHead>Purchase Unit</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Cost Price</TableHead>
                       <TableHead className="text-right">Selling Price</TableHead>

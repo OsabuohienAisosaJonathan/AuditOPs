@@ -77,6 +77,7 @@ export const items = pgTable("items", {
   sku: text("sku"),
   category: text("category").notNull().default("general"),
   unit: text("unit").notNull().default("pcs"),
+  purchaseUnit: text("purchase_unit").notNull().default("pcs"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }).default("0.00"),
   sellingPrice: decimal("selling_price", { precision: 12, scale: 2 }).default("0.00"),
   reorderLevel: integer("reorder_level").default(10),
