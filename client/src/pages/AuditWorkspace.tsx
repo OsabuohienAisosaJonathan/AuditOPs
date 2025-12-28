@@ -1407,6 +1407,18 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   );
 }
 
+interface InventoryDept {
+  id: string;
+  storeNameId: string;
+  inventoryType: string;
+  status: string;
+}
+
+interface StoreName {
+  id: string;
+  name: string;
+}
+
 function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalVariance }: {
   stockCounts: StockCount[];
   items: Item[];
@@ -1417,55 +1429,141 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
+  const [selectedSrdId, setSelectedSrdId] = useState<string>("");
+  const [physicalCount, setPhysicalCount] = useState<string>("");
   const queryClient = useQueryClient();
 
-  const { data: storeIssues = [] } = useQuery({
-    queryKey: ["store-issues", clientId, dateStr],
-    queryFn: () => clientId ? storeIssuesApi.getAll(clientId, dateStr) : Promise.resolve([]),
+  // Fetch inventory departments (SRDs) for the client
+  const { data: inventoryDepts = [] } = useQuery<InventoryDept[]>({
+    queryKey: ["inventory-departments", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments`);
+      if (!res.ok) throw new Error("Failed to fetch inventory departments");
+      return res.json();
+    },
     enabled: !!clientId,
   });
 
-  const issuedQtyByItem = useMemo(() => {
-    const map: Record<string, number> = {};
-    storeIssues.forEach((issue: StoreIssue & { lines?: StoreIssueLine[] }) => {
-      if (issue.toDepartmentId === departmentId && issue.lines) {
-        issue.lines.forEach((line) => {
-          map[line.itemId] = (map[line.itemId] || 0) + Number(line.qtyIssued || 0);
-        });
-      }
-    });
-    return map;
-  }, [storeIssues, departmentId]);
+  // Fetch store names for display
+  const { data: storeNames = [] } = useQuery<StoreName[]>({
+    queryKey: ["store-names"],
+    queryFn: async () => {
+      const res = await fetch("/api/store-names");
+      if (!res.ok) throw new Error("Failed to fetch store names");
+      return res.json();
+    },
+  });
+
+  // Fetch storeStock for selected SRD and date (to get Opening and Added)
+  const { data: storeStockData = [] } = useQuery<StoreStock[]>({
+    queryKey: ["store-stock", clientId, selectedSrdId, dateStr],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/store-stock?departmentId=${selectedSrdId}&date=${dateStr}`);
+      if (!res.ok) throw new Error("Failed to fetch store stock");
+      return res.json();
+    },
+    enabled: !!clientId && !!selectedSrdId,
+  });
+
+  // Fetch previous day storeStock for opening carryover
+  const previousDate = useMemo(() => {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() - 1);
+    return format(d, "yyyy-MM-dd");
+  }, [dateStr]);
+
+  const { data: prevDayStoreStock = [] } = useQuery<StoreStock[]>({
+    queryKey: ["store-stock", clientId, selectedSrdId, previousDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/store-stock?departmentId=${selectedSrdId}&date=${previousDate}`);
+      if (!res.ok) throw new Error("Failed to fetch previous day store stock");
+      return res.json();
+    },
+    enabled: !!clientId && !!selectedSrdId,
+  });
+
+  // Filter Department Store SRDs only (for stock counts)
+  const departmentStoreSrds = useMemo(() => {
+    return inventoryDepts.filter(d => d.inventoryType === "DEPARTMENT_STORE" && d.status === "active");
+  }, [inventoryDepts]);
+
+  const getStoreNameById = (id: string) => storeNames.find(sn => sn.id === id);
+
+  // Get selected SRD's inventory type
+  const selectedSrd = useMemo(() => {
+    return inventoryDepts.find(d => d.id === selectedSrdId);
+  }, [inventoryDepts, selectedSrdId]);
+
+  // Get Opening qty for selected item (from current day storeStock or previous day closing)
+  const getOpeningQty = useMemo(() => {
+    if (!selectedItemId) return 0;
+    const currentStock = storeStockData.find(s => s.itemId === selectedItemId);
+    if (currentStock) {
+      return Number(currentStock.openingQty || 0);
+    }
+    // Fallback to previous day closing
+    const prevStock = prevDayStoreStock.find(s => s.itemId === selectedItemId);
+    if (prevStock) {
+      const prevClosing = prevStock.physicalClosingQty !== null && prevStock.physicalClosingQty !== undefined
+        ? Number(prevStock.physicalClosingQty)
+        : Number(prevStock.closingQty || 0);
+      return prevClosing;
+    }
+    return 0;
+  }, [selectedItemId, storeStockData, prevDayStoreStock]);
+
+  // Get Added qty for selected item (from storeStock.addedQty)
+  const getAddedQty = useMemo(() => {
+    if (!selectedItemId) return 0;
+    const currentStock = storeStockData.find(s => s.itemId === selectedItemId);
+    return Number(currentStock?.addedQty || 0);
+  }, [selectedItemId, storeStockData]);
+
+  // Calculate totals for display
+  const totalQty = getOpeningQty + getAddedQty;
+  const physicalQty = Number(physicalCount) || 0;
+  const soldQty = physicalQty > 0 ? totalQty - physicalQty : 0;
 
   const createMutation = useMutation({
     mutationFn: (data: any) => stockCountsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       setCreateOpen(false);
-      toast.success("Stock count recorded");
+      setSelectedItemId("");
+      setSelectedSrdId("");
+      setPhysicalCount("");
+      toast.success("Stock count recorded and SRD ledger updated");
     },
     onError: (error: any) => toast.error(error.message || "Failed to create count"),
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const opening = Number(formData.get("openingQty")) || 0;
-    const added = issuedQtyByItem[selectedItemId] || 0;
-    const sold = Number(formData.get("soldQty")) || 0;
-    const expected = opening + added - sold;
-    const actual = Number(formData.get("actualQty")) || 0;
+    if (!selectedItemId || !selectedSrdId || !physicalCount) {
+      toast.error("Please select an SRD, item, and enter physical count");
+      return;
+    }
+    
+    const opening = getOpeningQty;
+    const added = getAddedQty;
+    const total = opening + added;
+    const actual = Number(physicalCount) || 0;
+    const sold = total - actual;
+    const expected = total; // Expected = Opening + Added (no sold deduction for expected)
+    
     createMutation.mutate({
       clientId,
       departmentId,
+      storeDepartmentId: selectedSrdId, // This triggers storeStock update on backend
       itemId: selectedItemId,
       date: dateStr,
       openingQty: String(opening),
       addedQty: String(added),
-      soldQty: String(sold),
-      expectedClosingQty: String(expected),
+      soldQty: String(sold > 0 ? sold : 0),
+      expectedClosingQty: String(total),
       actualClosingQty: String(actual),
-      varianceQty: String(actual - expected),
+      varianceQty: String(actual - total),
     });
   };
 
@@ -1549,53 +1647,126 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
         </div>
       </CardContent>
 
-      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setSelectedItemId(""); }}>
-        <DialogContent>
+      <Dialog open={createOpen} onOpenChange={(open) => { 
+        setCreateOpen(open); 
+        if (!open) { 
+          setSelectedItemId(""); 
+          setSelectedSrdId(""); 
+          setPhysicalCount(""); 
+        } 
+      }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Stock Count</DialogTitle>
-            <DialogDescription>Record physical count using SSRV formula: Opening + Added - Sold = Expected</DialogDescription>
+            <DialogDescription>
+              Select an SRD and item, then enter the physical count. Opening and Added are auto-filled from the SRD ledger.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
+              {/* Step 1: Select SRD */}
               <div className="space-y-2">
-                <Label htmlFor="itemId">Item</Label>
-                <Select name="itemId" value={selectedItemId} onValueChange={setSelectedItemId}>
-                  <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
+                <Label htmlFor="srdId">Stock Reconciliation Department (SRD)</Label>
+                <Select value={selectedSrdId} onValueChange={(val) => { setSelectedSrdId(val); setSelectedItemId(""); setPhysicalCount(""); }}>
+                  <SelectTrigger data-testid="select-srd-count">
+                    <SelectValue placeholder="Select SRD (Department Store)" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {items.map(item => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                    {departmentStoreSrds.map(dept => (
+                      <SelectItem key={dept.id} value={dept.id}>
+                        {getStoreNameById(dept.storeNameId)?.name || dept.id}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="openingQty">Opening Qty</Label>
-                  <Input id="openingQty" name="openingQty" type="number" step="0.01" placeholder="0" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="addedQty" className="text-emerald-700">+ Added (from Store)</Label>
-                  <Input 
-                    id="addedQty" 
-                    value={selectedItemId ? (issuedQtyByItem[selectedItemId] || 0) : 0} 
-                    className="bg-emerald-50 text-emerald-700 font-mono" 
-                    disabled 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="soldQty" className="text-red-700">- Sold</Label>
-                  <Input id="soldQty" name="soldQty" type="number" step="0.01" placeholder="0" />
-                </div>
-              </div>
-              <Separator />
+              
+              {/* Step 2: Select Item (enabled after SRD is selected) */}
               <div className="space-y-2">
-                <Label htmlFor="actualQty">Actual Physical Count</Label>
-                <Input id="actualQty" name="actualQty" type="number" step="0.01" placeholder="0" required />
+                <Label htmlFor="itemId">Item</Label>
+                <Select 
+                  value={selectedItemId} 
+                  onValueChange={(val) => { setSelectedItemId(val); setPhysicalCount(""); }}
+                  disabled={!selectedSrdId}
+                >
+                  <SelectTrigger data-testid="select-item-count">
+                    <SelectValue placeholder={selectedSrdId ? "Select item" : "Select SRD first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {items.filter(i => i.status === "active").map(item => (
+                      <SelectItem key={item.id} value={item.id}>{item.name} ({item.category})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              {/* Auto-filled values display */}
+              {selectedItemId && (
+                <>
+                  <div className="grid grid-cols-3 gap-4 p-3 bg-muted/30 rounded-lg border">
+                    <div className="text-center">
+                      <p className="text-xs text-muted-foreground mb-1">Opening</p>
+                      <p className="font-mono font-semibold text-lg">{getOpeningQty.toFixed(2)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-emerald-600 mb-1">+ Added</p>
+                      <p className="font-mono font-semibold text-lg text-emerald-600">{getAddedQty.toFixed(2)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-muted-foreground mb-1">= Total</p>
+                      <p className="font-mono font-bold text-lg">{totalQty.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  
+                  <Separator />
+                  
+                  {/* Physical Count Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="actualQty" className="text-base font-semibold">Actual Physical Count</Label>
+                    <Input 
+                      id="actualQty" 
+                      type="number" 
+                      step="0.01" 
+                      placeholder="Enter physical count"
+                      value={physicalCount}
+                      onChange={(e) => setPhysicalCount(e.target.value)}
+                      className="text-lg h-12"
+                      required 
+                      data-testid="input-physical-count"
+                    />
+                  </div>
+
+                  {/* Calculated results */}
+                  {physicalQty > 0 && (
+                    <div className="grid grid-cols-2 gap-4 p-3 bg-muted/20 rounded-lg border">
+                      <div className="text-center">
+                        <p className="text-xs text-red-600 mb-1">Sold (calculated)</p>
+                        <p className="font-mono font-semibold text-lg text-red-600">
+                          {soldQty > 0 ? soldQty.toFixed(2) : "0.00"}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs mb-1">Variance</p>
+                        <p className={cn(
+                          "font-mono font-bold text-lg",
+                          physicalQty - totalQty < 0 ? "text-red-600" : 
+                          physicalQty - totalQty > 0 ? "text-amber-600" : "text-emerald-600"
+                        )}>
+                          {physicalQty - totalQty > 0 ? "+" : ""}{(physicalQty - totalQty).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={createMutation.isPending || !selectedItemId}>
+              <Button 
+                type="submit" 
+                disabled={createMutation.isPending || !selectedItemId || !selectedSrdId || !physicalCount}
+                data-testid="button-save-count"
+              >
                 {createMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
                 Save Count
               </Button>

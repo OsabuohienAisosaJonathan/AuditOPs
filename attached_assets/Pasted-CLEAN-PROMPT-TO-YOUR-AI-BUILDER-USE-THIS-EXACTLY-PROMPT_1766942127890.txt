@@ -1,0 +1,112 @@
+CLEAN PROMPT TO YOUR AI BUILDER (USE THIS EXACTLY)
+
+PROMPT:
+
+Fix SRD / Department Store daily carryover and Stock Count integration using the SAME logic already used for Main Store SRD carryover.
+
+A) Department Store SRD carryover + saving (same logic as Main Store)
+
+On Inventory Ledger page, when user selects:
+
+Client + Date + SRD = a Department Store (e.g., Bar 1 SRD)
+
+The table must load persisted values for that SRD and date:
+
+Opening, Added, Total, Closing, Selling Price, Amount Sold
+
+If there is no record for the selected date, auto-create (seed) rows for that SRD using:
+
+Opening = previous day Closing (for the same SRD + same item)
+
+If previous day does not exist, Opening = 0 (first day only)
+
+After user clicks Save Ledger, persist ALL fields (not only Dep1–Dep10).
+Currently only Dep1–Dep10 persist; fix so Opening/Purchase/Added/Closing also persist.
+
+Make Opening behave like this:
+
+If it is the first ever day (no previous day), Opening can be typed once.
+
+After Save Ledger, Opening becomes Read-Only (ROM) and must always come from previous day Closing.
+
+Only Super Admin can edit previous-day records (add role guard).
+
+Ensure “View Past Date” correctly loads that past record without overwriting it.
+
+B) Fix stock issuing so balances update correctly (store → department)
+
+When issuing stock from Main Store SRD to a Department SRD:
+
+“Available” in the Issue modal must equal the store’s current available balance for that item on that date:
+Available = Total − Sum(Issued to all departments already posted today)
+
+Available must update immediately after a successful issue.
+
+After “Issue Stock” succeeds:
+
+Main Store ledger must increase the correct Dep column (Dep1/Dep2/etc) for that item.
+
+Main Store Closing must recalc correctly:
+Closing = Total − (Dep1 + Dep2 + … Dep10)
+
+The destination Department SRD must receive the issued qty as “Added” for that same item/date, and show it on the Department ledger immediately.
+
+The issue operation must be saved transactionally (no partial updates).
+
+C) Overhaul “Add Stock Count” form to match SRD design (Main Store + Department Store)
+
+Remove manual entry for Opening / Added / Sold inside the modal.
+
+Require the user to first choose:
+
+SRD (Main Store or Department Store)
+
+Category (if applicable)
+
+Item
+
+Auto-fill Opening and Added from SRD ledger for that SRD/date/item:
+
+Department Store: Opening (carryover) + Added (from store issues)
+
+Main Store: Opening (carryover) + Purchase (from GRN/Purchases)
+
+User must enter ONLY:
+
+Actual Physical Count (this becomes the SRD Closing for that item/date)
+
+After save:
+
+Department Store Sold must auto-calc: Sold = Total − Closing
+
+Amount Sold must auto-calc: Amount Sold = Sold × Selling Price
+
+The Closing saved from stock count must reflect back in:
+
+Inventory Ledger SRD page (Closing column updates)
+
+Audit Workspace → Counts tab (pulled from SRD by SRD type)
+
+Counts tab must show variance in units and generate reconciliation hit using SRD data.
+
+D) Selling Price + totals per category (Department Store SRD)
+
+Pull Selling Price from the Items table (Inventory & Purchases page).
+
+Add columns on Department Store SRD:
+
+Selling Price (read-only)
+
+Amount Sold (computed)
+
+At the bottom of every category (e.g., FOOD, F&B), display totals:
+
+Total Opening, Added, Total, Sold, Closing, Amount Sold
+
+Deliverable:
+
+Update backend + DB persistence so SRD Department Store behaves exactly like Main Store carryover.
+
+Ensure store issue correctly updates store balance and department added balance.
+
+Ensure SRD-ledger is the single source used by Audit Workspace Counts.

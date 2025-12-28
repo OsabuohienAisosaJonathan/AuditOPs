@@ -1962,18 +1962,57 @@ export async function registerRoutes(
 
   app.post("/api/stock-counts", requireAuth, async (req, res) => {
     try {
+      const { storeDepartmentId, ...stockCountData } = req.body;
+      
       const data = insertStockCountSchema.parse({
-        ...req.body,
+        ...stockCountData,
         createdBy: req.session.userId!,
       });
       const stockCount = await storage.createStockCount(data);
+      
+      // If storeDepartmentId is provided, also update storeStock.physicalClosingQty
+      // This connects Stock Counts to the SRD ledger
+      if (storeDepartmentId && stockCountData.itemId && stockCountData.clientId && stockCountData.date) {
+        const stockDate = new Date(stockCountData.date);
+        const existingStock = await storage.getStoreStockByItem(storeDepartmentId, stockCountData.itemId, stockDate);
+        
+        const physicalCount = stockCountData.actualClosingQty || "0";
+        const opening = stockCountData.openingQty || "0";
+        const added = stockCountData.addedQty || "0";
+        const total = parseFloat(opening) + parseFloat(added);
+        const sold = total - parseFloat(physicalCount);
+        
+        if (existingStock) {
+          // Update existing storeStock with physical closing
+          await storage.updateStoreStock(existingStock.id, { 
+            physicalClosingQty: physicalCount,
+            openingQty: opening,
+          });
+        } else {
+          // Create new storeStock record with physical closing
+          const item = await storage.getItem(stockCountData.itemId);
+          await storage.createStoreStock({
+            clientId: stockCountData.clientId,
+            storeDepartmentId,
+            itemId: stockCountData.itemId,
+            date: stockDate,
+            openingQty: opening,
+            addedQty: added,
+            issuedQty: "0",
+            closingQty: physicalCount,
+            physicalClosingQty: physicalCount,
+            costPriceSnapshot: item?.costPrice || "0.00",
+            createdBy: req.session.userId!,
+          });
+        }
+      }
       
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Created Stock Count",
         entity: "StockCount",
         entityId: stockCount.id,
-        details: `Stock count recorded`,
+        details: `Stock count recorded${storeDepartmentId ? ' (SRD updated)' : ''}`,
         ipAddress: req.ip || "Unknown",
       });
 
