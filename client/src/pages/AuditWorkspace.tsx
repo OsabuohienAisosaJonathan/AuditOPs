@@ -93,6 +93,12 @@ export default function AuditWorkspace() {
     enabled: !!clientId,
   });
 
+  const { data: salesSummary } = useQuery({
+    queryKey: ["sales-summary", clientId, dateStr],
+    queryFn: () => clientId ? salesEntriesApi.getSummary({ clientId, date: dateStr }) : Promise.resolve(null),
+    enabled: !!clientId,
+  });
+
   const { data: grns = [] } = useQuery({
     queryKey: ["grn", clientId, dateStr],
     queryFn: () => clientId ? grnApi.getByClient(clientId, dateStr) : Promise.resolve([]),
