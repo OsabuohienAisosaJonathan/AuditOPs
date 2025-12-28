@@ -228,7 +228,7 @@ export default function InventoryLedger() {
 
   // Fetch previous day stock for opening rollforward
   const previousDate = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
-  const { data: prevDayStock } = useQuery<StoreStock[]>({
+  const { data: prevDayStock, isLoading: prevDayLoading, isFetched: prevDayFetched } = useQuery<StoreStock[]>({
     queryKey: ["store-stock", selectedClientId, selectedInvDept, previousDate],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${previousDate}`);
@@ -484,6 +484,12 @@ export default function InventoryLedger() {
   const handleSaveLedger = () => {
     if (!items || !selectedDept) {
       toast.error("No items to save");
+      return;
+    }
+    
+    // Ensure previous day data is loaded for opening carry-over
+    if (prevDayLoading || !prevDayFetched) {
+      toast.error("Please wait for previous day data to load");
       return;
     }
     
