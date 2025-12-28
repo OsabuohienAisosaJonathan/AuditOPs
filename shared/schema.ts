@@ -77,7 +77,6 @@ export const items = pgTable("items", {
   sku: text("sku"),
   category: text("category").notNull().default("general"),
   unit: text("unit").notNull().default("pcs"),
-  purchaseUnit: text("purchase_unit").notNull().default("pcs"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }).default("0.00"),
   sellingPrice: decimal("selling_price", { precision: 12, scale: 2 }).default("0.00"),
   reorderLevel: integer("reorder_level").default(10),
@@ -444,13 +443,14 @@ export const storeNames = pgTable("store_names", {
 // INVENTORY DEPARTMENTS (Links store names to clients with type)
 // ============================================================
 
-export const INVENTORY_TYPES = ["MAIN_STORE", "WAREHOUSE", "DEPARTMENT_STORE"] as const;
+export const INVENTORY_TYPES = ["MAIN_STORE", "DEPARTMENT_STORE"] as const;
 export type InventoryType = typeof INVENTORY_TYPES[number];
 
 export const inventoryDepartments = pgTable("inventory_departments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   storeNameId: varchar("store_name_id").notNull().references(() => storeNames.id, { onDelete: "restrict" }),
+  departmentId: varchar("department_id").references(() => departments.id, { onDelete: "set null" }),
   inventoryType: text("inventory_type").notNull(),
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

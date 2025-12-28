@@ -126,7 +126,6 @@ export interface Item {
   sku: string | null;
   category: string;
   unit: string;
-  purchaseUnit: string;
   costPrice: string;
   sellingPrice: string;
   reorderLevel: number;
@@ -1105,7 +1104,8 @@ export interface InventoryDepartment {
   id: string;
   clientId: string;
   storeNameId: string;
-  inventoryType: "MAIN_STORE" | "WAREHOUSE" | "DEPARTMENT_STORE";
+  departmentId?: string;
+  inventoryType: "MAIN_STORE" | "DEPARTMENT_STORE";
   status: string;
   createdAt: Date;
 }
@@ -1132,12 +1132,12 @@ export const storeNamesApi = {
 export const inventoryDepartmentsApi = {
   getByClient: (clientId: string) => fetchApi<InventoryDepartment[]>(`/clients/${clientId}/inventory-departments`),
   get: (id: string) => fetchApi<InventoryDepartment>(`/inventory-departments/${id}`),
-  create: (clientId: string, data: { storeNameId: string; inventoryType: string; status?: string }) =>
+  create: (clientId: string, data: { storeNameId: string; inventoryType: string; departmentId?: string; status?: string }) =>
     fetchApi<InventoryDepartment>(`/clients/${clientId}/inventory-departments`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: { storeNameId?: string; inventoryType?: string; status?: string }) =>
+  update: (id: string, data: { storeNameId?: string; inventoryType?: string; departmentId?: string; status?: string }) =>
     fetchApi<InventoryDepartment>(`/inventory-departments/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

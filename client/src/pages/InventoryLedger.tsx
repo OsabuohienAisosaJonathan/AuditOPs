@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Warehouse, Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight } from "lucide-react";
+import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight } from "lucide-react";
 import { useClientContext } from "@/lib/client-context";
 import { cn } from "@/lib/utils";
 
@@ -283,9 +283,9 @@ export default function InventoryLedger() {
     return 0;
   };
 
-  // Build ledger data for Main Store/Warehouse with Dep columns, grouped by category
+  // Build ledger data for Main Store with Dep columns, grouped by category
   const mainStoreLedger = useMemo(() => {
-    if (!items || !selectedDept || (selectedDept.inventoryType !== "MAIN_STORE" && selectedDept.inventoryType !== "WAREHOUSE")) {
+    if (!items || !selectedDept || selectedDept.inventoryType !== "MAIN_STORE") {
       return [];
     }
     
@@ -472,17 +472,14 @@ export default function InventoryLedger() {
                 "h-9 px-4",
                 selectedDept.inventoryType === "MAIN_STORE" 
                   ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : selectedDept.inventoryType === "WAREHOUSE"
-                  ? "bg-purple-50 text-purple-700 border-purple-200"
                   : "bg-amber-50 text-amber-700 border-amber-200"
               )} data-testid="badge-inv-type">
                 {selectedDept.inventoryType === "MAIN_STORE" && <Store className="h-4 w-4 mr-2" />}
-                {selectedDept.inventoryType === "WAREHOUSE" && <Warehouse className="h-4 w-4 mr-2" />}
                 {selectedDept.inventoryType === "DEPARTMENT_STORE" && <ChefHat className="h-4 w-4 mr-2" />}
                 {selectedDept.inventoryType.replace("_", " ")}
               </Badge>
             )}
-            {(selectedDept?.inventoryType === "MAIN_STORE" || selectedDept?.inventoryType === "WAREHOUSE") && departmentStores.length > 0 && (
+            {selectedDept?.inventoryType === "MAIN_STORE" && departmentStores.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => setConfigDialogOpen(true)} data-testid="button-config-deps">
                 <Settings2 className="h-4 w-4 mr-2" />
                 Configure Columns
@@ -507,12 +504,12 @@ export default function InventoryLedger() {
             <p className="text-muted-foreground mt-2">Loading ledger data...</p>
           </CardContent>
         </Card>
-      ) : selectedDept?.inventoryType === "MAIN_STORE" || selectedDept?.inventoryType === "WAREHOUSE" ? (
-        /* Main Store / Warehouse Ledger with Dep Columns */
+      ) : selectedDept?.inventoryType === "MAIN_STORE" ? (
+        /* Main Store Ledger with Dep Columns */
         <Card>
           <CardHeader className="px-6 py-4 border-b">
             <CardTitle className="flex items-center gap-2">
-              {selectedDept.inventoryType === "MAIN_STORE" ? <Store className="h-5 w-5" /> : <Warehouse className="h-5 w-5" />}
+              <Store className="h-5 w-5" />
               {getStoreNameById(selectedDept.storeNameId)?.name} Ledger
             </CardTitle>
             <CardDescription>

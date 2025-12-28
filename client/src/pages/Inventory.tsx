@@ -208,7 +208,7 @@ export default function Inventory() {
   });
 
   const createInvDeptMutation = useMutation({
-    mutationFn: (data: { storeNameId: string; inventoryType: string }) => 
+    mutationFn: (data: { storeNameId: string; inventoryType: string; departmentId?: string }) => 
       inventoryDepartmentsApi.create(selectedClientId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inventory-departments"] });
@@ -221,7 +221,7 @@ export default function Inventory() {
   });
 
   const updateInvDeptMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { storeNameId?: string; inventoryType?: string; status?: string } }) => 
+    mutationFn: ({ id, data }: { id: string; data: { storeNameId?: string; inventoryType?: string; status?: string; departmentId?: string } }) => 
       inventoryDepartmentsApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inventory-departments"] });
@@ -422,7 +422,6 @@ export default function Inventory() {
                           sku: formData.get("sku") as string || null,
                           category: formData.get("category") as string,
                           unit: formData.get("unit") as string,
-                          purchaseUnit: formData.get("unit") as string, // Default to unit on creation
                           costPrice: formData.get("costPrice") as string,
                           sellingPrice: formData.get("sellingPrice") as string,
                           reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
@@ -501,7 +500,6 @@ export default function Inventory() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>SKU</TableHead>
-                      <TableHead>Purchase Unit</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Cost Price</TableHead>
                       <TableHead className="text-right">Selling Price</TableHead>
@@ -530,7 +528,6 @@ export default function Inventory() {
                             <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
                               <TableCell className="font-medium" data-testid={`text-item-name-${item.id}`}>{item.name}</TableCell>
                               <TableCell className="font-mono text-sm text-muted-foreground">{item.sku || "-"}</TableCell>
-                              <TableCell>{item.purchaseUnit || "-"}</TableCell>
                               <TableCell>{item.unit}</TableCell>
                               <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
                               <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
@@ -1119,6 +1116,7 @@ export default function Inventory() {
                       createInvDeptMutation.mutate({
                         storeNameId: formData.get("storeNameId") as string,
                         inventoryType: formData.get("inventoryType") as string,
+                        departmentId: formData.get("departmentId") as string || undefined,
                       });
                     }}>
                       <div className="space-y-4 py-4">
@@ -1144,11 +1142,24 @@ export default function Inventory() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="MAIN_STORE">Main Store</SelectItem>
-                              <SelectItem value="WAREHOUSE">Warehouse</SelectItem>
                               <SelectItem value="DEPARTMENT_STORE">Department Store</SelectItem>
                             </SelectContent>
                           </Select>
-                          <p className="text-xs text-muted-foreground">Only one Main Store and one Warehouse allowed per client.</p>
+                          <p className="text-xs text-muted-foreground">Only one Main Store allowed per client.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="departmentId">Link to Department (Required for Main Store)</Label>
+                          <Select name="departmentId">
+                            <SelectTrigger data-testid="select-department-link">
+                              <SelectValue placeholder="Select department to link" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {departments?.filter(d => d.clientId === selectedClientId).map(dept => (
+                                <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">Link to an SRD department for purchase posting.</p>
                         </div>
                       </div>
                       <DialogFooter>
@@ -1269,7 +1280,6 @@ export default function Inventory() {
                   sku: formData.get("sku") as string || null,
                   category: formData.get("category") as string,
                   unit: selectedItem.unit, // Unit is non-editable, use original value
-                  purchaseUnit: formData.get("purchaseUnit") as string,
                   costPrice: formData.get("costPrice") as string,
                   sellingPrice: formData.get("sellingPrice") as string,
                   reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
@@ -1299,16 +1309,10 @@ export default function Inventory() {
                     <p className="text-xs text-muted-foreground">Registered unit cannot be changed.</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-purchaseUnit">Purchase Unit</Label>
-                    <Input id="edit-purchaseUnit" name="purchaseUnit" defaultValue={selectedItem.purchaseUnit || ""} required placeholder="e.g., pcs, kg, bottle" data-testid="input-edit-item-purchase-unit" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-purchaseQty">Purchase Quantity</Label>
-                    <Input id="edit-purchaseQty" name="purchaseQty" type="number" step="0.01" min="0" defaultValue="" placeholder="Enter qty to add to stock" data-testid="input-edit-item-purchase-qty" />
-                    <p className="text-xs text-muted-foreground">Quantity added to Main Store / Warehouse</p>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-purchaseQty">Purchase Quantity</Label>
+                  <Input id="edit-purchaseQty" name="purchaseQty" type="number" step="0.01" min="0" defaultValue="" placeholder="Enter qty to add to stock" data-testid="input-edit-item-purchase-qty" />
+                  <p className="text-xs text-muted-foreground">Quantity added to Main Store SRD</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1510,6 +1514,7 @@ export default function Inventory() {
                 data: {
                   storeNameId: formData.get("storeNameId") as string,
                   inventoryType: formData.get("inventoryType") as string,
+                  departmentId: formData.get("departmentId") as string || undefined,
                 },
               });
             }}>
@@ -1535,10 +1540,23 @@ export default function Inventory() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="MAIN_STORE">Main Store</SelectItem>
-                      <SelectItem value="WAREHOUSE">Warehouse</SelectItem>
                       <SelectItem value="DEPARTMENT_STORE">Department Store</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-departmentId">Link to Department</Label>
+                  <Select name="departmentId" defaultValue={selectedInvDept.departmentId || ""}>
+                    <SelectTrigger data-testid="select-edit-department-link">
+                      <SelectValue placeholder="Select department to link" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments?.filter(d => d.clientId === selectedClientId).map(dept => (
+                        <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Link to an SRD department for purchase posting.</p>
                 </div>
               </div>
               <DialogFooter>

@@ -1807,44 +1807,36 @@ export async function registerRoutes(
       }
       
       if (purchaseQty && parseFloat(purchaseQty) > 0) {
-        // Get all client departments and find those named "Main Store" or "Warehouse"
-        const clientDepts = await storage.getDepartments(item.clientId);
-        
-        // Find departments whose name contains "main store" or "warehouse" (case-insensitive)
-        const targetDepts = clientDepts.filter(d => {
-          const name = d.name.toLowerCase();
-          return name.includes("main store") || name.includes("warehouse");
-        });
+        // Find the Main Store inventory department for this client
+        const mainStoreInvDept = await storage.getInventoryDepartmentByType(item.clientId, "MAIN_STORE");
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         console.log(`[Purchase Capture] Client: ${item.clientId}, Item: ${item.name}, Qty: ${purchaseQty}`);
-        console.log(`[Purchase Capture] Target departments found: ${targetDepts.map(d => d.name).join(", ") || "NONE"}`);
         
-        for (const dept of targetDepts) {
-          console.log(`[Purchase Capture] Posting to department: ${dept.name} (${dept.id})`);
+        if (mainStoreInvDept && mainStoreInvDept.departmentId) {
+          // Use the linked department ID from inventory_departments
+          console.log(`[Purchase Capture] Posting to Main Store department: ${mainStoreInvDept.departmentId}`);
           await storage.addPurchaseToStoreStock(
             item.clientId,
-            dept.id,
+            mainStoreInvDept.departmentId,
             item.id,
             parseFloat(purchaseQty),
             item.costPrice || "0.00",
             today
           );
-        }
-        
-        if (targetDepts.length > 0) {
+          
           await storage.createAuditLog({
             userId: req.session.userId!,
             action: "Item Purchase Captured",
             entity: "Item",
             entityId: item.id,
-            details: `Purchase of ${purchaseQty} ${item.purchaseUnit || item.unit} posted to: ${targetDepts.map(d => d.name).join(", ")}`,
+            details: `Purchase of ${purchaseQty} ${item.unit} posted to Main Store SRD`,
             ipAddress: req.ip || "Unknown",
           });
         } else {
-          console.warn(`[Purchase Capture] No Main Store or Warehouse department found for client ${item.clientId}`);
+          console.warn(`[Purchase Capture] No Main Store inventory department with linked SRD found for client ${item.clientId}`);
         }
       }
       
