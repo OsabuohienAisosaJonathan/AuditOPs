@@ -412,15 +412,15 @@ export default function InventoryLedger() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Inventory Department</Label>
+              <Label>Stock Reconciliation Department (SRD)</Label>
               <Select value={selectedInvDept || ""} onValueChange={setSelectedInvDept}>
                 <SelectTrigger className="w-[250px]" data-testid="select-inv-dept">
-                  <SelectValue placeholder="Select inventory department" />
+                  <SelectValue placeholder="Select SRD" />
                 </SelectTrigger>
                 <SelectContent>
                   {inventoryDepts?.filter(d => d.status === "active").map(dept => (
                     <SelectItem key={dept.id} value={dept.id}>
-                      {getStoreNameById(dept.storeNameId)?.name || "Unknown"} ({dept.inventoryType.replace("_", " ")})
+                      {getStoreNameById(dept.storeNameId)?.name || "Unknown"} (SRD)
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -456,7 +456,7 @@ export default function InventoryLedger() {
         <Card>
           <CardContent className="py-12 text-center">
             <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Select an inventory department to view the ledger.</p>
+            <p className="text-muted-foreground">Select an SRD to view the ledger.</p>
           </CardContent>
         </Card>
       ) : invDeptsLoading || itemsLoading || stockLoading ? (
@@ -625,7 +625,7 @@ export default function InventoryLedger() {
           <DialogHeader>
             <DialogTitle>Issue Item to Department</DialogTitle>
             <DialogDescription>
-              Transfer stock from {getStoreNameById(selectedDept?.storeNameId || "")?.name || "store"} to a department.
+              Transfer stock from {getStoreNameById(selectedDept?.storeNameId || "")?.name || "SRD"} to a department.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

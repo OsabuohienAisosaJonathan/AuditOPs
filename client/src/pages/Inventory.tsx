@@ -152,7 +152,7 @@ export default function Inventory() {
       setCreateStoreNameOpen(false);
       setSelectedDeptToLink(null);
       setStoreNameMode("link");
-      toast.success("Store name created successfully");
+      toast.success("SRD created successfully");
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to create store name");
@@ -165,7 +165,7 @@ export default function Inventory() {
       queryClient.invalidateQueries({ queryKey: ["store-names"] });
       setEditStoreNameOpen(false);
       setSelectedStoreName(null);
-      toast.success("Store name updated successfully");
+      toast.success("SRD updated successfully");
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to update store name");
@@ -178,7 +178,7 @@ export default function Inventory() {
       queryClient.invalidateQueries({ queryKey: ["store-names"] });
       setDeleteStoreNameOpen(false);
       setSelectedStoreName(null);
-      toast.success("Store name deleted successfully");
+      toast.success("SRD deleted successfully");
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to delete store name");
@@ -290,7 +290,7 @@ export default function Inventory() {
           </TabsTrigger>
           <TabsTrigger value="store-names" data-testid="tab-store-names" className="h-auto py-2 leading-tight text-center">
             <Building className="h-4 w-4 mr-2 flex-shrink-0" />
-            <span className="whitespace-normal">Link Department/Create New</span>
+            <span className="whitespace-normal">Stock Reconciliation Department (SRD)</span>
           </TabsTrigger>
           <TabsTrigger value="inv-departments" data-testid="tab-inv-departments">
             <Warehouse className="h-4 w-4 mr-2" />
@@ -641,8 +641,8 @@ export default function Inventory() {
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Link or Create Store Name</DialogTitle>
-                      <DialogDescription>Select from registered departments or create a new store name.</DialogDescription>
+                      <DialogTitle>Link or Create Stock Reconciliation Department (SRD)</DialogTitle>
+                      <DialogDescription>Select from registered departments or create a new SRD name.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="flex gap-2">
@@ -687,33 +687,16 @@ export default function Inventory() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          <Label htmlFor="storeName">Store Name</Label>
+                          <Label htmlFor="storeName">Stock Reconciliation Department (SRD) Name</Label>
                           <Input id="storeName" name="name" placeholder="e.g., Main Kitchen, Bar Area" data-testid="input-store-name" />
                         </div>
                       )}
                     </div>
                     <DialogFooter>
                       <Button type="button" variant="outline" onClick={() => setCreateStoreNameOpen(false)}>Cancel</Button>
-                      <Button 
-                        type="button"
-                        disabled={createStoreNameMutation.isPending || (storeNameMode === "link" && !selectedDeptToLink)}
-                        onClick={() => {
-                          if (storeNameMode === "link" && selectedDeptToLink) {
-                            const dept = departments?.find(d => d.id === selectedDeptToLink);
-                            if (dept) {
-                              createStoreNameMutation.mutate({ name: dept.name });
-                            }
-                          } else {
-                            const input = document.getElementById("storeName") as HTMLInputElement;
-                            if (input?.value) {
-                              createStoreNameMutation.mutate({ name: input.value });
-                            }
-                          }
-                        }}
-                        data-testid="button-submit-store-name"
-                      >
+                      <Button type="submit" disabled={createStoreNameMutation.isPending} data-testid="button-submit-store-name">
                         {createStoreNameMutation.isPending && <Spinner className="mr-2" />}
-                        {storeNameMode === "link" ? "Link Department" : "Create Store Name"}
+                        {storeNameMode === "link" ? "Link Department" : "Create SRD"}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -731,11 +714,11 @@ export default function Inventory() {
                     <Building className="h-6 w-6" />
                   </EmptyMedia>
                   <EmptyHeader>
-                    <EmptyTitle>No store names yet</EmptyTitle>
-                    <EmptyDescription>Add store names to link with inventory departments.</EmptyDescription>
+                    <EmptyTitle>No Stock Reconciliation Departments (SRD) yet</EmptyTitle>
+                    <EmptyDescription>Add SRDs to link with inventory departments.</EmptyDescription>
                   </EmptyHeader>
                   <Button className="gap-2" onClick={() => setCreateStoreNameOpen(true)} data-testid="button-add-first-store-name">
-                    <Plus className="h-4 w-4" /> Add First Store Name
+                    <Plus className="h-4 w-4" /> Add First SRD
                   </Button>
                 </Empty>
               ) : (
@@ -811,7 +794,7 @@ export default function Inventory() {
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Create Inventory Department</DialogTitle>
-                      <DialogDescription>Link a store name to this client with an inventory type.</DialogDescription>
+                      <DialogDescription>Link a Stock Reconciliation Department (SRD) to this client with an inventory type.</DialogDescription>
                     </DialogHeader>
                     <form onSubmit={(e) => {
                       e.preventDefault();
@@ -823,10 +806,10 @@ export default function Inventory() {
                     }}>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label htmlFor="storeNameId">Store Name</Label>
+                          <Label htmlFor="storeNameId">Stock Reconciliation Department (SRD)</Label>
                           <Select name="storeNameId" required>
                             <SelectTrigger data-testid="select-store-name">
-                              <SelectValue placeholder="Select a store name" />
+                              <SelectValue placeholder="Select an SRD" />
                             </SelectTrigger>
                             <SelectContent>
                               {storeNames?.filter(sn => sn.status === "active").map(sn => (
@@ -834,7 +817,7 @@ export default function Inventory() {
                               ))}
                             </SelectContent>
                           </Select>
-                          <p className="text-xs text-muted-foreground">Create store names in the Store Names tab first.</p>
+                          <p className="text-xs text-muted-foreground">Create SRDs in the SRD tab first.</p>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="inventoryType">Inventory Type</Label>
@@ -875,7 +858,7 @@ export default function Inventory() {
                   </EmptyMedia>
                   <EmptyHeader>
                     <EmptyTitle>No inventory departments yet</EmptyTitle>
-                    <EmptyDescription>Link store names to create inventory departments.</EmptyDescription>
+                    <EmptyDescription>Link SRDs to create inventory departments.</EmptyDescription>
                   </EmptyHeader>
                   <Button className="gap-2" onClick={() => setCreateInvDeptOpen(true)} data-testid="button-add-first-inv-dept">
                     <Plus className="h-4 w-4" /> Add First Department
@@ -885,7 +868,7 @@ export default function Inventory() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Store Name</TableHead>
+                      <TableHead>Stock Reconciliation Department (SRD)</TableHead>
                       <TableHead>Inventory Type</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="w-[80px]">Actions</TableHead>
@@ -1126,8 +1109,8 @@ export default function Inventory() {
       <Dialog open={editStoreNameOpen} onOpenChange={setEditStoreNameOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Store Name</DialogTitle>
-            <DialogDescription>Update the store name.</DialogDescription>
+            <DialogTitle>Edit Stock Reconciliation Department (SRD)</DialogTitle>
+            <DialogDescription>Update the SRD name.</DialogDescription>
           </DialogHeader>
           {selectedStoreName && (
             <form onSubmit={(e) => {
@@ -1142,7 +1125,7 @@ export default function Inventory() {
             }}>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-storeName">Store Name</Label>
+                  <Label htmlFor="edit-storeName">Stock Reconciliation Department (SRD) Name</Label>
                   <Input id="edit-storeName" name="name" defaultValue={selectedStoreName.name} required data-testid="input-edit-store-name" />
                 </div>
               </div>
@@ -1161,7 +1144,7 @@ export default function Inventory() {
       <AlertDialog open={deleteStoreNameOpen} onOpenChange={setDeleteStoreNameOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Store Name</AlertDialogTitle>
+            <AlertDialogTitle>Delete Stock Reconciliation Department (SRD)</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{selectedStoreName?.name}"? This action cannot be undone.
             </AlertDialogDescription>
@@ -1200,10 +1183,10 @@ export default function Inventory() {
             }}>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-storeNameId">Store Name</Label>
+                  <Label htmlFor="edit-storeNameId">Stock Reconciliation Department (SRD)</Label>
                   <Select name="storeNameId" defaultValue={selectedInvDept.storeNameId}>
                     <SelectTrigger data-testid="select-edit-store-name">
-                      <SelectValue placeholder="Select a store name" />
+                      <SelectValue placeholder="Select an SRD" />
                     </SelectTrigger>
                     <SelectContent>
                       {storeNames?.filter(sn => sn.status === "active").map(sn => (
