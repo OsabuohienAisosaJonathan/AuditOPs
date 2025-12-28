@@ -280,8 +280,18 @@ export default function InventoryLedger() {
     return inventoryDepts?.filter(d => d.inventoryType === "DEPARTMENT_STORE" && d.status === "active") || [];
   }, [inventoryDepts]);
 
+  // Auto-select first inventory department when loaded
+  useEffect(() => {
+    if (!selectedInvDept && inventoryDepts && inventoryDepts.length > 0) {
+      const activeDepts = inventoryDepts.filter(d => d.status === "active");
+      if (activeDepts.length > 0) {
+        setSelectedInvDept(activeDepts[0].id);
+      }
+    }
+  }, [inventoryDepts, selectedInvDept]);
+
   // Initialize visible depts when department stores load
-  useMemo(() => {
+  useEffect(() => {
     if (departmentStores.length > 0 && visibleDepts.size === 0) {
       setVisibleDepts(new Set(departmentStores.slice(0, 5).map(d => d.id)));
     }
@@ -470,14 +480,47 @@ export default function InventoryLedger() {
     toast.success("Edit recorded. Remember to save the ledger.");
   };
 
-  // Save all edits (enhanced with past date handling)
+  // Save all ledger data (not just edits - save all items with their current values)
   const handleSaveLedger = () => {
-    const editsToSave = Object.entries(ledgerEdits).map(([itemId, values]) => ({
-      itemId,
-      ...values,
-    }));
-    if (editsToSave.length > 0) {
-      saveLedgerMutation.mutate(editsToSave);
+    if (!items || !selectedDept) {
+      toast.error("No items to save");
+      return;
+    }
+    
+    const activeItems = items.filter(i => i.status === "active");
+    const isMainStore = selectedDept.inventoryType === "MAIN_STORE";
+    
+    const allItemsToSave = activeItems.map((item) => {
+      const stock = storeStockData?.find(s => s.itemId === item.id);
+      const editedOpening = ledgerEdits[item.id]?.opening;
+      const editedPurchase = ledgerEdits[item.id]?.purchase;
+      const editedClosing = ledgerEdits[item.id]?.closing;
+      
+      // Get the display values (edited or calculated)
+      const opening = editedOpening !== undefined 
+        ? editedOpening 
+        : getOpeningQty(item.id, stock).toString();
+      
+      const purchase = editedPurchase !== undefined 
+        ? editedPurchase 
+        : (stock?.addedQty || "0");
+      
+      // For Department Store: closing is the physical count entered by user
+      // For Main Store: closing is calculated as Total - Issues
+      const closing = isMainStore 
+        ? undefined  // Main store closing is calculated server-side
+        : editedClosing || (stock?.physicalClosingQty || undefined);
+      
+      return {
+        itemId: item.id,
+        opening,
+        purchase,
+        closing,
+      };
+    });
+    
+    if (allItemsToSave.length > 0) {
+      saveLedgerMutation.mutate(allItemsToSave);
     }
   };
 
