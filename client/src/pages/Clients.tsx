@@ -220,7 +220,6 @@ export default function Clients() {
           Add Client
         </Button>
       </div>
-
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -233,7 +232,6 @@ export default function Clients() {
           />
         </div>
       </div>
-
       {!filteredClients || filteredClients.length === 0 ? (
         <Empty>
           <EmptyMedia>
@@ -326,9 +324,7 @@ export default function Clients() {
                       
                       <TabsContent value="departments" className="mt-4">
                         <div className="flex items-center justify-between mb-4">
-                          <p className="text-sm text-muted-foreground">
-                            Departments are the core operational units for audits
-                          </p>
+                          <p className="text-sm text-muted-foreground">Departments/Sales Outlets are the core operational units for audits</p>
                           <Button 
                             size="sm" 
                             onClick={() => {
@@ -444,7 +440,6 @@ export default function Clients() {
           ))}
         </div>
       )}
-
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -473,7 +468,6 @@ export default function Clients() {
           </form>
         </DialogContent>
       </Dialog>
-
       <Dialog open={!!editingClient} onOpenChange={() => setEditingClient(null)}>
         <DialogContent>
           <DialogHeader>
@@ -509,7 +503,6 @@ export default function Clients() {
           </form>
         </DialogContent>
       </Dialog>
-
       <Dialog open={!!deleteConfirmClient} onOpenChange={() => setDeleteConfirmClient(null)}>
         <DialogContent>
           <DialogHeader>
@@ -532,7 +525,6 @@ export default function Clients() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={createCategoryDialogOpen} onOpenChange={setCreateCategoryDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -564,7 +556,6 @@ export default function Clients() {
           </form>
         </DialogContent>
       </Dialog>
-
       <Dialog open={createDeptDialogOpen} onOpenChange={setCreateDeptDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -627,7 +618,6 @@ export default function Clients() {
           </form>
         </DialogContent>
       </Dialog>
-
       <Dialog open={!!editingDepartment} onOpenChange={() => setEditingDepartment(null)}>
         <DialogContent>
           <DialogHeader>
@@ -663,7 +653,6 @@ export default function Clients() {
           </form>
         </DialogContent>
       </Dialog>
-
       <Dialog open={!!deleteDeptConfirm} onOpenChange={() => setDeleteDeptConfirm(null)}>
         <DialogContent>
           <DialogHeader>
@@ -686,7 +675,6 @@ export default function Clients() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={!!suspendDeptDialog} onOpenChange={() => {
         setSuspendDeptDialog(null);
         setSuspendReason("");
