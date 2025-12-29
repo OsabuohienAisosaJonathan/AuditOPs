@@ -463,10 +463,13 @@ export default function Inventory() {
                       <form onSubmit={(e) => {
                         e.preventDefault();
                         const formData = new FormData(e.currentTarget);
+                        const categoryId = formData.get("categoryId") as string;
+                        const selectedCategory = clientCategories?.find(c => c.id === categoryId);
                         createItemMutation.mutate({
                           name: formData.get("name") as string,
                           sku: formData.get("sku") as string || null,
-                          category: formData.get("category") as string,
+                          category: selectedCategory?.name || "general",
+                          categoryId: categoryId || undefined,
                           unit: formData.get("unit") as string,
                           costPrice: formData.get("costPrice") as string,
                           sellingPrice: formData.get("sellingPrice") as string,
@@ -487,21 +490,18 @@ export default function Inventory() {
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <Label htmlFor="category">Category</Label>
-                              <Input 
-                                id="category" 
-                                name="category" 
-                                required 
-                                list="category-list"
-                                defaultValue="general"
-                                data-testid="input-item-category" 
-                              />
-                              <datalist id="category-list">
-                                {Array.from(new Set(items?.map(i => i.category) || [])).sort().map(cat => (
-                                  <option key={cat} value={cat} />
-                                ))}
-                              </datalist>
-                              <p className="text-[10px] text-muted-foreground">Select existing or type new</p>
+                              <Label htmlFor="categoryId">Category <span className="text-red-500">*</span></Label>
+                              <Select name="categoryId" required>
+                                <SelectTrigger data-testid="select-item-category">
+                                  <SelectValue placeholder="Select a category" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {clientCategories?.map(cat => (
+                                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[10px] text-muted-foreground">Category filters items per SRD</p>
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="unit">Unit</Label>
@@ -1804,9 +1804,6 @@ export default function Inventory() {
                     />
                     <label htmlFor={`cat-${cat.id}`} className="flex-1 cursor-pointer">
                       <div className="font-medium">{cat.name}</div>
-                      {cat.description && (
-                        <div className="text-xs text-muted-foreground">{cat.description}</div>
-                      )}
                     </label>
                   </div>
                 ))}
