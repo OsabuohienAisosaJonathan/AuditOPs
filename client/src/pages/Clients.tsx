@@ -393,9 +393,7 @@ export default function Clients() {
                       
                       <TabsContent value="categories" className="mt-4">
                         <div className="flex items-center justify-between mb-4">
-                          <p className="text-sm text-muted-foreground">
-                            Categories are optional grouping labels for departments
-                          </p>
+                          <p className="text-sm text-muted-foreground">Categories are optional grouping labels for departments/Sales Outlets</p>
                           <Button 
                             size="sm" 
                             variant="outline"
