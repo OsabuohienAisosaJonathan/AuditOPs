@@ -54,6 +54,7 @@ export default function Inventory() {
   const [deleteGrnOpen, setDeleteGrnOpen] = useState(false);
   const [selectedGrn, setSelectedGrn] = useState<GoodsReceivedNote | null>(null);
   const [grnFilterDate, setGrnFilterDate] = useState<Date | undefined>(undefined);
+  const [newItemCategoryId, setNewItemCategoryId] = useState<string>("");
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const toggleCategory = (category: string) => {
@@ -462,20 +463,24 @@ export default function Inventory() {
                       </DialogHeader>
                       <form onSubmit={(e) => {
                         e.preventDefault();
+                        if (!newItemCategoryId) {
+                          toast.error("Please select a category");
+                          return;
+                        }
                         const formData = new FormData(e.currentTarget);
-                        const categoryId = formData.get("categoryId") as string;
-                        const selectedCategory = clientCategories?.find(c => c.id === categoryId);
+                        const selectedCategory = clientCategories?.find(c => c.id === newItemCategoryId);
                         createItemMutation.mutate({
                           name: formData.get("name") as string,
                           sku: formData.get("sku") as string || null,
                           category: selectedCategory?.name || "general",
-                          categoryId: categoryId || undefined,
+                          categoryId: newItemCategoryId,
                           unit: formData.get("unit") as string,
                           costPrice: formData.get("costPrice") as string,
                           sellingPrice: formData.get("sellingPrice") as string,
                           reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
                           status: "active",
                         });
+                        setNewItemCategoryId("");
                       }}>
                         <div className="space-y-4 py-4">
                           <div className="grid grid-cols-2 gap-4">
@@ -491,7 +496,7 @@ export default function Inventory() {
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <Label htmlFor="categoryId">Category <span className="text-red-500">*</span></Label>
-                              <Select name="categoryId" required>
+                              <Select value={newItemCategoryId} onValueChange={setNewItemCategoryId}>
                                 <SelectTrigger data-testid="select-item-category">
                                   <SelectValue placeholder="Select a category" />
                                 </SelectTrigger>

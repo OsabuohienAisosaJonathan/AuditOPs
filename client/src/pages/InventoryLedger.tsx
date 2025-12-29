@@ -204,11 +204,15 @@ export default function InventoryLedger() {
     },
   });
 
-  // Fetch items for the client
+  // Fetch items for the client - filtered by inventory department's assigned categories
   const { data: items, isLoading: itemsLoading } = useQuery<Item[]>({
-    queryKey: ["items", selectedClientId],
+    queryKey: ["items", selectedClientId, selectedInvDept],
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${selectedClientId}/items`);
+      // Use filtered endpoint when an inventory department is selected
+      const url = selectedInvDept 
+        ? `/api/clients/${selectedClientId}/inventory-departments/${selectedInvDept}/items`
+        : `/api/clients/${selectedClientId}/items`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch items");
       return res.json();
     },
