@@ -2191,6 +2191,68 @@ export async function registerRoutes(
     }
   });
 
+  // Recall issued stock back to Main Store
+  app.post("/api/store-issues/:id/recall", requireAuth, async (req, res) => {
+    try {
+      const issue = await storage.getStoreIssue(req.params.id);
+      if (!issue) {
+        return res.status(404).json({ error: "Store issue not found" });
+      }
+      
+      if (issue.status === "recalled") {
+        return res.status(400).json({ error: "This issue has already been recalled" });
+      }
+      
+      const lines = await storage.getStoreIssueLines(issue.id);
+      const dateForStock = new Date(issue.issueDate);
+      
+      for (const line of lines) {
+        const qtyToRecall = parseFloat(line.qtyIssued || "0");
+        
+        const fromStock = await storage.getStoreStockByItem(issue.fromDepartmentId, line.itemId, dateForStock);
+        if (fromStock) {
+          const currentIssued = parseFloat(fromStock.issuedQty || "0");
+          const newIssued = Math.max(0, currentIssued - qtyToRecall);
+          const opening = parseFloat(fromStock.openingQty || "0");
+          const added = parseFloat(fromStock.addedQty || "0");
+          const newClosing = opening + added - newIssued;
+          await storage.updateStoreStock(fromStock.id, { 
+            issuedQty: newIssued.toString(),
+            closingQty: newClosing.toString()
+          });
+        }
+        
+        const toStock = await storage.getStoreStockByItem(issue.toDepartmentId, line.itemId, dateForStock);
+        if (toStock) {
+          const currentAdded = parseFloat(toStock.addedQty || "0");
+          const newAdded = Math.max(0, currentAdded - qtyToRecall);
+          const opening = parseFloat(toStock.openingQty || "0");
+          const issued = parseFloat(toStock.issuedQty || "0");
+          const newClosing = opening + newAdded - issued;
+          await storage.updateStoreStock(toStock.id, { 
+            addedQty: newAdded.toString(),
+            closingQty: newClosing.toString()
+          });
+        }
+      }
+      
+      const updatedIssue = await storage.updateStoreIssue(issue.id, { status: "recalled" });
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Recalled Store Issue",
+        entity: "StoreIssue",
+        entityId: issue.id,
+        details: `Issue recalled from ${issue.toDepartmentId} back to ${issue.fromDepartmentId}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(updatedIssue);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // Get issued qty for a department/item on a specific date
   app.get("/api/store-issues/issued-qty", requireAuth, async (req, res) => {
     try {
@@ -2518,21 +2580,32 @@ export async function registerRoutes(
         const fromItem = await storage.getItem(line.itemId);
         const costPrice = fromItem?.costPrice || "0.00";
         
+        const qtyIssued = parseFloat(line.qtyIssued);
+        
         const existingFromStock = await storage.getStoreStockByItem(fromDepartmentId, line.itemId, dateForStock);
         if (existingFromStock) {
           const currentIssued = parseFloat(existingFromStock.issuedQty || "0");
-          const newIssued = currentIssued + parseFloat(line.qtyIssued);
-          await storage.updateStoreStock(existingFromStock.id, { issuedQty: newIssued.toString() });
+          const newIssued = currentIssued + qtyIssued;
+          const opening = parseFloat(existingFromStock.openingQty || "0");
+          const added = parseFloat(existingFromStock.addedQty || "0");
+          const newClosing = opening + added - newIssued;
+          await storage.updateStoreStock(existingFromStock.id, { 
+            issuedQty: newIssued.toString(),
+            closingQty: newClosing.toString()
+          });
         } else {
+          const prevDayClosing = await storage.getPreviousDayClosing(fromDepartmentId, line.itemId, dateForStock);
+          const opening = parseFloat(prevDayClosing);
+          const newClosing = opening - qtyIssued;
           await storage.createStoreStock({
             clientId,
             storeDepartmentId: fromDepartmentId,
             itemId: line.itemId,
             date: dateForStock,
-            openingQty: "0",
+            openingQty: prevDayClosing,
             addedQty: "0",
             issuedQty: line.qtyIssued.toString(),
-            closingQty: "0",
+            closingQty: newClosing.toString(),
             costPriceSnapshot: costPrice,
             createdBy: req.session.userId!,
           });
@@ -2541,18 +2614,27 @@ export async function registerRoutes(
         const existingToStock = await storage.getStoreStockByItem(toDepartmentId, line.itemId, dateForStock);
         if (existingToStock) {
           const currentAdded = parseFloat(existingToStock.addedQty || "0");
-          const newAdded = currentAdded + parseFloat(line.qtyIssued);
-          await storage.updateStoreStock(existingToStock.id, { addedQty: newAdded.toString() });
+          const newAdded = currentAdded + qtyIssued;
+          const opening = parseFloat(existingToStock.openingQty || "0");
+          const issued = parseFloat(existingToStock.issuedQty || "0");
+          const newClosing = opening + newAdded - issued;
+          await storage.updateStoreStock(existingToStock.id, { 
+            addedQty: newAdded.toString(),
+            closingQty: newClosing.toString()
+          });
         } else {
+          const prevDayClosingTo = await storage.getPreviousDayClosing(toDepartmentId, line.itemId, dateForStock);
+          const opening = parseFloat(prevDayClosingTo);
+          const newClosing = opening + qtyIssued;
           await storage.createStoreStock({
             clientId,
             storeDepartmentId: toDepartmentId,
             itemId: line.itemId,
             date: dateForStock,
-            openingQty: "0",
+            openingQty: prevDayClosingTo,
             addedQty: line.qtyIssued.toString(),
             issuedQty: "0",
-            closingQty: "0",
+            closingQty: newClosing.toString(),
             costPriceSnapshot: costPrice,
             createdBy: req.session.userId!,
           });

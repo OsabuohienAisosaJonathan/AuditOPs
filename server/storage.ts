@@ -248,6 +248,7 @@ export interface IStorage {
   // Store Stock
   getStoreStock(clientId: string, storeDepartmentId: string, date?: Date): Promise<StoreStock[]>;
   getStoreStockByItem(storeDepartmentId: string, itemId: string, date: Date): Promise<StoreStock | undefined>;
+  getPreviousDayClosing(storeDepartmentId: string, itemId: string, date: Date): Promise<string>;
   createStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
   updateStoreStock(id: string, stock: Partial<InsertStoreStock>): Promise<StoreStock | undefined>;
   upsertStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
@@ -1706,6 +1707,31 @@ export class DbStorage implements IStorage {
       )
     );
     return stock;
+  }
+
+  async getPreviousDayClosing(storeDepartmentId: string, itemId: string, date: Date): Promise<string> {
+    const previousDay = new Date(date);
+    previousDay.setDate(previousDay.getDate() - 1);
+    const startOfPrevDay = new Date(previousDay);
+    startOfPrevDay.setHours(0, 0, 0, 0);
+    const endOfPrevDay = new Date(previousDay);
+    endOfPrevDay.setHours(23, 59, 59, 999);
+    
+    const [prevStock] = await db.select().from(storeStock).where(
+      and(
+        eq(storeStock.storeDepartmentId, storeDepartmentId),
+        eq(storeStock.itemId, itemId),
+        gte(storeStock.date, startOfPrevDay),
+        lte(storeStock.date, endOfPrevDay)
+      )
+    ).orderBy(desc(storeStock.updatedAt)).limit(1);
+    
+    if (prevStock) {
+      return prevStock.physicalClosingQty !== null && prevStock.physicalClosingQty !== undefined
+        ? prevStock.physicalClosingQty
+        : prevStock.closingQty || "0";
+    }
+    return "0";
   }
 
   async createStoreStock(insertStock: InsertStoreStock): Promise<StoreStock> {

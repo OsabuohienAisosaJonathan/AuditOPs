@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye, ChevronLeft, Lock, History, Calendar } from "lucide-react";
+import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye, ChevronLeft, Lock, History, Calendar, RotateCcw } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useClientContext } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
@@ -297,7 +297,7 @@ export default function InventoryLedger() {
     }
   }, [departmentStores]);
 
-  // Build issue breakdown by department and item
+  // Build issue breakdown by department and item (only count non-recalled issues)
   const issueBreakdown = useMemo(() => {
     const breakdown: Record<string, Record<string, number>> = {};
     
@@ -305,6 +305,7 @@ export default function InventoryLedger() {
     
     storeIssues.forEach(issue => {
       if (issue.fromDepartmentId !== selectedInvDept) return;
+      if (issue.status === "recalled") return;
       
       const lines = issueLines.find(il => il.issueId === issue.id)?.lines || [];
       lines.forEach(line => {
@@ -348,6 +349,30 @@ export default function InventoryLedger() {
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to issue stock");
+    },
+  });
+
+  // Recall store issue
+  const recallIssueMutation = useMutation({
+    mutationFn: async (issueId: string) => {
+      const res = await fetch(`/api/store-issues/${issueId}/recall`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to recall issue");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["store-issues"] });
+      queryClient.invalidateQueries({ queryKey: ["store-issue-lines"] });
+      toast.success("Stock recalled successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to recall stock");
     },
   });
 
@@ -1348,6 +1373,57 @@ export default function InventoryLedger() {
           </CardContent>
         </Card>
       ) : null}
+
+      {/* Today's Issues with Recall Option - Only for Main Store */}
+      {selectedDept?.inventoryType === "MAIN_STORE" && storeIssues && storeIssues.filter(i => i.fromDepartmentId === selectedInvDept && i.status !== "recalled").length > 0 && (
+        <Card className="mt-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" />
+              Today's Issued Stock
+            </CardTitle>
+            <CardDescription>Click Recall to return issued items back to Main Store</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {storeIssues
+                .filter(i => i.fromDepartmentId === selectedInvDept && i.status !== "recalled")
+                .map(issue => {
+                  const lines = issueLines?.find(il => il.issueId === issue.id)?.lines || [];
+                  const toDept = inventoryDepts?.find(d => d.id === issue.toDepartmentId);
+                  const toStoreName = getStoreNameById(toDept?.storeNameId || "")?.name || "Unknown";
+                  
+                  return (
+                    <div key={issue.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">
+                          Issued to: <span className="text-primary">{toStoreName}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {lines.map(line => {
+                            const item = items?.find(i => i.id === line.itemId);
+                            return `${item?.name || "Unknown"}: ${line.qtyIssued}`;
+                          }).join(", ")}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => recallIssueMutation.mutate(issue.id)}
+                        disabled={recallIssueMutation.isPending}
+                        className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                        data-testid={`button-recall-${issue.id}`}
+                      >
+                        {recallIssueMutation.isPending ? <Spinner className="mr-1 h-3 w-3" /> : <RotateCcw className="mr-1 h-3 w-3" />}
+                        Recall
+                      </Button>
+                    </div>
+                  );
+                })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Issue to Department Dialog */}
       <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>

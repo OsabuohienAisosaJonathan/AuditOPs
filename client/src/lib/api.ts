@@ -744,6 +744,10 @@ export const storeIssuesApi = {
     fetchApi<void>(`/store-issues/${id}`, {
       method: "DELETE",
     }),
+  recall: (id: string) =>
+    fetchApi<StoreIssue>(`/store-issues/${id}/recall`, {
+      method: "POST",
+    }),
   getIssuedQty: (departmentId: string, itemId: string, date: string) =>
     fetchApi<{ issuedQty: number }>(`/store-issues/issued-qty?departmentId=${departmentId}&itemId=${itemId}&date=${date}`),
 };
