@@ -772,10 +772,11 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
                       <TableRow>
                         <TableHead>Time</TableHead>
                         <TableHead>Shift</TableHead>
-                        <TableHead className="text-right">Cash (₦)</TableHead>
-                        <TableHead className="text-right">POS (₦)</TableHead>
-                        <TableHead className="text-right">Transfer (₦)</TableHead>
+                        <TableHead className="text-right">Amount (₦)</TableHead>
+                        <TableHead className="text-right">Complimentary (₦)</TableHead>
+                        <TableHead className="text-right">Vouchers (₦)</TableHead>
                         <TableHead className="text-right">Voids (₦)</TableHead>
+                        <TableHead className="text-right">Others (₦)</TableHead>
                         <TableHead className="text-right">Total (₦)</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -788,26 +789,30 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
                               {entry.shift === "full" ? "Full Day" : entry.shift || "Full Day"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">{Number(entry.cashAmount || 0).toLocaleString()}</TableCell>
-                          <TableCell className="text-right font-mono">{Number(entry.posAmount || 0).toLocaleString()}</TableCell>
-                          <TableCell className="text-right font-mono">{Number(entry.transferAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.amount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.complimentaryAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.vouchersAmount || 0).toLocaleString()}</TableCell>
                           <TableCell className="text-right font-mono text-muted-foreground">{Number(entry.voidsAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">{Number(entry.othersAmount || 0).toLocaleString()}</TableCell>
                           <TableCell className="text-right font-bold font-mono">{Number(entry.totalSales || 0).toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
                       <TableRow className="bg-muted/20">
                         <TableCell colSpan={2} className="font-medium">Subtotal</TableCell>
                         <TableCell className="text-right font-mono font-medium">
-                          ₦ {entries.reduce((sum, e) => sum + Number(e.cashAmount || 0), 0).toLocaleString()}
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-mono font-medium">
-                          ₦ {entries.reduce((sum, e) => sum + Number(e.posAmount || 0), 0).toLocaleString()}
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.complimentaryAmount || 0), 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-mono font-medium">
-                          ₦ {entries.reduce((sum, e) => sum + Number(e.transferAmount || 0), 0).toLocaleString()}
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.vouchersAmount || 0), 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">
                           ₦ {entries.reduce((sum, e) => sum + Number(e.voidsAmount || 0), 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          ₦ {entries.reduce((sum, e) => sum + Number(e.othersAmount || 0), 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-bold font-mono">
                           ₦ {entries.reduce((sum, e) => sum + Number(e.totalSales || 0), 0).toLocaleString()}
