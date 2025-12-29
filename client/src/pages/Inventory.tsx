@@ -1076,7 +1076,31 @@ export default function Inventory() {
                     </div>
                     <DialogFooter>
                       <Button type="button" variant="outline" onClick={() => setCreateStoreNameOpen(false)}>Cancel</Button>
-                      <Button type="submit" disabled={createStoreNameMutation.isPending} data-testid="button-submit-store-name">
+                      <Button 
+                        type="button" 
+                        disabled={createStoreNameMutation.isPending} 
+                        data-testid="button-submit-store-name"
+                        onClick={() => {
+                          if (storeNameMode === "link") {
+                            if (selectedDeptToLink) {
+                              const dept = departments?.find(d => d.id === selectedDeptToLink);
+                              if (dept) {
+                                createStoreNameMutation.mutate({ name: dept.name });
+                              }
+                            } else {
+                              toast.error("Please select a department to link");
+                            }
+                          } else {
+                            const nameInput = document.getElementById("storeName") as HTMLInputElement;
+                            const name = nameInput?.value?.trim();
+                            if (name) {
+                              createStoreNameMutation.mutate({ name });
+                            } else {
+                              toast.error("Please enter an SRD name");
+                            }
+                          }
+                        }}
+                      >
                         {createStoreNameMutation.isPending && <Spinner className="mr-2" />}
                         {storeNameMode === "link" ? "Link Department" : "Create SRD"}
                       </Button>
