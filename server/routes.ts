@@ -1966,6 +1966,30 @@ export async function registerRoutes(
     try {
       const { storeDepartmentId, ...stockCountData } = req.body;
       
+      // Check for existing stock count for same item/date/department
+      if (stockCountData.clientId && stockCountData.departmentId && stockCountData.itemId && stockCountData.date) {
+        const checkDate = new Date(stockCountData.date);
+        const startOfDay = new Date(checkDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(checkDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        const existingCount = await storage.getExistingStockCount(
+          stockCountData.clientId,
+          stockCountData.departmentId,
+          stockCountData.itemId,
+          startOfDay,
+          endOfDay
+        );
+        
+        if (existingCount) {
+          return res.status(409).json({ 
+            error: "Count already exists for this item today. Please edit the existing count.",
+            existingId: existingCount.id
+          });
+        }
+      }
+      
       // Convert date string to Date object for Zod validation
       const dateValue = stockCountData.date ? new Date(stockCountData.date) : undefined;
       

@@ -116,6 +116,7 @@ export interface IStorage {
   // Stock Counts
   getStockCounts(departmentId: string, date?: Date): Promise<StockCount[]>;
   getStockCount(id: string): Promise<StockCount | undefined>;
+  getExistingStockCount(clientId: string, departmentId: string, itemId: string, startOfDay: Date, endOfDay: Date): Promise<StockCount | undefined>;
   createStockCount(stockCount: InsertStockCount): Promise<StockCount>;
   updateStockCount(id: string, stockCount: Partial<InsertStockCount>): Promise<StockCount | undefined>;
   deleteStockCount(id: string): Promise<boolean>;
@@ -630,6 +631,19 @@ export class DbStorage implements IStorage {
 
   async getStockCount(id: string): Promise<StockCount | undefined> {
     const [stockCount] = await db.select().from(stockCounts).where(eq(stockCounts.id, id));
+    return stockCount;
+  }
+
+  async getExistingStockCount(clientId: string, departmentId: string, itemId: string, startOfDay: Date, endOfDay: Date): Promise<StockCount | undefined> {
+    const [stockCount] = await db.select().from(stockCounts).where(
+      and(
+        eq(stockCounts.clientId, clientId),
+        eq(stockCounts.departmentId, departmentId),
+        eq(stockCounts.itemId, itemId),
+        gte(stockCounts.date, startOfDay),
+        lte(stockCounts.date, endOfDay)
+      )
+    );
     return stockCount;
   }
 
@@ -1327,47 +1341,42 @@ export class DbStorage implements IStorage {
       const totalDeclared = parseFloat(declaredResult?.totalReported || "0");
 
       // Get auditTotal from SRD Department Store ledger
-      // Find the inventory department linked to this department with DEPARTMENT_STORE type
-      const [invDept] = await db.select().from(inventoryDepartments).where(
+      // Use stock_counts to find which store stock records belong to this department
+      // Stock counts are created with departmentId (regular) and link to store_stock via clientId, itemId, date
+      const stockCountsForDept = await db.select({
+        itemId: stockCounts.itemId,
+        openingQty: stockCounts.openingQty,
+        addedQty: stockCounts.addedQty,
+        actualClosingQty: stockCounts.actualClosingQty
+      }).from(stockCounts).where(
         and(
-          eq(inventoryDepartments.clientId, clientId),
-          eq(inventoryDepartments.inventoryType, "DEPARTMENT_STORE"),
-          eq(inventoryDepartments.departmentId, dept.id)
+          eq(stockCounts.clientId, clientId),
+          eq(stockCounts.departmentId, dept.id),
+          gte(stockCounts.date, startOfDay),
+          lte(stockCounts.date, endOfDay)
         )
       );
 
+      // Track items already counted to avoid duplicates
+      const countedItems = new Set<string>();
       let auditTotal = 0;
-      if (invDept) {
-        // Get store stock records for this inventory department on the selected date
-        const storeStockRecords = await db.select({
-          openingQty: storeStock.openingQty,
-          addedQty: storeStock.addedQty,
-          physicalClosingQty: storeStock.physicalClosingQty,
-          itemId: storeStock.itemId
-        }).from(storeStock).where(
-          and(
-            eq(storeStock.storeDepartmentId, invDept.id),
-            gte(storeStock.date, startOfDay),
-            lte(storeStock.date, endOfDay)
-          )
-        );
-
-        // Calculate Amount Sold = (Opening + Added - Closing) × Selling Price for each item
-        for (const record of storeStockRecords) {
-          if (record.physicalClosingQty !== null) {
-            const opening = parseFloat(record.openingQty || "0");
-            const added = parseFloat(record.addedQty || "0");
-            const closing = parseFloat(record.physicalClosingQty || "0");
-            const sold = (opening + added) - closing;
-            
-            // Get the item's selling price
-            const [item] = await db.select({ sellingPrice: items.sellingPrice })
-              .from(items).where(eq(items.id, record.itemId));
-            const sellingPrice = parseFloat(item?.sellingPrice || "0");
-            
-            auditTotal += sold * sellingPrice;
-          }
-        }
+      
+      for (const sc of stockCountsForDept) {
+        // Skip if we already counted this item (prevent duplicates)
+        if (countedItems.has(sc.itemId)) continue;
+        countedItems.add(sc.itemId);
+        
+        const opening = parseFloat(sc.openingQty || "0");
+        const added = parseFloat(sc.addedQty || "0");
+        const closing = parseFloat(sc.actualClosingQty || "0");
+        const sold = (opening + added) - closing;
+        
+        // Get the item's selling price
+        const [item] = await db.select({ sellingPrice: items.sellingPrice })
+          .from(items).where(eq(items.id, sc.itemId));
+        const sellingPrice = parseFloat(item?.sellingPrice || "0");
+        
+        auditTotal += sold * sellingPrice;
       }
 
       const variance1stHit = totalDeclared - totalCaptured;

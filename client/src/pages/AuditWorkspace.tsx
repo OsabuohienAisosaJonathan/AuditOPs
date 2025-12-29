@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1416,10 +1416,13 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
   totalVariance: number;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingCount, setEditingCount] = useState<StockCount | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [selectedSrdId, setSelectedSrdId] = useState<string>("");
   const [physicalCount, setPhysicalCount] = useState<string>("");
   const queryClient = useQueryClient();
+  
+  const isEditMode = editingCount !== null;
 
   // Fetch inventory departments (SRDs) for the client
   const { data: inventoryDepts = [] } = useQuery<InventoryDept[]>({
@@ -1518,41 +1521,94 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
       queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       setCreateOpen(false);
+      setEditingCount(null);
       setSelectedItemId("");
       setSelectedSrdId("");
       setPhysicalCount("");
       toast.success("Stock count recorded and SRD ledger updated");
     },
-    onError: (error: any) => toast.error(error.message || "Failed to create count"),
+    onError: (error: any) => {
+      if (error.message?.includes("already exists")) {
+        toast.error("Count already exists for this item today. Please edit the existing count.");
+      } else {
+        toast.error(error.message || "Failed to create count");
+      }
+    },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; updates: any }) => stockCountsApi.update(data.id, data.updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      setCreateOpen(false);
+      setEditingCount(null);
+      setSelectedItemId("");
+      setSelectedSrdId("");
+      setPhysicalCount("");
+      toast.success("Stock count updated successfully");
+    },
+    onError: (error: any) => toast.error(error.message || "Failed to update count"),
+  });
+
+  const handleEdit = (count: StockCount) => {
+    setEditingCount(count);
+    setSelectedItemId(count.itemId);
+    setPhysicalCount(count.actualClosingQty || "");
+    setCreateOpen(true);
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!selectedItemId || !selectedSrdId || !physicalCount) {
-      toast.error("Please select an SRD, item, and enter physical count");
-      return;
+    
+    if (isEditMode && editingCount) {
+      // Edit mode - update existing count
+      if (!physicalCount) {
+        toast.error("Please enter physical count");
+        return;
+      }
+      
+      const opening = Number(editingCount.openingQty || 0);
+      const added = Number((editingCount as any).addedQty || 0);
+      const total = opening + added;
+      const actual = Number(physicalCount) || 0;
+      const sold = total - actual;
+      
+      updateMutation.mutate({
+        id: editingCount.id,
+        updates: {
+          actualClosingQty: String(actual),
+          soldQty: String(sold > 0 ? sold : 0),
+          varianceQty: String(actual - total),
+        }
+      });
+    } else {
+      // Create mode
+      if (!selectedItemId || !selectedSrdId || !physicalCount) {
+        toast.error("Please select an SRD, item, and enter physical count");
+        return;
+      }
+      
+      const opening = getOpeningQty;
+      const added = getAddedQty;
+      const total = opening + added;
+      const actual = Number(physicalCount) || 0;
+      const sold = total - actual;
+      
+      createMutation.mutate({
+        clientId,
+        departmentId,
+        storeDepartmentId: selectedSrdId,
+        itemId: selectedItemId,
+        date: new Date(dateStr).toISOString(),
+        openingQty: String(opening),
+        addedQty: String(added),
+        soldQty: String(sold > 0 ? sold : 0),
+        expectedClosingQty: String(total),
+        actualClosingQty: String(actual),
+        varianceQty: String(actual - total),
+      });
     }
-    
-    const opening = getOpeningQty;
-    const added = getAddedQty;
-    const total = opening + added;
-    const actual = Number(physicalCount) || 0;
-    const sold = total - actual;
-    const expected = total; // Expected = Opening + Added (no sold deduction for expected)
-    
-    createMutation.mutate({
-      clientId,
-      departmentId,
-      storeDepartmentId: selectedSrdId, // This triggers storeStock update on backend
-      itemId: selectedItemId,
-      date: new Date(dateStr).toISOString(),
-      openingQty: String(opening),
-      addedQty: String(added),
-      soldQty: String(sold > 0 ? sold : 0),
-      expectedClosingQty: String(total),
-      actualClosingQty: String(actual),
-      varianceQty: String(actual - total),
-    });
   };
 
   return (
@@ -1581,12 +1637,13 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
                 <TableHead className="text-right">Actual</TableHead>
                 <TableHead className="text-right">Variance</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stockCounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     No stock counts recorded. Click "Add Count" to begin.
                   </TableCell>
                 </TableRow>
@@ -1615,6 +1672,16 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
                           {variance === 0 ? "Matched" : variance < 0 ? "Short" : "Over"}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEdit(count)}
+                          data-testid={`button-edit-count-${count.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })
@@ -1638,6 +1705,7 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
       <Dialog open={createOpen} onOpenChange={(open) => { 
         setCreateOpen(open); 
         if (!open) { 
+          setEditingCount(null);
           setSelectedItemId(""); 
           setSelectedSrdId(""); 
           setPhysicalCount(""); 
@@ -1645,70 +1713,42 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
       }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add Stock Count</DialogTitle>
+            <DialogTitle>{isEditMode ? "Edit Stock Count" : "Add Stock Count"}</DialogTitle>
             <DialogDescription>
-              Select an SRD and item, then enter the physical count. Opening and Added are auto-filled from the SRD ledger.
+              {isEditMode 
+                ? "Update the physical count for this item. Opening and Added values are fixed."
+                : "Select an SRD and item, then enter the physical count. Opening and Added are auto-filled from the SRD ledger."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
-              {/* Step 1: Select SRD */}
-              <div className="space-y-2">
-                <Label htmlFor="srdId">Stock Reconciliation Department (SRD)</Label>
-                <Select value={selectedSrdId} onValueChange={(val) => { setSelectedSrdId(val); setSelectedItemId(""); setPhysicalCount(""); }}>
-                  <SelectTrigger data-testid="select-srd-count">
-                    <SelectValue placeholder="Select SRD (Department Store)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departmentStoreSrds.map(dept => (
-                      <SelectItem key={dept.id} value={dept.id}>
-                        {getStoreNameById(dept.storeNameId)?.name || dept.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {/* Step 2: Select Item (enabled after SRD is selected) */}
-              <div className="space-y-2">
-                <Label htmlFor="itemId">Item</Label>
-                <Select 
-                  value={selectedItemId} 
-                  onValueChange={(val) => { setSelectedItemId(val); setPhysicalCount(""); }}
-                  disabled={!selectedSrdId}
-                >
-                  <SelectTrigger data-testid="select-item-count">
-                    <SelectValue placeholder={selectedSrdId ? "Select item" : "Select SRD first"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {items.filter(i => i.status === "active").map(item => (
-                      <SelectItem key={item.id} value={item.id}>{item.name} ({item.category})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Auto-filled values display */}
-              {selectedItemId && (
+              {isEditMode && editingCount ? (
                 <>
+                  {/* Edit mode - show fixed item info */}
+                  <div className="space-y-2">
+                    <Label>Item</Label>
+                    <div className="p-3 bg-muted/30 rounded-lg border">
+                      <p className="font-medium">{items.find(i => i.id === editingCount.itemId)?.name || editingCount.itemId}</p>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-4 p-3 bg-muted/30 rounded-lg border">
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground mb-1">Opening</p>
-                      <p className="font-mono font-semibold text-lg">{getOpeningQty.toFixed(2)}</p>
+                      <p className="font-mono font-semibold text-lg">{Number(editingCount.openingQty || 0).toFixed(2)}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-xs text-emerald-600 mb-1">+ Added</p>
-                      <p className="font-mono font-semibold text-lg text-emerald-600">{getAddedQty.toFixed(2)}</p>
+                      <p className="font-mono font-semibold text-lg text-emerald-600">{Number((editingCount as any).addedQty || 0).toFixed(2)}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground mb-1">= Total</p>
-                      <p className="font-mono font-bold text-lg">{totalQty.toFixed(2)}</p>
+                      <p className="font-mono font-bold text-lg">{(Number(editingCount.openingQty || 0) + Number((editingCount as any).addedQty || 0)).toFixed(2)}</p>
                     </div>
                   </div>
                   
                   <Separator />
                   
-                  {/* Physical Count Input */}
                   <div className="space-y-2">
                     <Label htmlFor="actualQty" className="text-base font-semibold">Actual Physical Count</Label>
                     <Input 
@@ -1723,27 +1763,99 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
                       data-testid="input-physical-count"
                     />
                   </div>
+                </>
+              ) : (
+                <>
+                  {/* Create mode - select SRD and item */}
+                  <div className="space-y-2">
+                    <Label htmlFor="srdId">Stock Reconciliation Department (SRD)</Label>
+                    <Select value={selectedSrdId} onValueChange={(val) => { setSelectedSrdId(val); setSelectedItemId(""); setPhysicalCount(""); }}>
+                      <SelectTrigger data-testid="select-srd-count">
+                        <SelectValue placeholder="Select SRD (Department Store)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {departmentStoreSrds.map(dept => (
+                          <SelectItem key={dept.id} value={dept.id}>
+                            {getStoreNameById(dept.storeNameId)?.name || dept.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="itemId">Item</Label>
+                    <Select 
+                      value={selectedItemId} 
+                      onValueChange={(val) => { setSelectedItemId(val); setPhysicalCount(""); }}
+                      disabled={!selectedSrdId}
+                    >
+                      <SelectTrigger data-testid="select-item-count">
+                        <SelectValue placeholder={selectedSrdId ? "Select item" : "Select SRD first"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {items.filter(i => i.status === "active").map(item => (
+                          <SelectItem key={item.id} value={item.id}>{item.name} ({item.category})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                  {/* Calculated results */}
-                  {physicalQty > 0 && (
-                    <div className="grid grid-cols-2 gap-4 p-3 bg-muted/20 rounded-lg border">
-                      <div className="text-center">
-                        <p className="text-xs text-red-600 mb-1">Sold (calculated)</p>
-                        <p className="font-mono font-semibold text-lg text-red-600">
-                          {soldQty > 0 ? soldQty.toFixed(2) : "0.00"}
-                        </p>
+                  {selectedItemId && (
+                    <>
+                      <div className="grid grid-cols-3 gap-4 p-3 bg-muted/30 rounded-lg border">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground mb-1">Opening</p>
+                          <p className="font-mono font-semibold text-lg">{getOpeningQty.toFixed(2)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-emerald-600 mb-1">+ Added</p>
+                          <p className="font-mono font-semibold text-lg text-emerald-600">{getAddedQty.toFixed(2)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground mb-1">= Total</p>
+                          <p className="font-mono font-bold text-lg">{totalQty.toFixed(2)}</p>
+                        </div>
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs mb-1">Variance</p>
-                        <p className={cn(
-                          "font-mono font-bold text-lg",
-                          physicalQty - totalQty < 0 ? "text-red-600" : 
-                          physicalQty - totalQty > 0 ? "text-amber-600" : "text-emerald-600"
-                        )}>
-                          {physicalQty - totalQty > 0 ? "+" : ""}{(physicalQty - totalQty).toFixed(2)}
-                        </p>
+                      
+                      <Separator />
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="actualQty" className="text-base font-semibold">Actual Physical Count</Label>
+                        <Input 
+                          id="actualQty" 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="Enter physical count"
+                          value={physicalCount}
+                          onChange={(e) => setPhysicalCount(e.target.value)}
+                          className="text-lg h-12"
+                          required 
+                          data-testid="input-physical-count"
+                        />
                       </div>
-                    </div>
+
+                      {physicalQty > 0 && (
+                        <div className="grid grid-cols-2 gap-4 p-3 bg-muted/20 rounded-lg border">
+                          <div className="text-center">
+                            <p className="text-xs text-red-600 mb-1">Sold (calculated)</p>
+                            <p className="font-mono font-semibold text-lg text-red-600">
+                              {soldQty > 0 ? soldQty.toFixed(2) : "0.00"}
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs mb-1">Variance</p>
+                            <p className={cn(
+                              "font-mono font-bold text-lg",
+                              physicalQty - totalQty < 0 ? "text-red-600" : 
+                              physicalQty - totalQty > 0 ? "text-amber-600" : "text-emerald-600"
+                            )}>
+                              {physicalQty - totalQty > 0 ? "+" : ""}{(physicalQty - totalQty).toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -1752,11 +1864,11 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
               <Button 
                 type="submit" 
-                disabled={createMutation.isPending || !selectedItemId || !selectedSrdId || !physicalCount}
+                disabled={(isEditMode ? updateMutation.isPending : createMutation.isPending) || (!isEditMode && (!selectedItemId || !selectedSrdId)) || !physicalCount}
                 data-testid="button-save-count"
               >
-                {createMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
-                Save Count
+                {(isEditMode ? updateMutation.isPending : createMutation.isPending) && <Spinner className="h-4 w-4 mr-2" />}
+                {isEditMode ? "Update Count" : "Save Count"}
               </Button>
             </DialogFooter>
           </form>
