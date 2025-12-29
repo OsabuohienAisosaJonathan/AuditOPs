@@ -2589,6 +2589,16 @@ export async function registerRoutes(
     }
   });
 
+  // Client-scoped: Get items filtered by inventory department's category assignments
+  app.get("/api/clients/:clientId/inventory-departments/:inventoryDeptId/items", requireAuth, requireClientAccess(), async (req, res) => {
+    try {
+      const items = await storage.getItemsForInventoryDepartment(req.params.inventoryDeptId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============== CLIENT-SCOPED STORE STOCK ==============
   app.get("/api/clients/:clientId/store-stock", requireAuth, async (req, res) => {
     try {
