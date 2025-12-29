@@ -1149,6 +1149,14 @@ export const storeNamesApi = {
     }),
 };
 
+export interface InventoryDepartmentCategory {
+  id: string;
+  clientId: string;
+  inventoryDepartmentId: string;
+  categoryId: string;
+  createdAt: Date;
+}
+
 export const inventoryDepartmentsApi = {
   getByClient: (clientId: string) => fetchApi<InventoryDepartment[]>(`/clients/${clientId}/inventory-departments`),
   get: (id: string) => fetchApi<InventoryDepartment>(`/inventory-departments/${id}`),
@@ -1166,6 +1174,15 @@ export const inventoryDepartmentsApi = {
     fetchApi<{ success: boolean }>(`/inventory-departments/${id}`, {
       method: "DELETE",
     }),
+  getCategories: (id: string) => 
+    fetchApi<InventoryDepartmentCategory[]>(`/inventory-departments/${id}/categories`),
+  setCategories: (id: string, categoryIds: string[]) =>
+    fetchApi<InventoryDepartmentCategory[]>(`/inventory-departments/${id}/categories`, {
+      method: "PUT",
+      body: JSON.stringify({ categoryIds }),
+    }),
+  getItems: (id: string) =>
+    fetchApi<Item[]>(`/inventory-departments/${id}/items`),
 };
 
 export interface GoodsReceivedNote {
