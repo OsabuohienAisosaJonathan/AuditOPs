@@ -17,24 +17,22 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/
 import { toast } from "sonner";
 import { format, addDays, subDays } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
+import { useClientContext } from "@/lib/client-context";
 
 export default function ReconciliationPage() {
   const [computeDialogOpen, setComputeDialogOpen] = useState(false);
-  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [receivableDialogOpen, setReceivableDialogOpen] = useState(false);
   const [surplusDialogOpen, setSurplusDialogOpen] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentComparison | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: clients } = useQuery({
-    queryKey: ["clients"],
-    queryFn: clientsApi.getAll,
-  });
+  // Use global client and date from header context
+  const { selectedClientId: contextClientId, selectedDate: contextDate, clients } = useClientContext();
+  const selectedDate = contextDate || format(new Date(), "yyyy-MM-dd");
 
-  // Derive clientId - use selectedClientId or default to first client
-  const clientId = selectedClientId || clients?.[0]?.id || "";
+  // Derive clientId from context
+  const clientId = contextClientId || clients?.[0]?.id || "";
 
   // Fetch departments for the selected client only
   const { data: departments } = useQuery({
@@ -118,14 +116,6 @@ export default function ReconciliationPage() {
   });
 
   const totalVariance = reconciliations?.reduce((sum, r) => sum + Number(r.varianceValue || 0), 0) || 0;
-
-  const handlePrevDay = () => {
-    setSelectedDate(format(subDays(new Date(selectedDate), 1), "yyyy-MM-dd"));
-  };
-
-  const handleNextDay = () => {
-    setSelectedDate(format(addDays(new Date(selectedDate), 1), "yyyy-MM-dd"));
-  };
 
   const handleCreateReceivable = (dept: DepartmentComparison) => {
     setSelectedDepartment(dept);
@@ -218,40 +208,11 @@ export default function ReconciliationPage() {
         <TabsContent value="comparison" className="space-y-6 mt-6">
           <Card>
             <CardHeader className="border-b">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <CardTitle>Department Comparison (2nd Hit)</CardTitle>
-                  <CardDescription>Compare Total Captured, Total Declared, and Audit totals per department</CardDescription>
-                </div>
-                <div className="flex items-center gap-4">
-                  {clients && clients.length > 1 && (
-                    <Select value={selectedClientId || clients[0]?.id} onValueChange={setSelectedClientId}>
-                      <SelectTrigger className="w-48" data-testid="select-client">
-                        <SelectValue placeholder="Select client" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" onClick={handlePrevDay} data-testid="button-prev-day">
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      type="date"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                      className="w-40"
-                      data-testid="input-comparison-date"
-                    />
-                    <Button variant="ghost" size="icon" onClick={handleNextDay} data-testid="button-next-day">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+              <div>
+                <CardTitle>Department Comparison (2nd Hit)</CardTitle>
+                <CardDescription>
+                  Compare Total Captured, Total Declared, and Audit totals per department for {format(new Date(selectedDate), "MMMM d, yyyy")}
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="p-0">
