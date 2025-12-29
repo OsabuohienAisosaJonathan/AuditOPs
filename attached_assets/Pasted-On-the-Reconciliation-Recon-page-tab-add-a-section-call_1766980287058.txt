@@ -1,0 +1,40 @@
+On the Reconciliation (Recon) page/tab, add a section called “Department Comparison (2nd Hit)” that shows BOTH variances.
+Table Columns (exact order)
+Department | Total Captured | Total Declared | Audit (Dep) | Variance 1 (System − Audit) | Variance 2 (Declared − Audit) | Status
+Data Sources (must be exact)
+1.	Total Captured and Total Declared must be fetched per department from Reported Payments Summary:
+o	Total Captured = captured/system/book sales total for the department
+o	Total Declared = declared cash + declared POS + declared transfer for the department
+2.	Audit (Dep) must be pulled per department from SRD Department Store for the same client/date and calculated as:
+o	Audit (Dep) = Σ( Sold Qty × Selling Price ) for all items in that department SRD for that day
+o	Use SRD saved values (Amount Sold / Value Sold) if already computed.
+Variance Calculations (both required)
+•	Variance 1 (System − Audit) = Total Captured − Audit (Dep)
+•	Variance 2 (Declared − Audit) = Total Declared − Audit (Dep)
+Status Rules (simple + clear)
+•	If Audit (Dep) is missing/zero → Awaiting Audit
+•	If Var1 < 0 and Var2 < 0 → Sales Missing + Cash Shortage
+•	If Var1 < 0 and Var2 ≥ 0 → Sales Missing (System Under-captured)
+•	If Var1 ≥ 0 and Var2 < 0 → Cash Shortage (Under-remittance)
+•	If Var1 ≥ 0 and Var2 ≥ 0 → Balanced/Excess
+Footer Totals
+Add a TOTAL row at the bottom:
+TOTAL | ΣCaptured | ΣDeclared | ΣAudit | ΣVar1 | ΣVar2 | —
+Matching + Filters (critical)
+•	Match by departmentId (not department name)
+•	Filter by selected client + selected audit date (and outlet if applicable)
+Display
+•	Format currency with ₦ and show negative values clearly (e.g., -₦12,500)
+•	Keep it clean and professional.
+PROMPT ADD-ON (Exceptions + Receivables + Surplus):
+1.	In the Department Comparison (2nd Hit) table:
+a) If Status = Short, show button “Create Receivable”.
+b) If Status = Excess, show button “Log Surplus”.
+2.	Clicking either button creates a record under Exceptions module, but stored separately as:
+a) Receivables Register (Short)
+b) Surplus Register (Excess)
+3.	The existing Raise Exception form remains for all other cases not strictly Short/Excess.
+4.	Both Receivables and Surplus records must be revisitable and support status updates and history:
+o	Receivables: Open, Part Paid, Settled, Written Off
+o	Surplus: Open, Classified, Cleared/Posted
+5.	Each record must save: client, department, audit date, variance amount, comments, evidence attachment, and audit trail log.

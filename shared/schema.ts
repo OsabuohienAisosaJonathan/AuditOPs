@@ -456,8 +456,80 @@ export const inventoryDepartments = pgTable("inventory_departments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ============================================================
+// RECEIVABLES REGISTER (Cash Shortages from Department Comparison)
+// ============================================================
+
+export const RECEIVABLE_STATUSES = ["open", "part_paid", "settled", "written_off"] as const;
+export type ReceivableStatus = typeof RECEIVABLE_STATUSES[number];
+
+export const receivables = pgTable("receivables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  auditDate: timestamp("audit_date").notNull(),
+  varianceAmount: decimal("variance_amount", { precision: 12, scale: 2 }).notNull(),
+  amountPaid: decimal("amount_paid", { precision: 12, scale: 2 }).default("0.00"),
+  balanceRemaining: decimal("balance_remaining", { precision: 12, scale: 2 }).notNull(),
+  status: text("status").notNull().default("open"),
+  comments: text("comments"),
+  evidenceUrl: text("evidence_url"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const receivableHistory = pgTable("receivable_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receivableId: varchar("receivable_id").notNull().references(() => receivables.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  previousStatus: text("previous_status"),
+  newStatus: text("new_status"),
+  amountPaid: decimal("amount_paid", { precision: 12, scale: 2 }),
+  notes: text("notes"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// SURPLUS REGISTER (Excess Cash from Department Comparison)
+// ============================================================
+
+export const SURPLUS_STATUSES = ["open", "classified", "cleared", "posted"] as const;
+export type SurplusStatus = typeof SURPLUS_STATUSES[number];
+
+export const surpluses = pgTable("surpluses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  auditDate: timestamp("audit_date").notNull(),
+  surplusAmount: decimal("surplus_amount", { precision: 12, scale: 2 }).notNull(),
+  status: text("status").notNull().default("open"),
+  classification: text("classification"),
+  comments: text("comments"),
+  evidenceUrl: text("evidence_url"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const surplusHistory = pgTable("surplus_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surplusId: varchar("surplus_id").notNull().references(() => surpluses.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  previousStatus: text("previous_status"),
+  newStatus: text("new_status"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert schemas
 export const insertStoreNameSchema = createInsertSchema(storeNames).omit({ id: true, createdAt: true });
+export const insertReceivableSchema = createInsertSchema(receivables).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertReceivableHistorySchema = createInsertSchema(receivableHistory).omit({ id: true, createdAt: true });
+export const insertSurplusSchema = createInsertSchema(surpluses).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSurplusHistorySchema = createInsertSchema(surplusHistory).omit({ id: true, createdAt: true });
 export const insertInventoryDepartmentSchema = createInsertSchema(inventoryDepartments).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
@@ -545,3 +617,11 @@ export type InsertInventoryDepartment = z.infer<typeof insertInventoryDepartment
 export type InventoryDepartment = typeof inventoryDepartments.$inferSelect;
 export type InsertGoodsReceivedNote = z.infer<typeof insertGoodsReceivedNoteSchema>;
 export type GoodsReceivedNote = typeof goodsReceivedNotes.$inferSelect;
+export type InsertReceivable = z.infer<typeof insertReceivableSchema>;
+export type Receivable = typeof receivables.$inferSelect;
+export type InsertReceivableHistory = z.infer<typeof insertReceivableHistorySchema>;
+export type ReceivableHistory = typeof receivableHistory.$inferSelect;
+export type InsertSurplus = z.infer<typeof insertSurplusSchema>;
+export type Surplus = typeof surpluses.$inferSelect;
+export type InsertSurplusHistory = z.infer<typeof insertSurplusHistorySchema>;
+export type SurplusHistory = typeof surplusHistory.$inferSelect;
