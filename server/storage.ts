@@ -1352,42 +1352,55 @@ export class DbStorage implements IStorage {
       const totalDeclared = parseFloat(declaredResult?.totalReported || "0");
 
       // Get auditTotal from SRD Department Store ledger
-      // Use stock_counts to find which store stock records belong to this department
-      // Stock counts are created with departmentId (regular) and link to store_stock via clientId, itemId, date
-      const stockCountsForDept = await db.select({
-        itemId: stockCounts.itemId,
-        openingQty: stockCounts.openingQty,
-        addedQty: stockCounts.addedQty,
-        actualClosingQty: stockCounts.actualClosingQty
-      }).from(stockCounts).where(
+      // First check if this department has an active link to an SRD
+      const [deptLink] = await db.select().from(departmentInventoryLinks).where(
         and(
-          eq(stockCounts.clientId, clientId),
-          eq(stockCounts.departmentId, dept.id),
-          gte(stockCounts.date, startOfDay),
-          lte(stockCounts.date, endOfDay)
+          eq(departmentInventoryLinks.clientId, clientId),
+          eq(departmentInventoryLinks.clientDepartmentId, dept.id),
+          eq(departmentInventoryLinks.status, "active")
         )
       );
 
-      // Track items already counted to avoid duplicates
-      const countedItems = new Set<string>();
       let auditTotal = 0;
       
-      for (const sc of stockCountsForDept) {
-        // Skip if we already counted this item (prevent duplicates)
-        if (countedItems.has(sc.itemId)) continue;
-        countedItems.add(sc.itemId);
+      // Only calculate audit if there's an active link to an SRD
+      if (deptLink) {
+        // Use stock_counts to find which store stock records belong to this department
+        // Stock counts are created with departmentId (regular) and link to store_stock via clientId, itemId, date
+        const stockCountsForDept = await db.select({
+          itemId: stockCounts.itemId,
+          openingQty: stockCounts.openingQty,
+          addedQty: stockCounts.addedQty,
+          actualClosingQty: stockCounts.actualClosingQty
+        }).from(stockCounts).where(
+          and(
+            eq(stockCounts.clientId, clientId),
+            eq(stockCounts.departmentId, dept.id),
+            gte(stockCounts.date, startOfDay),
+            lte(stockCounts.date, endOfDay)
+          )
+        );
+
+        // Track items already counted to avoid duplicates
+        const countedItems = new Set<string>();
         
-        const opening = parseFloat(sc.openingQty || "0");
-        const added = parseFloat(sc.addedQty || "0");
-        const closing = parseFloat(sc.actualClosingQty || "0");
-        const sold = (opening + added) - closing;
-        
-        // Get the item's selling price
-        const [item] = await db.select({ sellingPrice: items.sellingPrice })
-          .from(items).where(eq(items.id, sc.itemId));
-        const sellingPrice = parseFloat(item?.sellingPrice || "0");
-        
-        auditTotal += sold * sellingPrice;
+        for (const sc of stockCountsForDept) {
+          // Skip if we already counted this item (prevent duplicates)
+          if (countedItems.has(sc.itemId)) continue;
+          countedItems.add(sc.itemId);
+          
+          const opening = parseFloat(sc.openingQty || "0");
+          const added = parseFloat(sc.addedQty || "0");
+          const closing = parseFloat(sc.actualClosingQty || "0");
+          const sold = (opening + added) - closing;
+          
+          // Get the item's selling price
+          const [item] = await db.select({ sellingPrice: items.sellingPrice })
+            .from(items).where(eq(items.id, sc.itemId));
+          const sellingPrice = parseFloat(item?.sellingPrice || "0");
+          
+          auditTotal += sold * sellingPrice;
+        }
       }
 
       const variance1stHit = totalDeclared - totalCaptured;
@@ -1432,6 +1445,20 @@ export class DbStorage implements IStorage {
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
+
+    // Check if this department has an active link to an SRD
+    const [deptLink] = await db.select().from(departmentInventoryLinks).where(
+      and(
+        eq(departmentInventoryLinks.clientId, clientId),
+        eq(departmentInventoryLinks.clientDepartmentId, departmentId),
+        eq(departmentInventoryLinks.status, "active")
+      )
+    );
+
+    // Return empty if no active link
+    if (!deptLink) {
+      return [];
+    }
 
     const stockCountsForDept = await db.select({
       itemId: stockCounts.itemId,

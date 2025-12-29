@@ -882,11 +882,14 @@ export default function ReconciliationPage() {
             ) : !auditBreakdown || auditBreakdown.length === 0 ? (
               <Empty className="py-12">
                 <EmptyMedia variant="icon">
-                  <FileCheck className="h-6 w-6" />
+                  <AlertTriangle className="h-6 w-6" />
                 </EmptyMedia>
                 <EmptyHeader>
-                  <EmptyTitle>No stock count data</EmptyTitle>
-                  <EmptyDescription>No stock counts found for this department on this date.</EmptyDescription>
+                  <EmptyTitle>No audit data available</EmptyTitle>
+                  <EmptyDescription>
+                    This department may not have an active SRD link, or no stock counts exist for this date.
+                    Check the Department Links page to ensure the department is linked to an SRD.
+                  </EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : (
