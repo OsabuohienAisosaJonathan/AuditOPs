@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { clientsApi, itemsApi, suppliersApi, storeNamesApi, inventoryDepartmentsApi, grnApi, Item, Supplier, StoreName, InventoryDepartment, GoodsReceivedNote } from "@/lib/api";
+import { clientsApi, itemsApi, suppliersApi, storeNamesApi, inventoryDepartmentsApi, grnApi, categoriesApi, Item, Supplier, StoreName, InventoryDepartment, GoodsReceivedNote, InventoryDepartmentCategory, Category } from "@/lib/api";
+import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, FileText, Upload, ExternalLink } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
@@ -45,6 +46,8 @@ export default function Inventory() {
   const [editInvDeptOpen, setEditInvDeptOpen] = useState(false);
   const [deleteInvDeptOpen, setDeleteInvDeptOpen] = useState(false);
   const [selectedInvDept, setSelectedInvDept] = useState<InventoryDepartment | null>(null);
+  const [categoryAssignOpen, setCategoryAssignOpen] = useState(false);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   
   const [createGrnOpen, setCreateGrnOpen] = useState(false);
   const [editGrnOpen, setEditGrnOpen] = useState(false);
@@ -165,6 +168,33 @@ export default function Inventory() {
     queryKey: ["inventory-departments", selectedClientId],
     queryFn: () => selectedClientId ? inventoryDepartmentsApi.getByClient(selectedClientId) : Promise.resolve([]),
     enabled: !!selectedClientId,
+  });
+
+  const { data: clientCategories } = useQuery({
+    queryKey: ["categories", selectedClientId],
+    queryFn: () => selectedClientId ? categoriesApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!selectedClientId,
+  });
+
+  const { data: invDeptCategories, refetch: refetchInvDeptCategories } = useQuery({
+    queryKey: ["inv-dept-categories", selectedInvDept?.id],
+    queryFn: () => selectedInvDept ? inventoryDepartmentsApi.getCategories(selectedInvDept.id) : Promise.resolve([]),
+    enabled: !!selectedInvDept && categoryAssignOpen,
+  });
+
+  const updateInvDeptCategoriesMutation = useMutation({
+    mutationFn: ({ id, categoryIds }: { id: string; categoryIds: string[] }) => 
+      inventoryDepartmentsApi.setCategories(id, categoryIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inv-dept-categories"] });
+      setCategoryAssignOpen(false);
+      setSelectedInvDept(null);
+      setSelectedCategoryIds([]);
+      toast.success("Category assignments updated successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to update category assignments");
+    },
   });
 
   const createStoreNameMutation = useMutation({
@@ -302,6 +332,22 @@ export default function Inventory() {
   };
 
   const getStoreNameById = (id: string) => storeNames?.find(sn => sn.id === id);
+  const getCategoryById = (id: string) => clientCategories?.find(c => c.id === id);
+
+  const handleOpenCategoryAssign = async (dept: InventoryDepartment) => {
+    setSelectedInvDept(dept);
+    const categories = await inventoryDepartmentsApi.getCategories(dept.id);
+    setSelectedCategoryIds(categories.map(c => c.categoryId));
+    setCategoryAssignOpen(true);
+  };
+
+  const toggleCategorySelection = (categoryId: string) => {
+    setSelectedCategoryIds(prev => 
+      prev.includes(categoryId) 
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
+  };
 
   const handleEditItem = (item: Item) => {
     setSelectedItem(item);
@@ -1211,6 +1257,7 @@ export default function Inventory() {
                     <TableRow>
                       <TableHead>Stock Reconciliation Department (SRD)</TableHead>
                       <TableHead>Inventory Type</TableHead>
+                      <TableHead>Assigned Categories</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="w-[80px]">Actions</TableHead>
                     </TableRow>
@@ -1229,6 +1276,18 @@ export default function Inventory() {
                           )} data-testid={`badge-inv-dept-type-${dept.id}`}>
                             {dept.inventoryType.replace("_", " ")}
                           </Badge>
+                        </TableCell>
+                        <TableCell data-testid={`text-inv-dept-categories-${dept.id}`}>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleOpenCategoryAssign(dept)}
+                            className="text-xs"
+                            data-testid={`button-manage-categories-${dept.id}`}
+                          >
+                            <Filter className="h-3 w-3 mr-1" />
+                            Manage
+                          </Button>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn(
@@ -1250,6 +1309,10 @@ export default function Inventory() {
                               <DropdownMenuItem onClick={() => { setSelectedInvDept(dept); setEditInvDeptOpen(true); }} data-testid={`button-edit-inv-dept-${dept.id}`}>
                                 <Pencil className="h-4 w-4 mr-2" />
                                 Update
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenCategoryAssign(dept)} data-testid={`button-categories-inv-dept-${dept.id}`}>
+                                <Filter className="h-4 w-4 mr-2" />
+                                Manage Categories
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 onClick={() => { setSelectedInvDept(dept); setDeleteInvDeptOpen(true); }} 
@@ -1697,6 +1760,96 @@ export default function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Category Assignment Dialog */}
+      <Dialog open={categoryAssignOpen} onOpenChange={(open) => {
+        setCategoryAssignOpen(open);
+        if (!open) {
+          setSelectedInvDept(null);
+          setSelectedCategoryIds([]);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage Category Assignments</DialogTitle>
+            <DialogDescription>
+              Select which categories this inventory department should filter items by. Only items with assigned categories will appear in the ledger.
+              {selectedInvDept && (
+                <span className="block mt-2 font-medium text-foreground">
+                  SRD: {getStoreNameById(selectedInvDept.storeNameId)?.name || "Unknown"}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 max-h-[300px] overflow-y-auto">
+            {!clientCategories || clientCategories.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No categories available for this client.</p>
+                <p className="text-xs mt-1">Create categories in the Setup page first.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {clientCategories.map((cat) => (
+                  <div 
+                    key={cat.id} 
+                    className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer"
+                    onClick={() => toggleCategorySelection(cat.id)}
+                  >
+                    <Checkbox 
+                      id={`cat-${cat.id}`}
+                      checked={selectedCategoryIds.includes(cat.id)}
+                      onCheckedChange={() => toggleCategorySelection(cat.id)}
+                      data-testid={`checkbox-category-${cat.id}`}
+                    />
+                    <label htmlFor={`cat-${cat.id}`} className="flex-1 cursor-pointer">
+                      <div className="font-medium">{cat.name}</div>
+                      {cat.description && (
+                        <div className="text-xs text-muted-foreground">{cat.description}</div>
+                      )}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="text-sm text-muted-foreground mb-4">
+            {selectedCategoryIds.length === 0 ? (
+              <span className="text-amber-600">No categories selected - all items will be available</span>
+            ) : (
+              <span>{selectedCategoryIds.length} categor{selectedCategoryIds.length === 1 ? 'y' : 'ies'} selected</span>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setCategoryAssignOpen(false);
+                setSelectedInvDept(null);
+                setSelectedCategoryIds([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                if (selectedInvDept) {
+                  updateInvDeptCategoriesMutation.mutate({
+                    id: selectedInvDept.id,
+                    categoryIds: selectedCategoryIds
+                  });
+                }
+              }}
+              disabled={updateInvDeptCategoriesMutation.isPending}
+              data-testid="button-save-category-assignments"
+            >
+              {updateInvDeptCategoriesMutation.isPending && <Spinner className="mr-2" />}
+              Save Assignments
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
