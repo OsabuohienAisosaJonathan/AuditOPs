@@ -2327,8 +2327,7 @@ export async function registerRoutes(
   app.get("/api/clients/:clientId/store-names", requireAuth, async (req, res) => {
     try {
       const { clientId } = req.params;
-      const outletId = req.query.outletId as string | undefined;
-      const storeNames = await storage.getStoreNamesByClient(clientId, outletId || null);
+      const storeNames = await storage.getStoreNamesByClient(clientId);
       res.json(storeNames);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -2356,7 +2355,7 @@ export async function registerRoutes(
         createdBy: req.session.userId,
       });
       
-      const existing = await storage.getStoreNameByName(clientId, data.name, data.outletId || null);
+      const existing = await storage.getStoreNameByName(clientId, data.name);
       if (existing) {
         return res.status(409).json({ error: "Store name already exists for this client" });
       }
@@ -2378,11 +2377,7 @@ export async function registerRoutes(
       const data = insertStoreNameSchema.partial().parse(req.body);
       
       if (data.name) {
-        const duplicate = await storage.getStoreNameByName(
-          existingStoreName.clientId, 
-          data.name, 
-          data.outletId || existingStoreName.outletId || null
-        );
+        const duplicate = await storage.getStoreNameByName(existingStoreName.clientId, data.name);
         if (duplicate && duplicate.id !== req.params.id) {
           return res.status(409).json({ error: "Store name already exists for this client" });
         }

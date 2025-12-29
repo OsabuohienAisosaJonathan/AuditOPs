@@ -1116,8 +1116,10 @@ export const auditsApi = {
 
 export interface StoreName {
   id: string;
+  clientId: string;
   name: string;
   status: string;
+  createdBy: string | null;
   createdAt: Date;
 }
 
@@ -1132,10 +1134,10 @@ export interface InventoryDepartment {
 }
 
 export const storeNamesApi = {
-  getAll: () => fetchApi<StoreName[]>("/store-names"),
+  getByClient: (clientId: string) => fetchApi<StoreName[]>(`/clients/${clientId}/store-names`),
   get: (id: string) => fetchApi<StoreName>(`/store-names/${id}`),
-  create: (data: { name: string; status?: string }) =>
-    fetchApi<StoreName>("/store-names", {
+  create: (clientId: string, data: { name: string; status?: string }) =>
+    fetchApi<StoreName>(`/clients/${clientId}/store-names`, {
       method: "POST",
       body: JSON.stringify(data),
     }),

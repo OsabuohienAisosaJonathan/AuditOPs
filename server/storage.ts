@@ -256,9 +256,9 @@ export interface IStorage {
   upsertStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
 
   // Store Names (SRDs - client-specific)
-  getStoreNamesByClient(clientId: string, outletId?: string | null): Promise<StoreName[]>;
+  getStoreNamesByClient(clientId: string): Promise<StoreName[]>;
   getStoreName(id: string): Promise<StoreName | undefined>;
-  getStoreNameByName(clientId: string, name: string, outletId?: string | null): Promise<StoreName | undefined>;
+  getStoreNameByName(clientId: string, name: string): Promise<StoreName | undefined>;
   createStoreName(storeName: InsertStoreName): Promise<StoreName>;
   updateStoreName(id: string, storeName: Partial<InsertStoreName>): Promise<StoreName | undefined>;
   deleteStoreName(id: string): Promise<boolean>;
@@ -1812,15 +1812,7 @@ export class DbStorage implements IStorage {
   }
 
   // Store Names
-  async getStoreNamesByClient(clientId: string, outletId?: string | null): Promise<StoreName[]> {
-    if (outletId) {
-      return db.select().from(storeNames)
-        .where(and(
-          eq(storeNames.clientId, clientId),
-          or(eq(storeNames.outletId, outletId), isNull(storeNames.outletId))
-        ))
-        .orderBy(storeNames.name);
-    }
+  async getStoreNamesByClient(clientId: string): Promise<StoreName[]> {
     return db.select().from(storeNames)
       .where(eq(storeNames.clientId, clientId))
       .orderBy(storeNames.name);
@@ -1831,21 +1823,11 @@ export class DbStorage implements IStorage {
     return storeName;
   }
 
-  async getStoreNameByName(clientId: string, name: string, outletId?: string | null): Promise<StoreName | undefined> {
-    if (outletId) {
-      const [storeName] = await db.select().from(storeNames)
-        .where(and(
-          eq(storeNames.clientId, clientId),
-          eq(storeNames.name, name),
-          eq(storeNames.outletId, outletId)
-        ));
-      return storeName;
-    }
+  async getStoreNameByName(clientId: string, name: string): Promise<StoreName | undefined> {
     const [storeName] = await db.select().from(storeNames)
       .where(and(
         eq(storeNames.clientId, clientId),
-        eq(storeNames.name, name),
-        isNull(storeNames.outletId)
+        eq(storeNames.name, name)
       ));
     return storeName;
   }

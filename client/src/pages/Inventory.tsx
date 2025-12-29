@@ -161,8 +161,9 @@ export default function Inventory() {
   });
 
   const { data: storeNames, isLoading: storeNamesLoading } = useQuery({
-    queryKey: ["store-names"],
-    queryFn: () => storeNamesApi.getAll(),
+    queryKey: ["store-names", selectedClientId],
+    queryFn: () => selectedClientId ? storeNamesApi.getByClient(selectedClientId) : Promise.resolve([]),
+    enabled: !!selectedClientId,
   });
 
   const { data: inventoryDepts, isLoading: invDeptsLoading } = useQuery({
@@ -199,9 +200,12 @@ export default function Inventory() {
   });
 
   const createStoreNameMutation = useMutation({
-    mutationFn: (data: { name: string }) => storeNamesApi.create(data),
+    mutationFn: (data: { name: string }) => {
+      if (!selectedClientId) throw new Error("No client selected");
+      return storeNamesApi.create(selectedClientId, data);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-names"] });
+      queryClient.invalidateQueries({ queryKey: ["store-names", selectedClientId] });
       setCreateStoreNameOpen(false);
       setSelectedDeptToLink(null);
       setStoreNameMode("link");
@@ -215,7 +219,7 @@ export default function Inventory() {
   const updateStoreNameMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: { name?: string; status?: string } }) => storeNamesApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-names"] });
+      queryClient.invalidateQueries({ queryKey: ["store-names", selectedClientId] });
       setEditStoreNameOpen(false);
       setSelectedStoreName(null);
       toast.success("SRD updated successfully");
@@ -228,7 +232,7 @@ export default function Inventory() {
   const deleteStoreNameMutation = useMutation({
     mutationFn: (id: string) => storeNamesApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-names"] });
+      queryClient.invalidateQueries({ queryKey: ["store-names", selectedClientId] });
       setDeleteStoreNameOpen(false);
       setSelectedStoreName(null);
       toast.success("SRD deleted successfully");

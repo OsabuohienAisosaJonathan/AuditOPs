@@ -440,7 +440,6 @@ export const goodsReceivedNotes = pgTable("goods_received_notes", {
 export const storeNames = pgTable("store_names", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  outletId: varchar("outlet_id").references(() => outlets.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
   createdBy: varchar("created_by").references(() => users.id),

@@ -194,14 +194,16 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId,
   });
 
-  // Fetch store names for display
+  // Fetch store names for display (client-specific)
   const { data: storeNames } = useQuery<StoreName[]>({
-    queryKey: ["store-names"],
+    queryKey: ["store-names", selectedClientId],
     queryFn: async () => {
-      const res = await fetch("/api/store-names");
+      if (!selectedClientId) return [];
+      const res = await fetch(`/api/clients/${selectedClientId}/store-names`);
       if (!res.ok) throw new Error("Failed to fetch store names");
       return res.json();
     },
+    enabled: !!selectedClientId,
   });
 
   // Fetch items for the client - filtered by inventory department's assigned categories
