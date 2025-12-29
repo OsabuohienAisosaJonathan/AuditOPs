@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1558,6 +1558,22 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
     setCreateOpen(true);
   };
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => stockCountsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      toast.success("Stock count deleted");
+    },
+    onError: (error: any) => toast.error(error.message || "Failed to delete count"),
+  });
+
+  const handleDelete = (count: StockCount) => {
+    if (window.confirm(`Delete count for "${items.find(i => i.id === count.itemId)?.name || count.itemId}"?`)) {
+      deleteMutation.mutate(count.id);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
@@ -1673,14 +1689,26 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(count)}
-                          data-testid={`button-edit-count-${count.id}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(count)}
+                            data-testid={`button-edit-count-${count.id}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDelete(count)}
+                            disabled={deleteMutation.isPending}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            data-testid={`button-delete-count-${count.id}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
