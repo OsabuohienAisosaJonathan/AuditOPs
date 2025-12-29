@@ -4021,5 +4021,18 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/clients/:clientId/departments/:departmentId/audit-breakdown", requireAuth, async (req, res) => {
+    try {
+      const { clientId, departmentId } = req.params;
+      const { date } = req.query;
+      const targetDate = date ? new Date(date as string) : new Date();
+      
+      const breakdown = await storage.getDepartmentAuditBreakdown(clientId, departmentId, targetDate);
+      res.json(breakdown);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

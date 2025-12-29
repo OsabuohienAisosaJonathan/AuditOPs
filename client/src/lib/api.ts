@@ -1276,6 +1276,26 @@ export const departmentComparisonApi = {
   },
 };
 
+export interface AuditBreakdownItem {
+  itemId: string;
+  itemName: string;
+  unit: string;
+  openingQty: number;
+  addedQty: number;
+  actualClosingQty: number;
+  soldQty: number;
+  sellingPrice: number;
+  auditValue: number;
+}
+
+export const auditBreakdownApi = {
+  get: (clientId: string, departmentId: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (date) params.append("date", date);
+    return fetchApi<AuditBreakdownItem[]>(`/clients/${clientId}/departments/${departmentId}/audit-breakdown?${params}`);
+  },
+};
+
 // Receivables types and API
 export interface Receivable {
   id: string;

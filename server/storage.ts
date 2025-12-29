@@ -196,6 +196,7 @@ export interface IStorage {
   getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
   getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalAmount: number; totalComplimentary: number; totalVouchers: number; totalVoids: number; totalOthers: number; totalCash: number; totalPos: number; totalTransfer: number; grandTotal: number; entriesCount: number; departmentsCount: number; avgPerEntry: number }>;
   getDepartmentComparison(clientId: string, date: Date): Promise<Array<{ departmentId: string; departmentName: string; totalCaptured: number; totalDeclared: number; auditTotal: number; variance1stHit: number; variance2ndHit: number; finalVariance: number; varianceStatus: "shortage" | "surplus" | "balanced" }>>;
+  getDepartmentAuditBreakdown(clientId: string, departmentId: string, date: Date): Promise<Array<{ itemId: string; itemName: string; unit: string; openingQty: number; addedQty: number; actualClosingQty: number; soldQty: number; sellingPrice: number; auditValue: number }>>;
 
   // User-Client Access
   getUserClientAccess(userId: string, clientId: string): Promise<UserClientAccess | undefined>;
@@ -1414,6 +1415,83 @@ export class DbStorage implements IStorage {
     }));
 
     return results;
+  }
+
+  async getDepartmentAuditBreakdown(clientId: string, departmentId: string, date: Date): Promise<Array<{
+    itemId: string;
+    itemName: string;
+    unit: string;
+    openingQty: number;
+    addedQty: number;
+    actualClosingQty: number;
+    soldQty: number;
+    sellingPrice: number;
+    auditValue: number;
+  }>> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const stockCountsForDept = await db.select({
+      itemId: stockCounts.itemId,
+      openingQty: stockCounts.openingQty,
+      addedQty: stockCounts.addedQty,
+      actualClosingQty: stockCounts.actualClosingQty
+    }).from(stockCounts).where(
+      and(
+        eq(stockCounts.clientId, clientId),
+        eq(stockCounts.departmentId, departmentId),
+        gte(stockCounts.date, startOfDay),
+        lte(stockCounts.date, endOfDay)
+      )
+    );
+
+    const countedItems = new Set<string>();
+    const breakdown: Array<{
+      itemId: string;
+      itemName: string;
+      unit: string;
+      openingQty: number;
+      addedQty: number;
+      actualClosingQty: number;
+      soldQty: number;
+      sellingPrice: number;
+      auditValue: number;
+    }> = [];
+
+    for (const sc of stockCountsForDept) {
+      if (countedItems.has(sc.itemId)) continue;
+      countedItems.add(sc.itemId);
+
+      const opening = parseFloat(sc.openingQty || "0");
+      const added = parseFloat(sc.addedQty || "0");
+      const closing = parseFloat(sc.actualClosingQty || "0");
+      const sold = (opening + added) - closing;
+
+      const [item] = await db.select({ 
+        name: items.name, 
+        unit: items.unit,
+        sellingPrice: items.sellingPrice 
+      }).from(items).where(eq(items.id, sc.itemId));
+      
+      const sellingPrice = parseFloat(item?.sellingPrice || "0");
+      const auditValue = sold * sellingPrice;
+
+      breakdown.push({
+        itemId: sc.itemId,
+        itemName: item?.name || "Unknown Item",
+        unit: item?.unit || "unit",
+        openingQty: opening,
+        addedQty: added,
+        actualClosingQty: closing,
+        soldQty: sold,
+        sellingPrice,
+        auditValue
+      });
+    }
+
+    return breakdown.sort((a, b) => a.itemName.localeCompare(b.itemName));
   }
 
   // User-Client Access
