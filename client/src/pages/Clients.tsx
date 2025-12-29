@@ -213,7 +213,7 @@ export default function Clients() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
-          <p className="text-muted-foreground">Manage clients, categories, and departments</p>
+          <p className="text-muted-foreground">Manage clients, categories, and departments/Sales Outlets</p>
         </div>
         <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-client">
           <Plus className="mr-2 h-4 w-4" />
