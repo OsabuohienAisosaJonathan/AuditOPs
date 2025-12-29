@@ -18,6 +18,7 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useClientContext } from "@/lib/client-context";
 
 export default function Exceptions() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -25,19 +26,19 @@ export default function Exceptions() {
   const [searchTerm, setSearchTerm] = useState("");
   const queryClient = useQueryClient();
 
+  // Use global client context
+  const { selectedClientId, clients } = useClientContext();
+  const clientId = selectedClientId || clients?.[0]?.id || "";
+
   const { data: exceptions, isLoading } = useQuery({
     queryKey: ["exceptions", statusFilter],
     queryFn: () => exceptionsApi.getAll(statusFilter !== "all" ? { status: statusFilter } : undefined),
   });
 
   const { data: departments } = useQuery({
-    queryKey: ["departments-for-exceptions"],
-    queryFn: async () => {
-      const { clientsApi } = await import("@/lib/api");
-      const clients = await clientsApi.getAll();
-      if (clients.length === 0) return [];
-      return departmentsApi.getByClient(clients[0].id);
-    },
+    queryKey: ["departments-for-exceptions", clientId],
+    queryFn: () => departmentsApi.getByClient(clientId),
+    enabled: !!clientId,
   });
 
   const createMutation = useMutation({
@@ -91,6 +92,7 @@ export default function Exceptions() {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               createMutation.mutate({
+                clientId,
                 departmentId: formData.get("departmentId") as string,
                 summary: formData.get("summary") as string,
                 description: formData.get("description") as string || null,
