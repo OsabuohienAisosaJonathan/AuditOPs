@@ -2,7 +2,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut, Check, ChevronsUpDown, Layers, UserCog, BookOpen, Sun, Moon, Link2 } from "lucide-react";
+import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut, Check, ChevronsUpDown, Layers, UserCog, BookOpen, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -32,7 +32,6 @@ const MAIN_NAV_ITEMS = [
 const ADMIN_NAV_ITEMS = [
   { icon: Users, label: "User Management", href: "/users" },
   { icon: UserCog, label: "Client Access", href: "/client-access" },
-  { icon: Link2, label: "Department Links", href: "/department-links" },
   { icon: ShieldCheck, label: "Admin Activity", href: "/admin-activity" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ];

@@ -1168,37 +1168,6 @@ export const inventoryDepartmentsApi = {
     }),
 };
 
-export interface DepartmentInventoryLink {
-  id: string;
-  clientId: string;
-  clientDepartmentId: string;
-  inventoryDepartmentId: string;
-  inventoryType: string;
-  status: string;
-  createdBy: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export const departmentInventoryLinksApi = {
-  getByClient: (clientId: string) => fetchApi<DepartmentInventoryLink[]>(`/clients/${clientId}/department-inventory-links`),
-  get: (id: string) => fetchApi<DepartmentInventoryLink>(`/department-inventory-links/${id}`),
-  create: (clientId: string, data: { clientDepartmentId: string; inventoryDepartmentId: string }) =>
-    fetchApi<DepartmentInventoryLink>(`/clients/${clientId}/department-inventory-links`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: { clientDepartmentId?: string; inventoryDepartmentId?: string; status?: string }) =>
-    fetchApi<DepartmentInventoryLink>(`/department-inventory-links/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  delete: (id: string) =>
-    fetchApi<{ success: boolean }>(`/department-inventory-links/${id}`, {
-      method: "DELETE",
-    }),
-};
-
 export interface GoodsReceivedNote {
   id: string;
   clientId: string;
@@ -1273,26 +1242,6 @@ export const departmentComparisonApi = {
     const params = new URLSearchParams();
     if (date) params.append("date", date);
     return fetchApi<DepartmentComparison[]>(`/clients/${clientId}/department-comparison?${params}`);
-  },
-};
-
-export interface AuditBreakdownItem {
-  itemId: string;
-  itemName: string;
-  unit: string;
-  openingQty: number;
-  addedQty: number;
-  actualClosingQty: number;
-  soldQty: number;
-  sellingPrice: number;
-  auditValue: number;
-}
-
-export const auditBreakdownApi = {
-  get: (clientId: string, departmentId: string, date?: string) => {
-    const params = new URLSearchParams();
-    if (date) params.append("date", date);
-    return fetchApi<AuditBreakdownItem[]>(`/clients/${clientId}/departments/${departmentId}/audit-breakdown?${params}`);
   },
 };
 

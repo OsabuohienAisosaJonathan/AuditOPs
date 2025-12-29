@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory, departmentInventoryLinks,
+  receivables, receivableHistory, surpluses, surplusHistory,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -25,7 +25,6 @@ import {
   type StoreStock, type InsertStoreStock,
   type StoreName, type InsertStoreName,
   type InventoryDepartment, type InsertInventoryDepartment,
-  type DepartmentInventoryLink, type InsertDepartmentInventoryLink,
   type GoodsReceivedNote, type InsertGoodsReceivedNote,
   type Receivable, type InsertReceivable,
   type ReceivableHistory, type InsertReceivableHistory,
@@ -196,7 +195,6 @@ export interface IStorage {
   getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
   getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalAmount: number; totalComplimentary: number; totalVouchers: number; totalVoids: number; totalOthers: number; totalCash: number; totalPos: number; totalTransfer: number; grandTotal: number; entriesCount: number; departmentsCount: number; avgPerEntry: number }>;
   getDepartmentComparison(clientId: string, date: Date): Promise<Array<{ departmentId: string; departmentName: string; totalCaptured: number; totalDeclared: number; auditTotal: number; variance1stHit: number; variance2ndHit: number; finalVariance: number; varianceStatus: "shortage" | "surplus" | "balanced" }>>;
-  getDepartmentAuditBreakdown(clientId: string, departmentId: string, date: Date): Promise<Array<{ itemId: string; itemName: string; unit: string; openingQty: number; addedQty: number; actualClosingQty: number; soldQty: number; sellingPrice: number; auditValue: number }>>;
 
   // User-Client Access
   getUserClientAccess(userId: string, clientId: string): Promise<UserClientAccess | undefined>;
@@ -274,15 +272,6 @@ export interface IStorage {
   updateInventoryDepartment(id: string, dept: Partial<InsertInventoryDepartment>): Promise<InventoryDepartment | undefined>;
   deleteInventoryDepartment(id: string): Promise<boolean>;
   addPurchaseToStoreStock(clientId: string, storeDepartmentId: string, itemId: string, quantity: number, costPrice: string, date: Date): Promise<StoreStock>;
-
-  // Department Inventory Links
-  getDepartmentInventoryLinks(clientId: string): Promise<DepartmentInventoryLink[]>;
-  getDepartmentInventoryLink(id: string): Promise<DepartmentInventoryLink | undefined>;
-  getDepartmentInventoryLinkByClientDepartment(clientId: string, clientDepartmentId: string): Promise<DepartmentInventoryLink | undefined>;
-  getDepartmentInventoryLinkByInventoryDepartment(clientId: string, inventoryDepartmentId: string): Promise<DepartmentInventoryLink | undefined>;
-  createDepartmentInventoryLink(link: InsertDepartmentInventoryLink): Promise<DepartmentInventoryLink>;
-  updateDepartmentInventoryLink(id: string, link: Partial<InsertDepartmentInventoryLink>): Promise<DepartmentInventoryLink | undefined>;
-  deleteDepartmentInventoryLink(id: string): Promise<boolean>;
 
   // Goods Received Notes (GRN)
   getGoodsReceivedNotes(clientId: string, date?: Date): Promise<GoodsReceivedNote[]>;
@@ -1352,55 +1341,42 @@ export class DbStorage implements IStorage {
       const totalDeclared = parseFloat(declaredResult?.totalReported || "0");
 
       // Get auditTotal from SRD Department Store ledger
-      // First check if this department has an active link to an SRD
-      const [deptLink] = await db.select().from(departmentInventoryLinks).where(
+      // Use stock_counts to find which store stock records belong to this department
+      // Stock counts are created with departmentId (regular) and link to store_stock via clientId, itemId, date
+      const stockCountsForDept = await db.select({
+        itemId: stockCounts.itemId,
+        openingQty: stockCounts.openingQty,
+        addedQty: stockCounts.addedQty,
+        actualClosingQty: stockCounts.actualClosingQty
+      }).from(stockCounts).where(
         and(
-          eq(departmentInventoryLinks.clientId, clientId),
-          eq(departmentInventoryLinks.clientDepartmentId, dept.id),
-          eq(departmentInventoryLinks.status, "active")
+          eq(stockCounts.clientId, clientId),
+          eq(stockCounts.departmentId, dept.id),
+          gte(stockCounts.date, startOfDay),
+          lte(stockCounts.date, endOfDay)
         )
       );
 
+      // Track items already counted to avoid duplicates
+      const countedItems = new Set<string>();
       let auditTotal = 0;
       
-      // Only calculate audit if there's an active link to an SRD
-      if (deptLink) {
-        // Use stock_counts to find which store stock records belong to this department
-        // Stock counts are created with departmentId (regular) and link to store_stock via clientId, itemId, date
-        const stockCountsForDept = await db.select({
-          itemId: stockCounts.itemId,
-          openingQty: stockCounts.openingQty,
-          addedQty: stockCounts.addedQty,
-          actualClosingQty: stockCounts.actualClosingQty
-        }).from(stockCounts).where(
-          and(
-            eq(stockCounts.clientId, clientId),
-            eq(stockCounts.departmentId, dept.id),
-            gte(stockCounts.date, startOfDay),
-            lte(stockCounts.date, endOfDay)
-          )
-        );
-
-        // Track items already counted to avoid duplicates
-        const countedItems = new Set<string>();
+      for (const sc of stockCountsForDept) {
+        // Skip if we already counted this item (prevent duplicates)
+        if (countedItems.has(sc.itemId)) continue;
+        countedItems.add(sc.itemId);
         
-        for (const sc of stockCountsForDept) {
-          // Skip if we already counted this item (prevent duplicates)
-          if (countedItems.has(sc.itemId)) continue;
-          countedItems.add(sc.itemId);
-          
-          const opening = parseFloat(sc.openingQty || "0");
-          const added = parseFloat(sc.addedQty || "0");
-          const closing = parseFloat(sc.actualClosingQty || "0");
-          const sold = (opening + added) - closing;
-          
-          // Get the item's selling price
-          const [item] = await db.select({ sellingPrice: items.sellingPrice })
-            .from(items).where(eq(items.id, sc.itemId));
-          const sellingPrice = parseFloat(item?.sellingPrice || "0");
-          
-          auditTotal += sold * sellingPrice;
-        }
+        const opening = parseFloat(sc.openingQty || "0");
+        const added = parseFloat(sc.addedQty || "0");
+        const closing = parseFloat(sc.actualClosingQty || "0");
+        const sold = (opening + added) - closing;
+        
+        // Get the item's selling price
+        const [item] = await db.select({ sellingPrice: items.sellingPrice })
+          .from(items).where(eq(items.id, sc.itemId));
+        const sellingPrice = parseFloat(item?.sellingPrice || "0");
+        
+        auditTotal += sold * sellingPrice;
       }
 
       const variance1stHit = totalDeclared - totalCaptured;
@@ -1428,97 +1404,6 @@ export class DbStorage implements IStorage {
     }));
 
     return results;
-  }
-
-  async getDepartmentAuditBreakdown(clientId: string, departmentId: string, date: Date): Promise<Array<{
-    itemId: string;
-    itemName: string;
-    unit: string;
-    openingQty: number;
-    addedQty: number;
-    actualClosingQty: number;
-    soldQty: number;
-    sellingPrice: number;
-    auditValue: number;
-  }>> {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // Check if this department has an active link to an SRD
-    const [deptLink] = await db.select().from(departmentInventoryLinks).where(
-      and(
-        eq(departmentInventoryLinks.clientId, clientId),
-        eq(departmentInventoryLinks.clientDepartmentId, departmentId),
-        eq(departmentInventoryLinks.status, "active")
-      )
-    );
-
-    // Return empty if no active link
-    if (!deptLink) {
-      return [];
-    }
-
-    const stockCountsForDept = await db.select({
-      itemId: stockCounts.itemId,
-      openingQty: stockCounts.openingQty,
-      addedQty: stockCounts.addedQty,
-      actualClosingQty: stockCounts.actualClosingQty
-    }).from(stockCounts).where(
-      and(
-        eq(stockCounts.clientId, clientId),
-        eq(stockCounts.departmentId, departmentId),
-        gte(stockCounts.date, startOfDay),
-        lte(stockCounts.date, endOfDay)
-      )
-    );
-
-    const countedItems = new Set<string>();
-    const breakdown: Array<{
-      itemId: string;
-      itemName: string;
-      unit: string;
-      openingQty: number;
-      addedQty: number;
-      actualClosingQty: number;
-      soldQty: number;
-      sellingPrice: number;
-      auditValue: number;
-    }> = [];
-
-    for (const sc of stockCountsForDept) {
-      if (countedItems.has(sc.itemId)) continue;
-      countedItems.add(sc.itemId);
-
-      const opening = parseFloat(sc.openingQty || "0");
-      const added = parseFloat(sc.addedQty || "0");
-      const closing = parseFloat(sc.actualClosingQty || "0");
-      const sold = (opening + added) - closing;
-
-      const [item] = await db.select({ 
-        name: items.name, 
-        unit: items.unit,
-        sellingPrice: items.sellingPrice 
-      }).from(items).where(eq(items.id, sc.itemId));
-      
-      const sellingPrice = parseFloat(item?.sellingPrice || "0");
-      const auditValue = sold * sellingPrice;
-
-      breakdown.push({
-        itemId: sc.itemId,
-        itemName: item?.name || "Unknown Item",
-        unit: item?.unit || "unit",
-        openingQty: opening,
-        addedQty: added,
-        actualClosingQty: closing,
-        soldQty: sold,
-        sellingPrice,
-        auditValue
-      });
-    }
-
-    return breakdown.sort((a, b) => a.itemName.localeCompare(b.itemName));
   }
 
   // User-Client Access
@@ -2051,58 +1936,6 @@ export class DbStorage implements IStorage {
       varianceQty: null,
       costPriceSnapshot: costPrice
     });
-  }
-
-  // Department Inventory Links
-  async getDepartmentInventoryLinks(clientId: string): Promise<DepartmentInventoryLink[]> {
-    return db.select().from(departmentInventoryLinks)
-      .where(eq(departmentInventoryLinks.clientId, clientId))
-      .orderBy(desc(departmentInventoryLinks.createdAt));
-  }
-
-  async getDepartmentInventoryLink(id: string): Promise<DepartmentInventoryLink | undefined> {
-    const [link] = await db.select().from(departmentInventoryLinks)
-      .where(eq(departmentInventoryLinks.id, id));
-    return link;
-  }
-
-  async getDepartmentInventoryLinkByClientDepartment(clientId: string, clientDepartmentId: string): Promise<DepartmentInventoryLink | undefined> {
-    const [link] = await db.select().from(departmentInventoryLinks)
-      .where(and(
-        eq(departmentInventoryLinks.clientId, clientId),
-        eq(departmentInventoryLinks.clientDepartmentId, clientDepartmentId),
-        eq(departmentInventoryLinks.status, "active")
-      ));
-    return link;
-  }
-
-  async getDepartmentInventoryLinkByInventoryDepartment(clientId: string, inventoryDepartmentId: string): Promise<DepartmentInventoryLink | undefined> {
-    const [link] = await db.select().from(departmentInventoryLinks)
-      .where(and(
-        eq(departmentInventoryLinks.clientId, clientId),
-        eq(departmentInventoryLinks.inventoryDepartmentId, inventoryDepartmentId),
-        eq(departmentInventoryLinks.status, "active")
-      ));
-    return link;
-  }
-
-  async createDepartmentInventoryLink(link: InsertDepartmentInventoryLink): Promise<DepartmentInventoryLink> {
-    const [newLink] = await db.insert(departmentInventoryLinks).values(link).returning();
-    return newLink;
-  }
-
-  async updateDepartmentInventoryLink(id: string, link: Partial<InsertDepartmentInventoryLink>): Promise<DepartmentInventoryLink | undefined> {
-    const [updated] = await db.update(departmentInventoryLinks)
-      .set({ ...link, updatedAt: new Date() })
-      .where(eq(departmentInventoryLinks.id, id))
-      .returning();
-    return updated;
-  }
-
-  async deleteDepartmentInventoryLink(id: string): Promise<boolean> {
-    const result = await db.delete(departmentInventoryLinks)
-      .where(eq(departmentInventoryLinks.id, id));
-    return true;
   }
 
   // Goods Received Notes (GRN)

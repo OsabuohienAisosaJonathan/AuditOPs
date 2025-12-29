@@ -7,17 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertTriangle, FileCheck, Plus, Calculator, ArrowDown, ArrowUp, Minus, TrendingDown, TrendingUp, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+import { AlertTriangle, FileCheck, Plus, Calculator, ArrowDown, ArrowUp, Minus, TrendingDown, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { reconciliationsApi, departmentsApi, clientsApi, departmentComparisonApi, receivablesApi, surplusesApi, auditBreakdownApi, DepartmentComparison, Receivable, Surplus, AuditBreakdownItem } from "@/lib/api";
+import { reconciliationsApi, departmentsApi, clientsApi, departmentComparisonApi, receivablesApi, surplusesApi, DepartmentComparison, Receivable, Surplus } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { toast } from "sonner";
 import { format, addDays, subDays } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function ReconciliationPage() {
   const [computeDialogOpen, setComputeDialogOpen] = useState(false);
@@ -26,8 +25,6 @@ export default function ReconciliationPage() {
   const [receivableDialogOpen, setReceivableDialogOpen] = useState(false);
   const [surplusDialogOpen, setSurplusDialogOpen] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentComparison | null>(null);
-  const [viewSourceDialogOpen, setViewSourceDialogOpen] = useState(false);
-  const [viewSourceDepartment, setViewSourceDepartment] = useState<DepartmentComparison | null>(null);
   const queryClient = useQueryClient();
 
   const { data: clients } = useQuery({
@@ -66,12 +63,6 @@ export default function ReconciliationPage() {
     queryKey: ["surpluses", clientId],
     queryFn: () => surplusesApi.getByClient(clientId),
     enabled: !!clientId,
-  });
-
-  const { data: auditBreakdown, isLoading: isBreakdownLoading } = useQuery({
-    queryKey: ["audit-breakdown", clientId, viewSourceDepartment?.departmentId, selectedDate],
-    queryFn: () => auditBreakdownApi.get(clientId, viewSourceDepartment!.departmentId, selectedDate),
-    enabled: !!clientId && !!viewSourceDepartment,
   });
 
   const computeMutation = useMutation({
@@ -133,11 +124,6 @@ export default function ReconciliationPage() {
   const handleLogSurplus = (dept: DepartmentComparison) => {
     setSelectedDepartment(dept);
     setSurplusDialogOpen(true);
-  };
-
-  const handleViewSource = (dept: DepartmentComparison) => {
-    setViewSourceDepartment(dept);
-    setViewSourceDialogOpen(true);
   };
 
   const grandTotalCaptured = comparisonData?.reduce((sum, d) => sum + d.totalCaptured, 0) || 0;
@@ -297,17 +283,8 @@ export default function ReconciliationPage() {
                           <TableCell className="text-right font-mono">
                             ₦{dept.totalDeclared.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </TableCell>
-                          <TableCell className="text-right">
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              className="font-mono hover:bg-muted"
-                              onClick={() => handleViewSource(dept)}
-                              data-testid={`button-view-source-${dept.departmentId}`}
-                            >
-                              <Eye className="h-3 w-3 mr-1" />
-                              ₦{dept.auditTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </Button>
+                          <TableCell className="text-right font-mono">
+                            ₦{dept.auditTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </TableCell>
                           <TableCell className={cn(
                             "text-right font-mono font-semibold",
@@ -857,91 +834,6 @@ export default function ReconciliationPage() {
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={viewSourceDialogOpen} onOpenChange={(open) => {
-        setViewSourceDialogOpen(open);
-        if (!open) setViewSourceDepartment(null);
-      }}>
-        <DialogContent className="max-w-4xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Audit Breakdown - {viewSourceDepartment?.departmentName}
-            </DialogTitle>
-            <DialogDescription>
-              Item-level breakdown of audit calculations for {format(new Date(selectedDate), "MMMM d, yyyy")}
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="h-[50vh]">
-            {isBreakdownLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Spinner className="h-8 w-8" />
-              </div>
-            ) : !auditBreakdown || auditBreakdown.length === 0 ? (
-              <Empty className="py-12">
-                <EmptyMedia variant="icon">
-                  <AlertTriangle className="h-6 w-6" />
-                </EmptyMedia>
-                <EmptyHeader>
-                  <EmptyTitle>No audit data available</EmptyTitle>
-                  <EmptyDescription>
-                    This department may not have an active SRD link, or no stock counts exist for this date.
-                    Check the Department Links page to ensure the department is linked to an SRD.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead className="font-semibold">Item</TableHead>
-                    <TableHead className="text-center font-semibold">Unit</TableHead>
-                    <TableHead className="text-right font-semibold">Opening</TableHead>
-                    <TableHead className="text-right font-semibold">Added</TableHead>
-                    <TableHead className="text-right font-semibold">Closing</TableHead>
-                    <TableHead className="text-right font-semibold">Sold</TableHead>
-                    <TableHead className="text-right font-semibold">Price</TableHead>
-                    <TableHead className="text-right font-semibold">Value</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {auditBreakdown.map((item) => (
-                    <TableRow key={item.itemId} data-testid={`row-breakdown-${item.itemId}`}>
-                      <TableCell className="font-medium">{item.itemName}</TableCell>
-                      <TableCell className="text-center text-muted-foreground">{item.unit}</TableCell>
-                      <TableCell className="text-right font-mono">{item.openingQty.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.addedQty.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.actualClosingQty.toFixed(2)}</TableCell>
-                      <TableCell className={cn(
-                        "text-right font-mono font-semibold",
-                        item.soldQty < 0 ? "text-destructive" : item.soldQty > 0 ? "text-foreground" : "text-muted-foreground"
-                      )}>
-                        {item.soldQty.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">₦{item.sellingPrice.toLocaleString()}</TableCell>
-                      <TableCell className={cn(
-                        "text-right font-mono font-semibold",
-                        item.auditValue < 0 ? "text-destructive" : "text-foreground"
-                      )}>
-                        ₦{item.auditValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  <TableRow className="bg-muted/50 font-bold border-t-2">
-                    <TableCell colSpan={7} className="text-right">TOTAL AUDIT VALUE</TableCell>
-                    <TableCell className="text-right font-mono text-lg">
-                      ₦{auditBreakdown.reduce((sum, i) => sum + i.auditValue, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            )}
-          </ScrollArea>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewSourceDialogOpen(false)}>Close</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
