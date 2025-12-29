@@ -1854,38 +1854,16 @@ export async function registerRoutes(
         
         console.log(`[Purchase Capture] Client: ${item.clientId}, Item: ${item.name}, Qty: ${purchaseQty}`);
         
-        // Find the target department for posting purchases
-        let targetDepartmentId: string | null = null;
-        
-        // First, try the Main Store inventory department's linked departmentId
+        // Find the Main Store inventory department for posting purchases
+        // store_stock uses storeDepartmentId which is the inventory_departments.id
         const mainStoreInvDept = await storage.getInventoryDepartmentByType(item.clientId, "MAIN_STORE");
-        if (mainStoreInvDept?.departmentId) {
-          targetDepartmentId = mainStoreInvDept.departmentId;
-          console.log(`[Purchase Capture] Using linked department: ${targetDepartmentId}`);
-        }
         
-        // Fallback: find a department named "Main Store" for this client
-        if (!targetDepartmentId) {
-          const clientDepts = await storage.getDepartments(item.clientId);
-          const mainStoreDept = clientDepts.find(d => 
-            d.name.toLowerCase().includes("main store") && d.status === "active"
-          );
-          if (mainStoreDept) {
-            targetDepartmentId = mainStoreDept.id;
-            console.log(`[Purchase Capture] Using fallback Main Store department: ${targetDepartmentId}`);
-            
-            // Auto-link for future use if Main Store inventory dept exists
-            if (mainStoreInvDept && !mainStoreInvDept.departmentId) {
-              await storage.updateInventoryDepartment(mainStoreInvDept.id, { departmentId: mainStoreDept.id });
-              console.log(`[Purchase Capture] Auto-linked inventory department to Main Store SRD`);
-            }
-          }
-        }
-        
-        if (targetDepartmentId) {
+        if (mainStoreInvDept) {
+          console.log(`[Purchase Capture] Using Main Store inventory dept: ${mainStoreInvDept.id}`);
+          
           await storage.addPurchaseToStoreStock(
             item.clientId,
-            targetDepartmentId,
+            mainStoreInvDept.id, // Use inventory department ID, not linked department ID
             item.id,
             parseFloat(purchaseQty),
             item.costPrice || "0.00",
