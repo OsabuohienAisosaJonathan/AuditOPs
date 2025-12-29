@@ -3290,15 +3290,20 @@ export async function registerRoutes(
       const purchasesTotal = purchases.reduce((sum, p) => sum + parseFloat(p.totalAmount || "0"), 0);
       const varianceQty = stockCounts.reduce((sum, c) => sum + parseFloat(c.varianceQty || "0"), 0);
       
+      // Get department to find clientId
+      const department = await storage.getDepartment(departmentId);
+      if (!department) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      
       const reconciliation = await storage.createReconciliation({
-        clientId: purchases[0]?.clientId || "",
+        clientId: department.clientId,
         departmentId,
         date: new Date(date),
-        openingQty: "0",
-        purchasesQty: String(purchasesTotal),
-        salesQty: String(salesSummary.totalSales),
-        expectedClosingQty: "0",
-        actualClosingQty: "0",
+        openingStock: { quantity: 0, value: 0 },
+        additions: { quantity: purchasesTotal, value: purchasesTotal },
+        expectedUsage: { quantity: salesSummary.totalSales, value: salesSummary.totalSales },
+        physicalCount: { quantity: 0, value: 0 },
         varianceQty: String(varianceQty),
         varianceValue: String(varianceQty * 10),
         status: "submitted",
@@ -3781,6 +3786,7 @@ export async function registerRoutes(
         ...req.body,
         clientId,
         createdBy: req.session.userId!,
+        auditDate: req.body.auditDate ? new Date(req.body.auditDate) : new Date(),
       });
       const receivable = await storage.createReceivable(validated);
       
@@ -3905,6 +3911,7 @@ export async function registerRoutes(
         ...req.body,
         clientId,
         createdBy: req.session.userId!,
+        auditDate: req.body.auditDate ? new Date(req.body.auditDate) : new Date(),
       });
       const surplus = await storage.createSurplus(validated);
       
