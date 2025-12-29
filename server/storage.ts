@@ -255,10 +255,10 @@ export interface IStorage {
   updateStoreStock(id: string, stock: Partial<InsertStoreStock>): Promise<StoreStock | undefined>;
   upsertStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
 
-  // Store Names
-  getStoreNames(): Promise<StoreName[]>;
+  // Store Names (SRDs - client-specific)
+  getStoreNamesByClient(clientId: string, outletId?: string | null): Promise<StoreName[]>;
   getStoreName(id: string): Promise<StoreName | undefined>;
-  getStoreNameByName(name: string): Promise<StoreName | undefined>;
+  getStoreNameByName(clientId: string, name: string, outletId?: string | null): Promise<StoreName | undefined>;
   createStoreName(storeName: InsertStoreName): Promise<StoreName>;
   updateStoreName(id: string, storeName: Partial<InsertStoreName>): Promise<StoreName | undefined>;
   deleteStoreName(id: string): Promise<boolean>;
@@ -1812,8 +1812,18 @@ export class DbStorage implements IStorage {
   }
 
   // Store Names
-  async getStoreNames(): Promise<StoreName[]> {
-    return db.select().from(storeNames).orderBy(storeNames.name);
+  async getStoreNamesByClient(clientId: string, outletId?: string | null): Promise<StoreName[]> {
+    if (outletId) {
+      return db.select().from(storeNames)
+        .where(and(
+          eq(storeNames.clientId, clientId),
+          or(eq(storeNames.outletId, outletId), isNull(storeNames.outletId))
+        ))
+        .orderBy(storeNames.name);
+    }
+    return db.select().from(storeNames)
+      .where(eq(storeNames.clientId, clientId))
+      .orderBy(storeNames.name);
   }
 
   async getStoreName(id: string): Promise<StoreName | undefined> {
@@ -1821,8 +1831,22 @@ export class DbStorage implements IStorage {
     return storeName;
   }
 
-  async getStoreNameByName(name: string): Promise<StoreName | undefined> {
-    const [storeName] = await db.select().from(storeNames).where(eq(storeNames.name, name));
+  async getStoreNameByName(clientId: string, name: string, outletId?: string | null): Promise<StoreName | undefined> {
+    if (outletId) {
+      const [storeName] = await db.select().from(storeNames)
+        .where(and(
+          eq(storeNames.clientId, clientId),
+          eq(storeNames.name, name),
+          eq(storeNames.outletId, outletId)
+        ));
+      return storeName;
+    }
+    const [storeName] = await db.select().from(storeNames)
+      .where(and(
+        eq(storeNames.clientId, clientId),
+        eq(storeNames.name, name),
+        isNull(storeNames.outletId)
+      ));
     return storeName;
   }
 

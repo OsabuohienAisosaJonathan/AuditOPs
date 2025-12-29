@@ -2323,10 +2323,12 @@ export async function registerRoutes(
     }
   });
 
-  // ============== STORE NAMES ==============
-  app.get("/api/store-names", requireAuth, async (req, res) => {
+  // ============== STORE NAMES (SRDs - Client-specific) ==============
+  app.get("/api/clients/:clientId/store-names", requireAuth, async (req, res) => {
     try {
-      const storeNames = await storage.getStoreNames();
+      const { clientId } = req.params;
+      const outletId = req.query.outletId as string | undefined;
+      const storeNames = await storage.getStoreNamesByClient(clientId, outletId || null);
       res.json(storeNames);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -2345,13 +2347,18 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/store-names", requireAuth, async (req, res) => {
+  app.post("/api/clients/:clientId/store-names", requireAuth, async (req, res) => {
     try {
-      const data = insertStoreNameSchema.parse(req.body);
+      const { clientId } = req.params;
+      const data = insertStoreNameSchema.parse({
+        ...req.body,
+        clientId,
+        createdBy: req.session.userId,
+      });
       
-      const existing = await storage.getStoreNameByName(data.name);
+      const existing = await storage.getStoreNameByName(clientId, data.name, data.outletId || null);
       if (existing) {
-        return res.status(409).json({ error: "Store name already exists" });
+        return res.status(409).json({ error: "Store name already exists for this client" });
       }
       
       const storeName = await storage.createStoreName(data);
@@ -2363,19 +2370,25 @@ export async function registerRoutes(
 
   app.patch("/api/store-names/:id", requireAuth, async (req, res) => {
     try {
+      const existingStoreName = await storage.getStoreName(req.params.id);
+      if (!existingStoreName) {
+        return res.status(404).json({ error: "Store name not found" });
+      }
+      
       const data = insertStoreNameSchema.partial().parse(req.body);
       
       if (data.name) {
-        const existing = await storage.getStoreNameByName(data.name);
-        if (existing && existing.id !== req.params.id) {
-          return res.status(409).json({ error: "Store name already exists" });
+        const duplicate = await storage.getStoreNameByName(
+          existingStoreName.clientId, 
+          data.name, 
+          data.outletId || existingStoreName.outletId || null
+        );
+        if (duplicate && duplicate.id !== req.params.id) {
+          return res.status(409).json({ error: "Store name already exists for this client" });
         }
       }
       
       const storeName = await storage.updateStoreName(req.params.id, data);
-      if (!storeName) {
-        return res.status(404).json({ error: "Store name not found" });
-      }
       res.json(storeName);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
