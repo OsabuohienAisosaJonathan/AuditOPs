@@ -536,22 +536,18 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
     const results: {
       departmentId: string;
       departmentName: string;
-      posSales: number; 
-      cashSales: number;
-      transferSales: number;
+      totalCaptured: number;
       declaredCash: number;
       declaredPos: number;
       declaredTransfer: number;
+      totalDeclared: number;
       hasDeclaration: boolean;
       variance: number;
     }[] = [];
 
     entriesByDepartment.forEach(({ department, entries }) => {
       if (!department) return;
-      const posSales = entries.reduce((sum, e) => sum + Number(e.posAmount || 0), 0);
-      const cashSales = entries.reduce((sum, e) => sum + Number(e.cashAmount || 0), 0);
-      const transferSales = entries.reduce((sum, e) => sum + Number(e.transferAmount || 0), 0);
-      const totalCaptured = posSales + cashSales + transferSales;
+      const totalCaptured = entries.reduce((sum, e) => sum + Number(e.totalSales || 0), 0);
       
       const declaration = paymentDeclarations.find((d: any) => d.departmentId === department.id);
       const hasDeclaration = !!declaration;
@@ -565,12 +561,11 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
       results.push({
         departmentId: department.id,
         departmentName: department.name,
-        posSales,
-        cashSales,
-        transferSales,
+        totalCaptured,
         declaredCash,
         declaredPos,
         declaredTransfer,
+        totalDeclared,
         hasDeclaration,
         variance,
       });
@@ -581,8 +576,7 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
 
   const totalFirstHitVariance = reportedPaymentsByDept.reduce((sum, r) => {
     if (!r.hasDeclaration) {
-      const totalCaptured = r.cashSales + r.posSales + r.transferSales;
-      return sum - totalCaptured;
+      return sum - r.totalCaptured;
     }
     return sum + r.variance;
   }, 0);
@@ -689,21 +683,19 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
               </TableHeader>
               <TableBody>
                 {reportedPaymentsByDept.map((report) => {
-                  const totalCaptured = report.cashSales + report.posSales + report.transferSales;
-                  const totalDeclared = report.declaredCash + report.declaredPos + report.declaredTransfer;
                   return (
                     <TableRow key={report.departmentId} data-testid={`row-payment-${report.departmentId}`}>
                       <TableCell className="font-medium">{report.departmentName}</TableCell>
-                      <TableCell className="text-right font-mono">₦ {totalCaptured.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-mono">₦ {report.totalCaptured.toLocaleString()}</TableCell>
                       <TableCell className="text-right font-mono">
-                        {report.hasDeclaration ? `₦ ${totalDeclared.toLocaleString()}` : <span className="text-muted-foreground">Pending</span>}
+                        {report.hasDeclaration ? `₦ ${report.totalDeclared.toLocaleString()}` : <span className="text-muted-foreground">Pending</span>}
                       </TableCell>
                       <TableCell className={cn(
                         "text-right font-mono font-medium",
                         !report.hasDeclaration ? "text-amber-600" : report.variance === 0 ? "text-emerald-600" : report.variance < 0 ? "text-red-600" : "text-amber-600"
                       )}>
                         {!report.hasDeclaration 
-                          ? <span className="text-amber-600">₦ -{totalCaptured.toLocaleString()}</span>
+                          ? <span className="text-amber-600">₦ -{report.totalCaptured.toLocaleString()}</span>
                           : report.variance === 0 
                             ? "₦ 0" 
                             : `₦ ${report.variance > 0 ? "+" : ""}${report.variance.toLocaleString()}`}
