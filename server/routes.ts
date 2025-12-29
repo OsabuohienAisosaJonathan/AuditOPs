@@ -2324,7 +2324,7 @@ export async function registerRoutes(
   });
 
   // ============== STORE NAMES (SRDs - Client-specific) ==============
-  app.get("/api/clients/:clientId/store-names", requireAuth, async (req, res) => {
+  app.get("/api/clients/:clientId/store-names", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.params;
       const storeNames = await storage.getStoreNamesByClient(clientId);
@@ -2340,13 +2340,23 @@ export async function registerRoutes(
       if (!storeName) {
         return res.status(404).json({ error: "Store name not found" });
       }
+      
+      // Verify client access
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.role !== "super_admin") {
+        const accessScope = user?.accessScope as { global?: boolean; clientIds?: string[] } | null;
+        if (!accessScope?.global && (!accessScope?.clientIds || !accessScope.clientIds.includes(storeName.clientId))) {
+          return res.status(403).json({ error: "Access denied to this client's SRDs" });
+        }
+      }
+      
       res.json(storeName);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/clients/:clientId/store-names", requireAuth, async (req, res) => {
+  app.post("/api/clients/:clientId/store-names", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.params;
       const data = insertStoreNameSchema.parse({
@@ -2374,6 +2384,15 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Store name not found" });
       }
       
+      // Verify client access
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.role !== "super_admin") {
+        const accessScope = user?.accessScope as { global?: boolean; clientIds?: string[] } | null;
+        if (!accessScope?.global && (!accessScope?.clientIds || !accessScope.clientIds.includes(existingStoreName.clientId))) {
+          return res.status(403).json({ error: "Access denied to this client's SRDs" });
+        }
+      }
+      
       const data = insertStoreNameSchema.partial().parse(req.body);
       
       if (data.name) {
@@ -2392,6 +2411,12 @@ export async function registerRoutes(
 
   app.delete("/api/store-names/:id", requireAuth, requireRole(["super_admin"]), async (req, res) => {
     try {
+      const existingStoreName = await storage.getStoreName(req.params.id);
+      if (!existingStoreName) {
+        return res.status(404).json({ error: "Store name not found" });
+      }
+      
+      // Verify client access (super admin is already enforced by requireRole)
       await storage.deleteStoreName(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
