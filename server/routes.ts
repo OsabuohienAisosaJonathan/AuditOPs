@@ -2356,11 +2356,22 @@ export async function registerRoutes(
     }
   });
 
+  const normalizeSRDName = (name: string): string => {
+    const trimmed = name.trim();
+    const suffix = "SR-D";
+    if (trimmed.toUpperCase().endsWith(suffix)) {
+      return trimmed.slice(0, -suffix.length).trim() + " " + suffix;
+    }
+    return trimmed + " " + suffix;
+  };
+
   app.post("/api/clients/:clientId/store-names", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.params;
+      const normalizedName = normalizeSRDName(req.body.name || "");
       const data = insertStoreNameSchema.parse({
         ...req.body,
+        name: normalizedName,
         clientId,
         createdBy: req.session.userId,
       });
@@ -2396,7 +2407,9 @@ export async function registerRoutes(
       const data = insertStoreNameSchema.partial().parse(req.body);
       
       if (data.name) {
-        const duplicate = await storage.getStoreNameByName(existingStoreName.clientId, data.name);
+        const normalizedName = normalizeSRDName(data.name);
+        data.name = normalizedName;
+        const duplicate = await storage.getStoreNameByName(existingStoreName.clientId, normalizedName);
         if (duplicate && duplicate.id !== req.params.id) {
           return res.status(409).json({ error: "Store name already exists for this client" });
         }

@@ -1071,6 +1071,7 @@ export default function Inventory() {
                         <div className="space-y-2">
                           <Label htmlFor="storeName">Stock Reconciliation Department (SRD) Name</Label>
                           <Input id="storeName" name="name" placeholder="e.g., Main Kitchen, Bar Area" data-testid="input-store-name" />
+                          <p className="text-xs text-muted-foreground">"SR-D" suffix will be added automatically</p>
                         </div>
                       )}
                     </div>
