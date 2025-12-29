@@ -4,7 +4,7 @@ import {
   stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
-  storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, goodsReceivedNotes,
+  storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
   receivables, receivableHistory, surpluses, surplusHistory,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
@@ -25,6 +25,7 @@ import {
   type StoreStock, type InsertStoreStock,
   type StoreName, type InsertStoreName,
   type InventoryDepartment, type InsertInventoryDepartment,
+  type InventoryDepartmentCategory, type InsertInventoryDepartmentCategory,
   type GoodsReceivedNote, type InsertGoodsReceivedNote,
   type Receivable, type InsertReceivable,
   type ReceivableHistory, type InsertReceivableHistory,
@@ -1903,6 +1904,52 @@ export class DbStorage implements IStorage {
         or(...typeConditions)
       )
     );
+  }
+
+  // SRD Category Assignments
+  async getInventoryDepartmentCategories(inventoryDepartmentId: string): Promise<InventoryDepartmentCategory[]> {
+    return db.select().from(inventoryDepartmentCategories).where(
+      eq(inventoryDepartmentCategories.inventoryDepartmentId, inventoryDepartmentId)
+    );
+  }
+
+  async replaceInventoryDepartmentCategories(
+    clientId: string,
+    inventoryDepartmentId: string,
+    categoryIds: string[]
+  ): Promise<InventoryDepartmentCategory[]> {
+    // Delete existing assignments for this inventory department
+    await db.delete(inventoryDepartmentCategories).where(
+      eq(inventoryDepartmentCategories.inventoryDepartmentId, inventoryDepartmentId)
+    );
+    
+    // Insert new assignments
+    if (categoryIds.length === 0) return [];
+    
+    const insertValues = categoryIds.map(categoryId => ({
+      clientId,
+      inventoryDepartmentId,
+      categoryId
+    }));
+    
+    return db.insert(inventoryDepartmentCategories).values(insertValues).returning();
+  }
+
+  async getItemsForInventoryDepartment(inventoryDepartmentId: string): Promise<Item[]> {
+    // Get category IDs assigned to this inventory department
+    const assignments = await this.getInventoryDepartmentCategories(inventoryDepartmentId);
+    
+    if (assignments.length === 0) {
+      // No categories assigned - return all items for the client
+      const invDept = await this.getInventoryDepartment(inventoryDepartmentId);
+      if (!invDept) return [];
+      return db.select().from(items).where(eq(items.clientId, invDept.clientId));
+    }
+    
+    // Return only items matching the assigned categories
+    const categoryIds = assignments.map(a => a.categoryId);
+    const categoryConditions = categoryIds.map(cId => eq(items.categoryId, cId));
+    return db.select().from(items).where(or(...categoryConditions));
   }
 
   async addPurchaseToStoreStock(clientId: string, storeDepartmentId: string, itemId: string, quantity: number, costPrice: string, date: Date): Promise<StoreStock> {
