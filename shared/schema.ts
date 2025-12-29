@@ -73,6 +73,7 @@ export const suppliers = pgTable("suppliers", {
 export const items = pgTable("items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id").references(() => categories.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   sku: text("sku"),
   category: text("category").notNull().default("general"),
@@ -461,6 +462,18 @@ export const inventoryDepartments = pgTable("inventory_departments", {
 });
 
 // ============================================================
+// INVENTORY DEPARTMENT CATEGORIES (Category assignments per SRD)
+// ============================================================
+
+export const inventoryDepartmentCategories = pgTable("inventory_department_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  inventoryDepartmentId: varchar("inventory_department_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
 // RECEIVABLES REGISTER (Cash Shortages from Department Comparison)
 // ============================================================
 
@@ -535,6 +548,7 @@ export const insertReceivableHistorySchema = createInsertSchema(receivableHistor
 export const insertSurplusSchema = createInsertSchema(surpluses).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSurplusHistorySchema = createInsertSchema(surplusHistory).omit({ id: true, createdAt: true });
 export const insertInventoryDepartmentSchema = createInsertSchema(inventoryDepartments).omit({ id: true, createdAt: true });
+export const insertInventoryDepartmentCategorySchema = createInsertSchema(inventoryDepartmentCategories).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true, createdAt: true });
@@ -619,6 +633,8 @@ export type InsertStoreName = z.infer<typeof insertStoreNameSchema>;
 export type StoreName = typeof storeNames.$inferSelect;
 export type InsertInventoryDepartment = z.infer<typeof insertInventoryDepartmentSchema>;
 export type InventoryDepartment = typeof inventoryDepartments.$inferSelect;
+export type InsertInventoryDepartmentCategory = z.infer<typeof insertInventoryDepartmentCategorySchema>;
+export type InventoryDepartmentCategory = typeof inventoryDepartmentCategories.$inferSelect;
 export type InsertGoodsReceivedNote = z.infer<typeof insertGoodsReceivedNoteSchema>;
 export type GoodsReceivedNote = typeof goodsReceivedNotes.$inferSelect;
 export type InsertReceivable = z.infer<typeof insertReceivableSchema>;
