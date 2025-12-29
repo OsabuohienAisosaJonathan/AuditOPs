@@ -12,6 +12,8 @@ import {
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
   insertPaymentDeclarationSchema, insertStoreIssueSchema, insertStoreIssueLineSchema, insertStoreStockSchema,
   insertStoreNameSchema, insertInventoryDepartmentSchema, insertGoodsReceivedNoteSchema, INVENTORY_TYPES,
+  insertReceivableSchema, insertReceivableHistorySchema, insertSurplusSchema, insertSurplusHistorySchema,
+  RECEIVABLE_STATUSES, SURPLUS_STATUSES,
   type UserRole 
 } from "@shared/schema";
 import multer from "multer";
@@ -3556,6 +3558,299 @@ export async function registerRoutes(
       });
       
       res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== RECEIVABLES ==============
+  app.get("/api/clients/:clientId/receivables", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { status, departmentId } = req.query;
+      const receivables = await storage.getReceivables(clientId, {
+        status: status as string,
+        departmentId: departmentId as string,
+      });
+      res.json(receivables);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/receivables/:id", requireAuth, async (req, res) => {
+    try {
+      const receivable = await storage.getReceivable(req.params.id);
+      if (!receivable) {
+        return res.status(404).json({ error: "Receivable not found" });
+      }
+      res.json(receivable);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/receivables", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const validated = insertReceivableSchema.parse({
+        ...req.body,
+        clientId,
+        createdBy: req.session.userId!,
+      });
+      const receivable = await storage.createReceivable(validated);
+      
+      await storage.createReceivableHistory({
+        receivableId: receivable.id,
+        action: "created",
+        newStatus: receivable.status,
+        notes: "Initial receivable created",
+        createdBy: req.session.userId!,
+      });
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Receivable",
+        entity: "Receivable",
+        entityId: receivable.id,
+        details: `Amount: ${receivable.varianceAmount}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(receivable);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/receivables/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getReceivable(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Receivable not found" });
+      }
+
+      const { status, amountPaid, comments, notes } = req.body;
+      const updateData: any = {};
+      
+      if (status && RECEIVABLE_STATUSES.includes(status)) {
+        updateData.status = status;
+      }
+      if (amountPaid !== undefined) {
+        const newAmountPaid = parseFloat(existing.amountPaid || "0") + parseFloat(amountPaid);
+        updateData.amountPaid = newAmountPaid.toString();
+        updateData.balanceRemaining = (parseFloat(existing.varianceAmount) - newAmountPaid).toString();
+        if (parseFloat(updateData.balanceRemaining) <= 0) {
+          updateData.status = "settled";
+          updateData.balanceRemaining = "0.00";
+        } else if (newAmountPaid > 0) {
+          updateData.status = "part_paid";
+        }
+      }
+      if (comments !== undefined) {
+        updateData.comments = comments;
+      }
+
+      const receivable = await storage.updateReceivable(req.params.id, updateData);
+      
+      await storage.createReceivableHistory({
+        receivableId: req.params.id,
+        action: "updated",
+        previousStatus: existing.status,
+        newStatus: updateData.status || existing.status,
+        amountPaid: amountPaid?.toString(),
+        notes: notes || `Status changed from ${existing.status} to ${updateData.status || existing.status}`,
+        createdBy: req.session.userId!,
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Updated Receivable",
+        entity: "Receivable",
+        entityId: req.params.id,
+        details: `Status: ${updateData.status || existing.status}, Amount paid: ${amountPaid || 0}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(receivable);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/receivables/:id/history", requireAuth, async (req, res) => {
+    try {
+      const history = await storage.getReceivableHistory(req.params.id);
+      res.json(history);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== SURPLUSES ==============
+  app.get("/api/clients/:clientId/surpluses", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { status, departmentId } = req.query;
+      const surpluses = await storage.getSurpluses(clientId, {
+        status: status as string,
+        departmentId: departmentId as string,
+      });
+      res.json(surpluses);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/surpluses/:id", requireAuth, async (req, res) => {
+    try {
+      const surplus = await storage.getSurplus(req.params.id);
+      if (!surplus) {
+        return res.status(404).json({ error: "Surplus not found" });
+      }
+      res.json(surplus);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/surpluses", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const validated = insertSurplusSchema.parse({
+        ...req.body,
+        clientId,
+        createdBy: req.session.userId!,
+      });
+      const surplus = await storage.createSurplus(validated);
+      
+      await storage.createSurplusHistory({
+        surplusId: surplus.id,
+        action: "created",
+        newStatus: surplus.status,
+        notes: "Initial surplus logged",
+        createdBy: req.session.userId!,
+      });
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Surplus",
+        entity: "Surplus",
+        entityId: surplus.id,
+        details: `Amount: ${surplus.surplusAmount}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(surplus);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/surpluses/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getSurplus(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Surplus not found" });
+      }
+
+      const { status, classification, comments, notes } = req.body;
+      const updateData: any = {};
+      
+      if (status && SURPLUS_STATUSES.includes(status)) {
+        updateData.status = status;
+      }
+      if (classification !== undefined) {
+        updateData.classification = classification;
+      }
+      if (comments !== undefined) {
+        updateData.comments = comments;
+      }
+
+      const surplus = await storage.updateSurplus(req.params.id, updateData);
+      
+      await storage.createSurplusHistory({
+        surplusId: req.params.id,
+        action: "updated",
+        previousStatus: existing.status,
+        newStatus: updateData.status || existing.status,
+        notes: notes || `Status changed from ${existing.status} to ${updateData.status || existing.status}`,
+        createdBy: req.session.userId!,
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Updated Surplus",
+        entity: "Surplus",
+        entityId: req.params.id,
+        details: `Status: ${updateData.status || existing.status}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(surplus);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/surpluses/:id/history", requireAuth, async (req, res) => {
+    try {
+      const history = await storage.getSurplusHistory(req.params.id);
+      res.json(history);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== DEPARTMENT COMPARISON (2nd Hit) ==============
+  app.get("/api/clients/:clientId/department-comparison", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { date } = req.query;
+      const targetDate = date ? new Date(date as string) : new Date();
+      
+      const depts = await storage.getDepartments(clientId);
+      const comparisonData = [];
+      
+      for (const dept of depts) {
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        const salesEntries = await storage.getSalesEntries(dept.id, startOfDay, endOfDay);
+        const totalCaptured = salesEntries.reduce((sum, e) => sum + parseFloat(e.totalSales), 0);
+        
+        const paymentDeclaration = await storage.getPaymentDeclaration(clientId, dept.id, targetDate);
+        const totalDeclared = paymentDeclaration 
+          ? parseFloat(paymentDeclaration.totalReported || "0")
+          : 0;
+        
+        const stockCounts = await storage.getStockCounts(dept.id, targetDate);
+        const auditTotal = stockCounts.reduce((sum, sc) => {
+          const soldQty = parseFloat(sc.soldQty || "0");
+          const sellingPrice = parseFloat(sc.sellingPriceSnapshot || "0");
+          return sum + (soldQty * sellingPrice);
+        }, 0);
+        
+        const variance1stHit = totalDeclared - totalCaptured;
+        const variance2ndHit = auditTotal - totalCaptured;
+        const finalVariance = totalDeclared - auditTotal;
+        
+        comparisonData.push({
+          departmentId: dept.id,
+          departmentName: dept.name,
+          totalCaptured,
+          totalDeclared,
+          auditTotal,
+          variance1stHit,
+          variance2ndHit,
+          finalVariance,
+          varianceStatus: finalVariance < 0 ? "shortage" : finalVariance > 0 ? "surplus" : "balanced",
+        });
+      }
+      
+      res.json(comparisonData);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

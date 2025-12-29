@@ -5,6 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, goodsReceivedNotes,
+  receivables, receivableHistory, surpluses, surplusHistory,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -24,7 +25,11 @@ import {
   type StoreStock, type InsertStoreStock,
   type StoreName, type InsertStoreName,
   type InventoryDepartment, type InsertInventoryDepartment,
-  type GoodsReceivedNote, type InsertGoodsReceivedNote
+  type GoodsReceivedNote, type InsertGoodsReceivedNote,
+  type Receivable, type InsertReceivable,
+  type ReceivableHistory, type InsertReceivableHistory,
+  type Surplus, type InsertSurplus,
+  type SurplusHistory, type InsertSurplusHistory
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -273,6 +278,22 @@ export interface IStorage {
   createGoodsReceivedNote(grn: InsertGoodsReceivedNote): Promise<GoodsReceivedNote>;
   updateGoodsReceivedNote(id: string, grn: Partial<InsertGoodsReceivedNote>): Promise<GoodsReceivedNote | undefined>;
   deleteGoodsReceivedNote(id: string): Promise<boolean>;
+
+  // Receivables
+  getReceivables(clientId: string, filters?: { status?: string; departmentId?: string }): Promise<Receivable[]>;
+  getReceivable(id: string): Promise<Receivable | undefined>;
+  createReceivable(receivable: InsertReceivable): Promise<Receivable>;
+  updateReceivable(id: string, receivable: Partial<InsertReceivable>): Promise<Receivable | undefined>;
+  getReceivableHistory(receivableId: string): Promise<ReceivableHistory[]>;
+  createReceivableHistory(history: InsertReceivableHistory): Promise<ReceivableHistory>;
+
+  // Surpluses
+  getSurpluses(clientId: string, filters?: { status?: string; departmentId?: string }): Promise<Surplus[]>;
+  getSurplus(id: string): Promise<Surplus | undefined>;
+  createSurplus(surplus: InsertSurplus): Promise<Surplus>;
+  updateSurplus(id: string, surplus: Partial<InsertSurplus>): Promise<Surplus | undefined>;
+  getSurplusHistory(surplusId: string): Promise<SurplusHistory[]>;
+  createSurplusHistory(history: InsertSurplusHistory): Promise<SurplusHistory>;
 }
 
 export class DbStorage implements IStorage {
@@ -1827,6 +1848,92 @@ export class DbStorage implements IStorage {
   async deleteGoodsReceivedNote(id: string): Promise<boolean> {
     await db.delete(goodsReceivedNotes).where(eq(goodsReceivedNotes.id, id));
     return true;
+  }
+
+  // Receivables
+  async getReceivables(clientId: string, filters?: { status?: string; departmentId?: string }): Promise<Receivable[]> {
+    let conditions = [eq(receivables.clientId, clientId)];
+    if (filters?.status) {
+      conditions.push(eq(receivables.status, filters.status));
+    }
+    if (filters?.departmentId) {
+      conditions.push(eq(receivables.departmentId, filters.departmentId));
+    }
+    return db.select().from(receivables)
+      .where(and(...conditions))
+      .orderBy(desc(receivables.auditDate));
+  }
+
+  async getReceivable(id: string): Promise<Receivable | undefined> {
+    const [receivable] = await db.select().from(receivables).where(eq(receivables.id, id));
+    return receivable;
+  }
+
+  async createReceivable(insertReceivable: InsertReceivable): Promise<Receivable> {
+    const [receivable] = await db.insert(receivables).values(insertReceivable).returning();
+    return receivable;
+  }
+
+  async updateReceivable(id: string, updateData: Partial<InsertReceivable>): Promise<Receivable | undefined> {
+    const [receivable] = await db.update(receivables)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(receivables.id, id))
+      .returning();
+    return receivable;
+  }
+
+  async getReceivableHistory(receivableId: string): Promise<ReceivableHistory[]> {
+    return db.select().from(receivableHistory)
+      .where(eq(receivableHistory.receivableId, receivableId))
+      .orderBy(desc(receivableHistory.createdAt));
+  }
+
+  async createReceivableHistory(insertHistory: InsertReceivableHistory): Promise<ReceivableHistory> {
+    const [history] = await db.insert(receivableHistory).values(insertHistory).returning();
+    return history;
+  }
+
+  // Surpluses
+  async getSurpluses(clientId: string, filters?: { status?: string; departmentId?: string }): Promise<Surplus[]> {
+    let conditions = [eq(surpluses.clientId, clientId)];
+    if (filters?.status) {
+      conditions.push(eq(surpluses.status, filters.status));
+    }
+    if (filters?.departmentId) {
+      conditions.push(eq(surpluses.departmentId, filters.departmentId));
+    }
+    return db.select().from(surpluses)
+      .where(and(...conditions))
+      .orderBy(desc(surpluses.auditDate));
+  }
+
+  async getSurplus(id: string): Promise<Surplus | undefined> {
+    const [surplus] = await db.select().from(surpluses).where(eq(surpluses.id, id));
+    return surplus;
+  }
+
+  async createSurplus(insertSurplus: InsertSurplus): Promise<Surplus> {
+    const [surplus] = await db.insert(surpluses).values(insertSurplus).returning();
+    return surplus;
+  }
+
+  async updateSurplus(id: string, updateData: Partial<InsertSurplus>): Promise<Surplus | undefined> {
+    const [surplus] = await db.update(surpluses)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(surpluses.id, id))
+      .returning();
+    return surplus;
+  }
+
+  async getSurplusHistory(surplusId: string): Promise<SurplusHistory[]> {
+    return db.select().from(surplusHistory)
+      .where(eq(surplusHistory.surplusId, surplusId))
+      .orderBy(desc(surplusHistory.createdAt));
+  }
+
+  async createSurplusHistory(insertHistory: InsertSurplusHistory): Promise<SurplusHistory> {
+    const [history] = await db.insert(surplusHistory).values(insertHistory).returning();
+    return history;
   }
 }
 

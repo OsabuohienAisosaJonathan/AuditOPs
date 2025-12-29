@@ -1203,3 +1203,122 @@ export const grnApi = {
       method: "DELETE",
     }),
 };
+
+// Department Comparison (2nd Hit) types and API
+export interface DepartmentComparison {
+  departmentId: string;
+  departmentName: string;
+  totalCaptured: number;
+  totalDeclared: number;
+  auditTotal: number;
+  variance1stHit: number;
+  variance2ndHit: number;
+  finalVariance: number;
+  varianceStatus: "shortage" | "surplus" | "balanced";
+}
+
+export const departmentComparisonApi = {
+  get: (clientId: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (date) params.append("date", date);
+    return fetchApi<DepartmentComparison[]>(`/clients/${clientId}/department-comparison?${params}`);
+  },
+};
+
+// Receivables types and API
+export interface Receivable {
+  id: string;
+  clientId: string;
+  departmentId: string;
+  auditDate: string;
+  varianceAmount: string;
+  amountPaid: string;
+  balanceRemaining: string;
+  status: "open" | "part_paid" | "settled" | "written_off";
+  comments: string | null;
+  evidenceUrl: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReceivableHistory {
+  id: string;
+  receivableId: string;
+  action: string;
+  previousStatus: string | null;
+  newStatus: string | null;
+  amountPaid: string | null;
+  notes: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export const receivablesApi = {
+  getByClient: (clientId: string, filters?: { status?: string; departmentId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.departmentId) params.append("departmentId", filters.departmentId);
+    return fetchApi<Receivable[]>(`/clients/${clientId}/receivables?${params}`);
+  },
+  get: (id: string) => fetchApi<Receivable>(`/receivables/${id}`),
+  create: (clientId: string, data: { departmentId: string; auditDate: string; varianceAmount: string; balanceRemaining: string; comments?: string }) =>
+    fetchApi<Receivable>(`/clients/${clientId}/receivables`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { status?: string; amountPaid?: string; comments?: string; notes?: string }) =>
+    fetchApi<Receivable>(`/receivables/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  getHistory: (id: string) => fetchApi<ReceivableHistory[]>(`/receivables/${id}/history`),
+};
+
+// Surplus types and API
+export interface Surplus {
+  id: string;
+  clientId: string;
+  departmentId: string;
+  auditDate: string;
+  surplusAmount: string;
+  status: "open" | "classified" | "cleared" | "posted";
+  classification: string | null;
+  comments: string | null;
+  evidenceUrl: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SurplusHistory {
+  id: string;
+  surplusId: string;
+  action: string;
+  previousStatus: string | null;
+  newStatus: string | null;
+  notes: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export const surplusesApi = {
+  getByClient: (clientId: string, filters?: { status?: string; departmentId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.departmentId) params.append("departmentId", filters.departmentId);
+    return fetchApi<Surplus[]>(`/clients/${clientId}/surpluses?${params}`);
+  },
+  get: (id: string) => fetchApi<Surplus>(`/surpluses/${id}`),
+  create: (clientId: string, data: { departmentId: string; auditDate: string; surplusAmount: string; comments?: string }) =>
+    fetchApi<Surplus>(`/clients/${clientId}/surpluses`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { status?: string; classification?: string; comments?: string; notes?: string }) =>
+    fetchApi<Surplus>(`/surpluses/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  getHistory: (id: string) => fetchApi<SurplusHistory[]>(`/surpluses/${id}/history`),
+};
