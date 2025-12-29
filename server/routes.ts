@@ -2499,6 +2499,50 @@ export async function registerRoutes(
     }
   });
 
+  // Get categories assigned to an inventory department
+  app.get("/api/inventory-departments/:id/categories", requireAuth, async (req, res) => {
+    try {
+      const categories = await storage.getInventoryDepartmentCategories(req.params.id);
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Replace categories for an inventory department
+  app.put("/api/inventory-departments/:id/categories", requireAuth, async (req, res) => {
+    try {
+      const { categoryIds } = req.body;
+      if (!Array.isArray(categoryIds)) {
+        return res.status(400).json({ error: "categoryIds must be an array" });
+      }
+      
+      const invDept = await storage.getInventoryDepartment(req.params.id);
+      if (!invDept) {
+        return res.status(404).json({ error: "Inventory department not found" });
+      }
+      
+      const assignments = await storage.replaceInventoryDepartmentCategories(
+        invDept.clientId,
+        req.params.id,
+        categoryIds
+      );
+      res.json(assignments);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get items filtered by inventory department's category assignments
+  app.get("/api/inventory-departments/:id/items", requireAuth, async (req, res) => {
+    try {
+      const items = await storage.getItemsForInventoryDepartment(req.params.id);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============== CLIENT-SCOPED STORE STOCK ==============
   app.get("/api/clients/:clientId/store-stock", requireAuth, async (req, res) => {
     try {
