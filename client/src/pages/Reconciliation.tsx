@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 export default function ReconciliationPage() {
   const [computeDialogOpen, setComputeDialogOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [receivableDialogOpen, setReceivableDialogOpen] = useState(false);
   const [surplusDialogOpen, setSurplusDialogOpen] = useState(false);
@@ -32,20 +33,30 @@ export default function ReconciliationPage() {
     queryFn: clientsApi.getAll,
   });
 
+  // Derive clientId - use selectedClientId or default to first client
+  const clientId = selectedClientId || clients?.[0]?.id || "";
+
+  // Fetch departments for the selected client only
   const { data: departments } = useQuery({
-    queryKey: ["departments"],
-    queryFn: departmentsApi.getAll,
+    queryKey: ["departments", clientId],
+    queryFn: () => departmentsApi.getByClient(clientId),
+    enabled: !!clientId,
   });
 
-  const selectedDepartmentId = departments?.[0]?.id;
+  // Reset selectedDepartmentId when client changes or departments load
+  useEffect(() => {
+    if (departments && departments.length > 0) {
+      setSelectedDepartmentId(departments[0].id);
+    } else {
+      setSelectedDepartmentId("");
+    }
+  }, [departments, clientId]);
 
   const { data: reconciliations, isLoading } = useQuery({
-    queryKey: ["reconciliations", selectedDepartmentId],
-    queryFn: () => reconciliationsApi.getAll(selectedDepartmentId),
+    queryKey: ["reconciliations", selectedDepartmentId, selectedDate],
+    queryFn: () => reconciliationsApi.getAll(selectedDepartmentId, selectedDate),
     enabled: !!selectedDepartmentId,
   });
-
-  const clientId = selectedClientId || clients?.[0]?.id || "";
 
   const { data: comparisonData, isLoading: isComparisonLoading } = useQuery({
     queryKey: ["department-comparison", clientId, selectedDate],
