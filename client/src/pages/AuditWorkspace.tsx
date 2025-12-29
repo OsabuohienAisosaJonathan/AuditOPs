@@ -1419,13 +1419,7 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [selectedSrdId, setSelectedSrdId] = useState<string>("");
   const [physicalCount, setPhysicalCount] = useState<string>("");
-  const [editingCountId, setEditingCountId] = useState<string | null>(null);
-  const [editActualQty, setEditActualQty] = useState<string>("");
   const queryClient = useQueryClient();
-
-  const alreadyCountedItemIds = useMemo(() => {
-    return new Set(stockCounts.map(sc => sc.itemId));
-  }, [stockCounts]);
 
   // Fetch inventory departments (SRDs) for the client
   const { data: inventoryDepts = [] } = useQuery<InventoryDept[]>({
@@ -1532,47 +1526,6 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
     onError: (error: any) => toast.error(error.message || "Failed to create count"),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: (data: { id: string; actualClosingQty: string; varianceQty: string; soldQty: string }) => 
-      stockCountsApi.update(data.id, { 
-        actualClosingQty: data.actualClosingQty, 
-        varianceQty: data.varianceQty,
-        soldQty: data.soldQty 
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
-      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
-      setEditingCountId(null);
-      setEditActualQty("");
-      toast.success("Stock count updated");
-    },
-    onError: (error: any) => toast.error(error.message || "Failed to update count"),
-  });
-
-  const handleEditBlur = (count: StockCount) => {
-    const newActual = Number(editActualQty);
-    const expected = Number(count.expectedClosingQty || 0);
-    const newVariance = newActual - expected;
-    const newSold = expected - newActual;
-    
-    if (!isNaN(newActual) && editActualQty !== String(count.actualClosingQty)) {
-      updateMutation.mutate({
-        id: count.id,
-        actualClosingQty: String(newActual),
-        varianceQty: String(newVariance),
-        soldQty: String(newSold > 0 ? newSold : 0),
-      });
-    } else {
-      setEditingCountId(null);
-      setEditActualQty("");
-    }
-  };
-
-  const startEditing = (count: StockCount) => {
-    setEditingCountId(count.id);
-    setEditActualQty(String(count.actualClosingQty || ""));
-  };
-
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedItemId || !selectedSrdId || !physicalCount) {
@@ -1640,54 +1593,26 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
               ) : (
                 stockCounts.map((count) => {
                   const item = items.find(i => i.id === count.itemId);
-                  const isEditing = editingCountId === count.id;
-                  const displayActual = isEditing ? editActualQty : String(count.actualClosingQty || "");
-                  const displayVariance = isEditing 
-                    ? Number(editActualQty || 0) - Number(count.expectedClosingQty || 0)
-                    : Number(count.varianceQty || 0);
+                  const variance = Number(count.varianceQty || 0);
                   const addedQty = Number((count as any).addedQty || 0);
-                  const displaySold = isEditing 
-                    ? Math.max(0, Number(count.expectedClosingQty || 0) - Number(editActualQty || 0))
-                    : Number(count.soldQty || 0);
+                  const soldQty = Number(count.soldQty || 0);
                   return (
                     <TableRow key={count.id} data-testid={`row-count-${count.id}`}>
                       <TableCell className="font-medium">{item?.name || count.itemId}</TableCell>
                       <TableCell className="text-right font-mono">{count.openingQty}</TableCell>
                       <TableCell className="text-right font-mono text-emerald-600">+{addedQty}</TableCell>
-                      <TableCell className="text-right font-mono text-red-600">-{displaySold}</TableCell>
+                      <TableCell className="text-right font-mono text-red-600">-{soldQty}</TableCell>
                       <TableCell className="text-right font-mono">{count.expectedClosingQty}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {isEditing ? (
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={editActualQty}
-                            onChange={(e) => setEditActualQty(e.target.value)}
-                            onBlur={() => handleEditBlur(count)}
-                            onKeyDown={(e) => { if (e.key === "Enter") handleEditBlur(count); }}
-                            className="w-20 h-8 text-right font-mono"
-                            autoFocus
-                            data-testid={`input-edit-actual-${count.id}`}
-                          />
-                        ) : (
-                          <span 
-                            className="cursor-pointer hover:bg-muted px-2 py-1 rounded"
-                            onClick={() => startEditing(count)}
-                            data-testid={`edit-actual-${count.id}`}
-                          >
-                            {count.actualClosingQty || "-"}
-                          </span>
-                        )}
-                      </TableCell>
+                      <TableCell className="text-right font-mono">{count.actualClosingQty || "-"}</TableCell>
                       <TableCell className={cn(
                         "text-right font-mono font-medium",
-                        displayVariance < 0 ? "text-red-600" : displayVariance > 0 ? "text-amber-600" : "text-emerald-600"
+                        variance < 0 ? "text-red-600" : variance > 0 ? "text-amber-600" : "text-emerald-600"
                       )}>
-                        {displayVariance > 0 ? "+" : ""}{displayVariance}
+                        {variance > 0 ? "+" : ""}{variance}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={displayVariance === 0 ? "default" : displayVariance < 0 ? "destructive" : "secondary"}>
-                          {displayVariance === 0 ? "Matched" : displayVariance < 0 ? "Short" : "Over"}
+                        <Badge variant={variance === 0 ? "default" : variance < 0 ? "destructive" : "secondary"}>
+                          {variance === 0 ? "Matched" : variance < 0 ? "Short" : "Over"}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -1756,7 +1681,7 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
                     <SelectValue placeholder={selectedSrdId ? "Select item" : "Select SRD first"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {items.filter(i => i.status === "active" && !alreadyCountedItemIds.has(i.id)).map(item => (
+                    {items.filter(i => i.status === "active").map(item => (
                       <SelectItem key={item.id} value={item.id}>{item.name} ({item.category})</SelectItem>
                     ))}
                   </SelectContent>
