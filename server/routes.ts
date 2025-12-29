@@ -2422,7 +2422,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/store-names/:id", requireAuth, requireRole(["super_admin"]), async (req, res) => {
+  app.delete("/api/store-names/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
     try {
       const existingStoreName = await storage.getStoreName(req.params.id);
       if (!existingStoreName) {
