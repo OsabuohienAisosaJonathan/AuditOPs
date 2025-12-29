@@ -3809,47 +3809,7 @@ export async function registerRoutes(
       const { date } = req.query;
       const targetDate = date ? new Date(date as string) : new Date();
       
-      const depts = await storage.getDepartments(clientId);
-      const comparisonData = [];
-      
-      for (const dept of depts) {
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(targetDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        
-        const salesEntries = await storage.getSalesEntries(dept.id, startOfDay, endOfDay);
-        const totalCaptured = salesEntries.reduce((sum, e) => sum + parseFloat(e.totalSales), 0);
-        
-        const paymentDeclaration = await storage.getPaymentDeclaration(clientId, dept.id, targetDate);
-        const totalDeclared = paymentDeclaration 
-          ? parseFloat(paymentDeclaration.totalReported || "0")
-          : 0;
-        
-        const stockCounts = await storage.getStockCounts(dept.id, targetDate);
-        const auditTotal = stockCounts.reduce((sum, sc) => {
-          const soldQty = parseFloat(sc.soldQty || "0");
-          const sellingPrice = parseFloat(sc.sellingPriceSnapshot || "0");
-          return sum + (soldQty * sellingPrice);
-        }, 0);
-        
-        const variance1stHit = totalDeclared - totalCaptured;
-        const variance2ndHit = auditTotal - totalCaptured;
-        const finalVariance = totalDeclared - auditTotal;
-        
-        comparisonData.push({
-          departmentId: dept.id,
-          departmentName: dept.name,
-          totalCaptured,
-          totalDeclared,
-          auditTotal,
-          variance1stHit,
-          variance2ndHit,
-          finalVariance,
-          varianceStatus: finalVariance < 0 ? "shortage" : finalVariance > 0 ? "surplus" : "balanced",
-        });
-      }
-      
+      const comparisonData = await storage.getDepartmentComparison(clientId, targetDate);
       res.json(comparisonData);
     } catch (error: any) {
       res.status(500).json({ error: error.message });

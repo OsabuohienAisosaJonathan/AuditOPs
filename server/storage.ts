@@ -192,7 +192,8 @@ export interface IStorage {
   
   // Sales summary for reconciliation
   getSalesSummaryForDepartment(departmentId: string, date: Date): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalSales: number }>;
-  getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalVoids: number; grandTotal: number; entriesCount: number; departmentsCount: number }>;
+  getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalAmount: number; totalComplimentary: number; totalVouchers: number; totalVoids: number; totalOthers: number; totalCash: number; totalPos: number; totalTransfer: number; grandTotal: number; entriesCount: number; departmentsCount: number; avgPerEntry: number }>;
+  getDepartmentComparison(clientId: string, date: Date): Promise<Array<{ departmentId: string; departmentName: string; totalCaptured: number; totalDeclared: number; auditTotal: number; variance1stHit: number; variance2ndHit: number; finalVariance: number; varianceStatus: "shortage" | "surplus" | "balanced" }>>;
 
   // User-Client Access
   getUserClientAccess(userId: string, clientId: string): Promise<UserClientAccess | undefined>;
@@ -1234,7 +1235,7 @@ export class DbStorage implements IStorage {
     };
   }
 
-  async getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalCash: number; totalPos: number; totalTransfer: number; totalVoids: number; grandTotal: number; entriesCount: number; departmentsCount: number }> {
+  async getSalesSummaryForClient(clientId: string, date: Date, departmentId?: string): Promise<{ totalAmount: number; totalComplimentary: number; totalVouchers: number; totalVoids: number; totalOthers: number; totalCash: number; totalPos: number; totalTransfer: number; grandTotal: number; entriesCount: number; departmentsCount: number; avgPerEntry: number }> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -1251,24 +1252,118 @@ export class DbStorage implements IStorage {
     }
 
     const [result] = await db.select({
+      totalAmount: sum(salesEntries.amount),
+      totalComplimentary: sum(salesEntries.complimentaryAmount),
+      totalVouchers: sum(salesEntries.vouchersAmount),
+      totalVoids: sum(salesEntries.voidsAmount),
+      totalOthers: sum(salesEntries.othersAmount),
       totalCash: sum(salesEntries.cashAmount),
       totalPos: sum(salesEntries.posAmount),
       totalTransfer: sum(salesEntries.transferAmount),
-      totalVoids: sum(salesEntries.voidsAmount),
       grandTotal: sum(salesEntries.totalSales),
       entriesCount: count(salesEntries.id),
       departmentsCount: countDistinct(salesEntries.departmentId)
     }).from(salesEntries).where(and(...conditions));
     
+    const entriesCount = parseInt(result?.entriesCount?.toString() || "0");
+    const grandTotal = parseFloat(result?.grandTotal || "0");
+    
     return {
+      totalAmount: parseFloat(result?.totalAmount || "0"),
+      totalComplimentary: parseFloat(result?.totalComplimentary || "0"),
+      totalVouchers: parseFloat(result?.totalVouchers || "0"),
+      totalVoids: parseFloat(result?.totalVoids || "0"),
+      totalOthers: parseFloat(result?.totalOthers || "0"),
       totalCash: parseFloat(result?.totalCash || "0"),
       totalPos: parseFloat(result?.totalPos || "0"),
       totalTransfer: parseFloat(result?.totalTransfer || "0"),
-      totalVoids: parseFloat(result?.totalVoids || "0"),
-      grandTotal: parseFloat(result?.grandTotal || "0"),
-      entriesCount: parseInt(result?.entriesCount?.toString() || "0"),
-      departmentsCount: parseInt(result?.departmentsCount?.toString() || "0")
+      grandTotal,
+      entriesCount,
+      departmentsCount: parseInt(result?.departmentsCount?.toString() || "0"),
+      avgPerEntry: entriesCount > 0 ? grandTotal / entriesCount : 0
     };
+  }
+
+  async getDepartmentComparison(clientId: string, date: Date): Promise<Array<{
+    departmentId: string;
+    departmentName: string;
+    totalCaptured: number;
+    totalDeclared: number;
+    auditTotal: number;
+    variance1stHit: number;
+    variance2ndHit: number;
+    finalVariance: number;
+    varianceStatus: "shortage" | "surplus" | "balanced";
+  }>> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const clientDepts = await db.select().from(departments).where(eq(departments.clientId, clientId));
+
+    const results = await Promise.all(clientDepts.map(async (dept) => {
+      const [salesResult] = await db.select({
+        totalSales: sum(salesEntries.totalSales)
+      }).from(salesEntries).where(
+        and(
+          eq(salesEntries.departmentId, dept.id),
+          gte(salesEntries.date, startOfDay),
+          lte(salesEntries.date, endOfDay)
+        )
+      );
+      const totalCaptured = parseFloat(salesResult?.totalSales || "0");
+
+      const [declaredResult] = await db.select({
+        totalReported: sum(paymentDeclarations.totalReported)
+      }).from(paymentDeclarations).where(
+        and(
+          eq(paymentDeclarations.departmentId, dept.id),
+          gte(paymentDeclarations.date, startOfDay),
+          lte(paymentDeclarations.date, endOfDay)
+        )
+      );
+      const totalDeclared = parseFloat(declaredResult?.totalReported || "0");
+
+      const stockCountsResult = await db.select({
+        soldQty: stockCounts.soldQty,
+        sellingPriceSnapshot: stockCounts.sellingPriceSnapshot
+      }).from(stockCounts).where(
+        and(
+          eq(stockCounts.departmentId, dept.id),
+          gte(stockCounts.date, startOfDay),
+          lte(stockCounts.date, endOfDay)
+        )
+      );
+      const auditTotal = stockCountsResult.reduce((sum, sc) => {
+        return sum + (parseFloat(sc.soldQty || "0") * parseFloat(sc.sellingPriceSnapshot || "0"));
+      }, 0);
+
+      const variance1stHit = totalDeclared - totalCaptured;
+      const variance2ndHit = auditTotal - totalCaptured;
+      const finalVariance = totalDeclared - auditTotal;
+
+      let varianceStatus: "shortage" | "surplus" | "balanced" = "balanced";
+      if (finalVariance < -0.01) {
+        varianceStatus = "shortage";
+      } else if (finalVariance > 0.01) {
+        varianceStatus = "surplus";
+      }
+
+      return {
+        departmentId: dept.id,
+        departmentName: dept.name,
+        totalCaptured,
+        totalDeclared,
+        auditTotal,
+        variance1stHit,
+        variance2ndHit,
+        finalVariance,
+        varianceStatus
+      };
+    }));
+
+    return results;
   }
 
   // User-Client Access

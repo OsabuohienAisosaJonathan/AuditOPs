@@ -209,10 +209,14 @@ export interface SalesEntry {
   departmentId: string;
   date: Date;
   shift: string | null;
+  amount: string;
+  complimentaryAmount: string;
+  vouchersAmount: string;
+  voidsAmount: string;
+  othersAmount: string;
   cashAmount: string;
   posAmount: string;
   transferAmount: string;
-  voidsAmount: string;
   discountsAmount: string;
   totalSales: string;
   mode: string | null;
@@ -601,10 +605,14 @@ export const purchasesApi = {
 };
 
 export interface SalesSummary {
+  totalAmount: number;
+  totalComplimentary: number;
+  totalVouchers: number;
+  totalVoids: number;
+  totalOthers: number;
   totalCash: number;
   totalPos: number;
   totalTransfer: number;
-  totalVoids: number;
   grandTotal: number;
   entriesCount: number;
   departmentsCount?: number;
@@ -632,10 +640,14 @@ export const salesEntriesApi = {
     departmentId: string;
     date: string;
     shift: string;
-    cashAmount: string;
-    posAmount: string;
-    transferAmount: string;
+    amount?: string;
+    complimentaryAmount?: string;
+    vouchersAmount?: string;
     voidsAmount?: string;
+    othersAmount?: string;
+    cashAmount?: string;
+    posAmount?: string;
+    transferAmount?: string;
     discountsAmount?: string;
     totalSales: string;
     mode?: string;
@@ -647,10 +659,14 @@ export const salesEntriesApi = {
     }),
   update: (id: string, data: Partial<{
     shift: string;
+    amount: string;
+    complimentaryAmount: string;
+    vouchersAmount: string;
+    voidsAmount: string;
+    othersAmount: string;
     cashAmount: string;
     posAmount: string;
     transferAmount: string;
-    voidsAmount: string;
     discountsAmount: string;
     totalSales: string;
     notes: string;

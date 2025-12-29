@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Plus, ShoppingCart, Search, Filter, Pencil, Trash2, X } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,19 +21,21 @@ import { format } from "date-fns";
 
 interface SalesFormData {
   shift: string;
-  cashAmount: string;
-  posAmount: string;
-  transferAmount: string;
+  amount: string;
+  complimentaryAmount: string;
+  vouchersAmount: string;
   voidsAmount: string;
+  othersAmount: string;
   notes: string;
 }
 
 const defaultFormData: SalesFormData = {
   shift: "full",
-  cashAmount: "0",
-  posAmount: "0",
-  transferAmount: "0",
+  amount: "0",
+  complimentaryAmount: "0",
+  vouchersAmount: "0",
   voidsAmount: "0",
+  othersAmount: "0",
   notes: "",
 };
 
@@ -99,25 +101,30 @@ export default function SalesCapture() {
     return entries;
   }, [salesEntries, searchTerm, shiftFilter]);
 
+  const calculateTotal = (data: SalesFormData) => {
+    return (
+      Number(data.amount) - 
+      Number(data.complimentaryAmount) - 
+      Number(data.vouchersAmount) - 
+      Number(data.voidsAmount) - 
+      Number(data.othersAmount)
+    ).toString();
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: SalesFormData) => {
-      const totalSales = (
-        Number(data.cashAmount) + 
-        Number(data.posAmount) + 
-        Number(data.transferAmount) - 
-        Number(data.voidsAmount)
-      ).toString();
+      const totalSales = calculateTotal(data);
       
       return salesEntriesApi.create({
         clientId: selectedClientId!,
         departmentId: selectedDepartmentId!,
         date: selectedDate,
         shift: data.shift,
-        cashAmount: data.cashAmount,
-        posAmount: data.posAmount,
-        transferAmount: data.transferAmount,
+        amount: data.amount,
+        complimentaryAmount: data.complimentaryAmount,
+        vouchersAmount: data.vouchersAmount,
         voidsAmount: data.voidsAmount || "0",
-        discountsAmount: "0",
+        othersAmount: data.othersAmount || "0",
         totalSales,
         mode: "summary",
       });
@@ -125,6 +132,7 @@ export default function SalesCapture() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-entries"] });
       queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["department-comparison"] });
       setCreateDialogOpen(false);
       setFormData(defaultFormData);
       toast.success("Sales entry recorded successfully");
@@ -136,25 +144,22 @@ export default function SalesCapture() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: SalesFormData }) => {
-      const totalSales = (
-        Number(data.cashAmount) + 
-        Number(data.posAmount) + 
-        Number(data.transferAmount) - 
-        Number(data.voidsAmount)
-      ).toString();
+      const totalSales = calculateTotal(data);
       
       return salesEntriesApi.update(id, {
         shift: data.shift,
-        cashAmount: data.cashAmount,
-        posAmount: data.posAmount,
-        transferAmount: data.transferAmount,
+        amount: data.amount,
+        complimentaryAmount: data.complimentaryAmount,
+        vouchersAmount: data.vouchersAmount,
         voidsAmount: data.voidsAmount || "0",
+        othersAmount: data.othersAmount || "0",
         totalSales,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-entries"] });
       queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["department-comparison"] });
       setEditDialogOpen(false);
       setSelectedEntry(null);
       setFormData(defaultFormData);
@@ -170,6 +175,7 @@ export default function SalesCapture() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-entries"] });
       queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["department-comparison"] });
       setDeleteConfirmOpen(false);
       setSelectedEntry(null);
       toast.success("Sales entry deleted successfully");
@@ -192,10 +198,11 @@ export default function SalesCapture() {
     setSelectedEntry(entry);
     setFormData({
       shift: entry.shift || "full",
-      cashAmount: entry.cashAmount || "0",
-      posAmount: entry.posAmount || "0",
-      transferAmount: entry.transferAmount || "0",
+      amount: entry.amount || "0",
+      complimentaryAmount: entry.complimentaryAmount || "0",
+      vouchersAmount: entry.vouchersAmount || "0",
       voidsAmount: entry.voidsAmount || "0",
+      othersAmount: entry.othersAmount || "0",
       notes: "",
     });
     setEditDialogOpen(true);
@@ -226,6 +233,14 @@ export default function SalesCapture() {
   const hasActiveFilters = searchTerm || shiftFilter !== "all";
 
   const contextReady = !!selectedClientId && !!selectedDepartmentId;
+
+  const formTotal = useMemo(() => {
+    return Number(formData.amount) - 
+           Number(formData.complimentaryAmount) - 
+           Number(formData.vouchersAmount) - 
+           Number(formData.voidsAmount) - 
+           Number(formData.othersAmount);
+  }, [formData]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -355,71 +370,77 @@ export default function SalesCapture() {
                   )}
                 </Empty>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Shift</TableHead>
-                      <TableHead className="text-right">Cash (₦)</TableHead>
-                      <TableHead className="text-right">POS (₦)</TableHead>
-                      <TableHead className="text-right">Transfer (₦)</TableHead>
-                      <TableHead className="text-right">Voids (₦)</TableHead>
-                      <TableHead className="text-right">Total (₦)</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEntries.map((entry) => (
-                      <TableRow key={entry.id} data-testid={`row-sales-${entry.id}`}>
-                        <TableCell className="font-medium" data-testid={`text-sales-time-${entry.id}`}>
-                          {format(new Date(entry.createdAt), "HH:mm")}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="font-normal capitalize">
-                            {entry.shift === "full" ? "Full Day" : entry.shift || "Full Day"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {Number(entry.cashAmount || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {Number(entry.posAmount || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {Number(entry.transferAmount || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">
-                          {Number(entry.voidsAmount || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-bold" data-testid={`text-sales-total-${entry.id}`}>
-                          {Number(entry.totalSales || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8"
-                              onClick={() => handleEdit(entry)}
-                              data-testid={`button-edit-sales-${entry.id}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(entry)}
-                              data-testid={`button-delete-sales-${entry.id}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Shift</TableHead>
+                        <TableHead className="text-right">Amount (₦)</TableHead>
+                        <TableHead className="text-right">Complimentary (₦)</TableHead>
+                        <TableHead className="text-right">Vouchers (₦)</TableHead>
+                        <TableHead className="text-right">Voids (₦)</TableHead>
+                        <TableHead className="text-right">Others (₦)</TableHead>
+                        <TableHead className="text-right">Total (₦)</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEntries.map((entry) => (
+                        <TableRow key={entry.id} data-testid={`row-sales-${entry.id}`}>
+                          <TableCell className="font-medium" data-testid={`text-sales-time-${entry.id}`}>
+                            {format(new Date(entry.createdAt), "HH:mm")}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="font-normal capitalize">
+                              {entry.shift === "full" ? "Full Day" : entry.shift || "Full Day"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {Number(entry.amount || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {Number(entry.complimentaryAmount || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {Number(entry.vouchersAmount || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {Number(entry.voidsAmount || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {Number(entry.othersAmount || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-bold" data-testid={`text-sales-total-${entry.id}`}>
+                            {Number(entry.totalSales || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8"
+                                onClick={() => handleEdit(entry)}
+                                data-testid={`button-edit-sales-${entry.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => handleDelete(entry)}
+                                data-testid={`button-delete-sales-${entry.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -433,27 +454,33 @@ export default function SalesCapture() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Cash</span>
-                  <span className="font-mono font-medium" data-testid="text-summary-cash">
-                    ₦ {(summary?.totalCash || 0).toLocaleString()}
+                  <span className="text-muted-foreground">Total Amount</span>
+                  <span className="font-mono font-medium" data-testid="text-summary-amount">
+                    ₦ {(summary?.totalAmount || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total POS</span>
-                  <span className="font-mono font-medium" data-testid="text-summary-pos">
-                    ₦ {(summary?.totalPos || 0).toLocaleString()}
+                  <span className="text-muted-foreground">Less: Complimentary</span>
+                  <span className="font-mono font-medium text-muted-foreground" data-testid="text-summary-complimentary">
+                    - ₦ {(summary?.totalComplimentary || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Transfer</span>
-                  <span className="font-mono font-medium" data-testid="text-summary-transfer">
-                    ₦ {(summary?.totalTransfer || 0).toLocaleString()}
+                  <span className="text-muted-foreground">Less: Vouchers</span>
+                  <span className="font-mono font-medium text-muted-foreground" data-testid="text-summary-vouchers">
+                    - ₦ {(summary?.totalVouchers || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Voids/Comp</span>
+                  <span className="text-muted-foreground">Less: Voids</span>
                   <span className="font-mono font-medium text-muted-foreground" data-testid="text-summary-voids">
-                    ₦ {(summary?.totalVoids || 0).toLocaleString()}
+                    - ₦ {(summary?.totalVoids || 0).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Less: Others</span>
+                  <span className="font-mono font-medium text-muted-foreground" data-testid="text-summary-others">
+                    - ₦ {(summary?.totalOthers || 0).toLocaleString()}
                   </span>
                 </div>
                 <Separator />
@@ -518,43 +545,41 @@ export default function SalesCapture() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cashAmount">Cash Amount (₦)</Label>
+                <Label htmlFor="amount">Amount (₦)</Label>
                 <Input 
-                  id="cashAmount" 
+                  id="amount" 
                   type="number" 
                   step="0.01"
-                  value={formData.cashAmount}
-                  onChange={(e) => setFormData(f => ({ ...f, cashAmount: e.target.value }))}
+                  value={formData.amount}
+                  onChange={(e) => setFormData(f => ({ ...f, amount: e.target.value }))}
                   required 
-                  data-testid="input-sales-cash"
+                  data-testid="input-sales-amount"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="posAmount">POS Amount (₦)</Label>
+                <Label htmlFor="complimentaryAmount">Complimentary (₦)</Label>
                 <Input 
-                  id="posAmount" 
+                  id="complimentaryAmount" 
                   type="number" 
                   step="0.01"
-                  value={formData.posAmount}
-                  onChange={(e) => setFormData(f => ({ ...f, posAmount: e.target.value }))}
-                  required 
-                  data-testid="input-sales-pos"
+                  value={formData.complimentaryAmount}
+                  onChange={(e) => setFormData(f => ({ ...f, complimentaryAmount: e.target.value }))}
+                  data-testid="input-sales-complimentary"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="transferAmount">Transfer Amount (₦)</Label>
+                <Label htmlFor="vouchersAmount">Vouchers (₦)</Label>
                 <Input 
-                  id="transferAmount" 
+                  id="vouchersAmount" 
                   type="number" 
                   step="0.01"
-                  value={formData.transferAmount}
-                  onChange={(e) => setFormData(f => ({ ...f, transferAmount: e.target.value }))}
-                  required 
-                  data-testid="input-sales-transfer"
+                  value={formData.vouchersAmount}
+                  onChange={(e) => setFormData(f => ({ ...f, vouchersAmount: e.target.value }))}
+                  data-testid="input-sales-vouchers"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="voidsAmount">Voids/Comp Amount (₦)</Label>
+                <Label htmlFor="voidsAmount">Voids (₦)</Label>
                 <Input 
                   id="voidsAmount" 
                   type="number" 
@@ -563,6 +588,22 @@ export default function SalesCapture() {
                   onChange={(e) => setFormData(f => ({ ...f, voidsAmount: e.target.value }))}
                   data-testid="input-sales-voids"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="othersAmount">Others (₦)</Label>
+                <Input 
+                  id="othersAmount" 
+                  type="number" 
+                  step="0.01"
+                  value={formData.othersAmount}
+                  onChange={(e) => setFormData(f => ({ ...f, othersAmount: e.target.value }))}
+                  data-testid="input-sales-others"
+                />
+              </div>
+              <Separator />
+              <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                <span className="font-medium">Calculated Total</span>
+                <span className="font-mono font-bold text-lg">₦ {formTotal.toLocaleString()}</span>
               </div>
             </div>
             <DialogFooter>
@@ -605,43 +646,41 @@ export default function SalesCapture() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-cashAmount">Cash Amount (₦)</Label>
+                <Label htmlFor="edit-amount">Amount (₦)</Label>
                 <Input 
-                  id="edit-cashAmount" 
+                  id="edit-amount" 
                   type="number" 
                   step="0.01"
-                  value={formData.cashAmount}
-                  onChange={(e) => setFormData(f => ({ ...f, cashAmount: e.target.value }))}
+                  value={formData.amount}
+                  onChange={(e) => setFormData(f => ({ ...f, amount: e.target.value }))}
                   required 
-                  data-testid="input-edit-sales-cash"
+                  data-testid="input-edit-sales-amount"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-posAmount">POS Amount (₦)</Label>
+                <Label htmlFor="edit-complimentaryAmount">Complimentary (₦)</Label>
                 <Input 
-                  id="edit-posAmount" 
+                  id="edit-complimentaryAmount" 
                   type="number" 
                   step="0.01"
-                  value={formData.posAmount}
-                  onChange={(e) => setFormData(f => ({ ...f, posAmount: e.target.value }))}
-                  required 
-                  data-testid="input-edit-sales-pos"
+                  value={formData.complimentaryAmount}
+                  onChange={(e) => setFormData(f => ({ ...f, complimentaryAmount: e.target.value }))}
+                  data-testid="input-edit-sales-complimentary"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-transferAmount">Transfer Amount (₦)</Label>
+                <Label htmlFor="edit-vouchersAmount">Vouchers (₦)</Label>
                 <Input 
-                  id="edit-transferAmount" 
+                  id="edit-vouchersAmount" 
                   type="number" 
                   step="0.01"
-                  value={formData.transferAmount}
-                  onChange={(e) => setFormData(f => ({ ...f, transferAmount: e.target.value }))}
-                  required 
-                  data-testid="input-edit-sales-transfer"
+                  value={formData.vouchersAmount}
+                  onChange={(e) => setFormData(f => ({ ...f, vouchersAmount: e.target.value }))}
+                  data-testid="input-edit-sales-vouchers"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-voidsAmount">Voids/Comp Amount (₦)</Label>
+                <Label htmlFor="edit-voidsAmount">Voids (₦)</Label>
                 <Input 
                   id="edit-voidsAmount" 
                   type="number" 
@@ -650,6 +689,22 @@ export default function SalesCapture() {
                   onChange={(e) => setFormData(f => ({ ...f, voidsAmount: e.target.value }))}
                   data-testid="input-edit-sales-voids"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-othersAmount">Others (₦)</Label>
+                <Input 
+                  id="edit-othersAmount" 
+                  type="number" 
+                  step="0.01"
+                  value={formData.othersAmount}
+                  onChange={(e) => setFormData(f => ({ ...f, othersAmount: e.target.value }))}
+                  data-testid="input-edit-sales-others"
+                />
+              </div>
+              <Separator />
+              <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                <span className="font-medium">Calculated Total</span>
+                <span className="font-mono font-bold text-lg">₦ {formTotal.toLocaleString()}</span>
               </div>
             </div>
             <DialogFooter>
