@@ -108,6 +108,10 @@ export default function InventoryLedger() {
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [visibleDepts, setVisibleDepts] = useState<Set<string>>(new Set());
   
+  // Category configuration for SRD
+  const [categoryConfigOpen, setCategoryConfigOpen] = useState(false);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<string>>(new Set());
+  
   // Edit reason dialog for super admin editing past dates
   const [editReasonDialogOpen, setEditReasonDialogOpen] = useState(false);
   const [editReason, setEditReason] = useState<string>("");
@@ -204,6 +208,28 @@ export default function InventoryLedger() {
       return res.json();
     },
     enabled: !!selectedClientId,
+  });
+
+  // Fetch categories for the client
+  const { data: categories } = useQuery<{ id: string; name: string; status: string }[]>({
+    queryKey: ["categories", selectedClientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${selectedClientId}/categories`);
+      if (!res.ok) throw new Error("Failed to fetch categories");
+      return res.json();
+    },
+    enabled: !!selectedClientId,
+  });
+
+  // Fetch assigned categories for selected SRD
+  const { data: assignedCategories } = useQuery<{ id: string; inventoryDepartmentId: string; categoryId: string }[]>({
+    queryKey: ["inventory-dept-categories", selectedInvDept],
+    queryFn: async () => {
+      const res = await fetch(`/api/inventory-departments/${selectedInvDept}/categories`);
+      if (!res.ok) throw new Error("Failed to fetch assigned categories");
+      return res.json();
+    },
+    enabled: !!selectedInvDept,
   });
 
   // Fetch items for the client - filtered by inventory department's assigned categories
@@ -381,6 +407,38 @@ export default function InventoryLedger() {
       toast.error(error?.message || "Failed to recall stock");
     },
   });
+
+  // Save category assignments mutation
+  const saveCategoriesMutation = useMutation({
+    mutationFn: async (categoryIds: string[]) => {
+      const res = await fetch(`/api/inventory-departments/${selectedInvDept}/categories`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryIds }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to save categories");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inventory-dept-categories", selectedInvDept] });
+      queryClient.invalidateQueries({ queryKey: ["items", selectedClientId, selectedInvDept] });
+      setCategoryConfigOpen(false);
+      toast.success("Allowed categories saved successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to save categories");
+    },
+  });
+
+  // Load assigned categories when dialog opens
+  useEffect(() => {
+    if (categoryConfigOpen && assignedCategories) {
+      setSelectedCategoryIds(new Set(assignedCategories.map(ac => ac.categoryId)));
+    }
+  }, [categoryConfigOpen, assignedCategories]);
 
   // Save ledger edits mutation
   const saveLedgerMutation = useMutation({
@@ -914,6 +972,17 @@ export default function InventoryLedger() {
               <Button variant="outline" size="sm" onClick={() => setConfigDialogOpen(true)} data-testid="button-config-deps">
                 <Settings2 className="h-4 w-4 mr-2" />
                 Configure Columns
+              </Button>
+            )}
+            {selectedInvDept && (
+              <Button variant="outline" size="sm" onClick={() => setCategoryConfigOpen(true)} data-testid="button-config-categories">
+                <Package className="h-4 w-4 mr-2" />
+                Allowed Categories
+                {assignedCategories && assignedCategories.length > 0 && (
+                  <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs">
+                    {assignedCategories.length}
+                  </Badge>
+                )}
               </Button>
             )}
           </div>
@@ -1538,6 +1607,56 @@ export default function InventoryLedger() {
           <DialogFooter>
             <Button onClick={() => setConfigDialogOpen(false)} data-testid="button-close-config">
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Allowed Categories Dialog */}
+      <Dialog open={categoryConfigOpen} onOpenChange={setCategoryConfigOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Allowed Categories for SRD</DialogTitle>
+            <DialogDescription>
+              Select which inventory categories should display in this SRD. 
+              If none selected, all items will be shown.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4 max-h-[300px] overflow-y-auto">
+            {categories?.filter(c => c.status === "active").map(cat => (
+              <div key={cat.id} className="flex items-center gap-3">
+                <Checkbox 
+                  id={`cat-${cat.id}`}
+                  checked={selectedCategoryIds.has(cat.id)}
+                  onCheckedChange={(checked) => {
+                    const newSet = new Set(selectedCategoryIds);
+                    if (checked) {
+                      newSet.add(cat.id);
+                    } else {
+                      newSet.delete(cat.id);
+                    }
+                    setSelectedCategoryIds(newSet);
+                  }}
+                  data-testid={`checkbox-cat-${cat.id}`}
+                />
+                <Label htmlFor={`cat-${cat.id}`} className="cursor-pointer">
+                  {cat.name}
+                </Label>
+              </div>
+            ))}
+            {(!categories || categories.filter(c => c.status === "active").length === 0) && (
+              <p className="text-muted-foreground text-sm">No categories configured for this client. Add categories in the Inventory page first.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCategoryConfigOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={() => saveCategoriesMutation.mutate(Array.from(selectedCategoryIds))}
+              disabled={saveCategoriesMutation.isPending}
+              data-testid="button-save-categories"
+            >
+              {saveCategoriesMutation.isPending ? <Spinner className="mr-2" /> : null}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
