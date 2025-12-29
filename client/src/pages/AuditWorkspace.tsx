@@ -1242,6 +1242,18 @@ function StoreTab({ clientId, departments, items, dateStr }: {
   );
 }
 
+interface InventoryDeptStock {
+  id: string;
+  storeNameId: string;
+  inventoryType: string;
+  status: string;
+}
+
+interface StoreNameStock {
+  id: string;
+  name: string;
+}
+
 function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   stockMovements: StockMovement[];
   clientId: string | null;
@@ -1249,13 +1261,54 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   totalMovements: number;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [movementType, setMovementType] = useState("transfer");
+  const [fromLocation, setFromLocation] = useState("");
+  const [toLocation, setToLocation] = useState("");
+
+  // Fetch inventory departments (SRDs) for the client
+  const { data: invDepts = [] } = useQuery<InventoryDeptStock[]>({
+    queryKey: ["inventory-departments-stock", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments`);
+      if (!res.ok) throw new Error("Failed to fetch inventory departments");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+
+  // Fetch store names for display
+  const { data: storeNamesStock = [] } = useQuery<StoreNameStock[]>({
+    queryKey: ["store-names-stock", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/store-names`);
+      if (!res.ok) throw new Error("Failed to fetch store names");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+
+  const getSrdName = (deptId: string) => {
+    const dept = invDepts.find(d => d.id === deptId);
+    if (!dept) return "Unknown";
+    const storeName = storeNamesStock.find(sn => sn.id === dept.storeNameId);
+    return storeName?.name || "Unknown";
+  };
+
+  const needsToLocation = movementType === "transfer";
   const queryClient = useQueryClient();
+
+  const resetForm = () => {
+    setMovementType("transfer");
+    setFromLocation("");
+    setToLocation("");
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: any) => stockMovementsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
       setCreateOpen(false);
+      resetForm();
       toast.success("Stock movement recorded");
     },
     onError: (error: any) => toast.error(error.message || "Failed to create movement"),
@@ -1267,9 +1320,9 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
     createMutation.mutate({
       clientId,
       departmentId,
-      movementType: formData.get("movementType"),
-      sourceLocation: formData.get("sourceLocation"),
-      destinationLocation: formData.get("destinationLocation"),
+      movementType: movementType,
+      sourceLocation: fromLocation ? getSrdName(fromLocation) : formData.get("sourceLocation"),
+      destinationLocation: needsToLocation && toLocation ? getSrdName(toLocation) : null,
       itemsDescription: formData.get("itemsDescription"),
       totalValue: formData.get("totalValue"),
       authorizedBy: formData.get("authorizedBy"),
@@ -1336,18 +1389,18 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
         </div>
       </CardContent>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm(); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Record Stock Movement</DialogTitle>
-            <DialogDescription>Log transfers, adjustments, or write-offs</DialogDescription>
+            <DialogDescription>Log transfers, adjustments, write-offs, or waste</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="movementType">Movement Type</Label>
-                <Select name="movementType" defaultValue="transfer">
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select value={movementType} onValueChange={setMovementType}>
+                  <SelectTrigger data-testid="select-movement-type"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="transfer">Transfer</SelectItem>
                     <SelectItem value="adjustment">Adjustment</SelectItem>
@@ -1356,34 +1409,54 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className={needsToLocation ? "grid grid-cols-2 gap-4" : ""}>
                 <div className="space-y-2">
-                  <Label htmlFor="sourceLocation">From Location</Label>
-                  <Input id="sourceLocation" name="sourceLocation" placeholder="e.g., Main Store" />
+                  <Label htmlFor="sourceLocation">From Location (SRD)</Label>
+                  <Select value={fromLocation} onValueChange={setFromLocation}>
+                    <SelectTrigger data-testid="select-from-location"><SelectValue placeholder="Select SRD" /></SelectTrigger>
+                    <SelectContent>
+                      {invDepts.filter(d => d.status === "active").map(dept => (
+                        <SelectItem key={dept.id} value={dept.id}>
+                          {getSrdName(dept.id)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="destinationLocation">To Location</Label>
-                  <Input id="destinationLocation" name="destinationLocation" placeholder="e.g., Bar" />
-                </div>
+                {needsToLocation && (
+                  <div className="space-y-2">
+                    <Label htmlFor="destinationLocation">To Location (SRD)</Label>
+                    <Select value={toLocation} onValueChange={setToLocation}>
+                      <SelectTrigger data-testid="select-to-location"><SelectValue placeholder="Select SRD" /></SelectTrigger>
+                      <SelectContent>
+                        {invDepts.filter(d => d.status === "active" && d.id !== fromLocation).map(dept => (
+                          <SelectItem key={dept.id} value={dept.id}>
+                            {getSrdName(dept.id)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="itemsDescription">Items Description</Label>
-                <Textarea id="itemsDescription" name="itemsDescription" placeholder="List of items moved" required />
+                <Textarea id="itemsDescription" name="itemsDescription" placeholder="List of items moved" required data-testid="input-items-description" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="totalValue">Total Value (₦)</Label>
-                  <Input id="totalValue" name="totalValue" type="number" step="0.01" placeholder="0.00" />
+                  <Input id="totalValue" name="totalValue" type="number" step="0.01" placeholder="0.00" data-testid="input-total-value" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="authorizedBy">Authorized By</Label>
-                  <Input id="authorizedBy" name="authorizedBy" placeholder="Manager name" />
+                  <Input id="authorizedBy" name="authorizedBy" placeholder="Manager name" data-testid="input-authorized-by" />
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={createMutation.isPending}>
+              <Button type="button" variant="outline" onClick={() => { setCreateOpen(false); resetForm(); }}>Cancel</Button>
+              <Button type="submit" disabled={createMutation.isPending || !fromLocation || (needsToLocation && !toLocation)} data-testid="button-save-movement">
                 {createMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
                 Save Movement
               </Button>
