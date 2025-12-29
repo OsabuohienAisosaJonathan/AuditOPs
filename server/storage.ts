@@ -1326,19 +1326,49 @@ export class DbStorage implements IStorage {
       );
       const totalDeclared = parseFloat(declaredResult?.totalReported || "0");
 
-      const stockCountsResult = await db.select({
-        soldQty: stockCounts.soldQty,
-        sellingPriceSnapshot: stockCounts.sellingPriceSnapshot
-      }).from(stockCounts).where(
+      // Get auditTotal from SRD Department Store ledger
+      // Find the inventory department linked to this department with DEPARTMENT_STORE type
+      const [invDept] = await db.select().from(inventoryDepartments).where(
         and(
-          eq(stockCounts.departmentId, dept.id),
-          gte(stockCounts.date, startOfDay),
-          lte(stockCounts.date, endOfDay)
+          eq(inventoryDepartments.clientId, clientId),
+          eq(inventoryDepartments.inventoryType, "DEPARTMENT_STORE"),
+          eq(inventoryDepartments.departmentId, dept.id)
         )
       );
-      const auditTotal = stockCountsResult.reduce((sum, sc) => {
-        return sum + (parseFloat(sc.soldQty || "0") * parseFloat(sc.sellingPriceSnapshot || "0"));
-      }, 0);
+
+      let auditTotal = 0;
+      if (invDept) {
+        // Get store stock records for this inventory department on the selected date
+        const storeStockRecords = await db.select({
+          openingQty: storeStock.openingQty,
+          addedQty: storeStock.addedQty,
+          physicalClosingQty: storeStock.physicalClosingQty,
+          itemId: storeStock.itemId
+        }).from(storeStock).where(
+          and(
+            eq(storeStock.storeDepartmentId, invDept.id),
+            gte(storeStock.date, startOfDay),
+            lte(storeStock.date, endOfDay)
+          )
+        );
+
+        // Calculate Amount Sold = (Opening + Added - Closing) × Selling Price for each item
+        for (const record of storeStockRecords) {
+          if (record.physicalClosingQty !== null) {
+            const opening = parseFloat(record.openingQty || "0");
+            const added = parseFloat(record.addedQty || "0");
+            const closing = parseFloat(record.physicalClosingQty || "0");
+            const sold = (opening + added) - closing;
+            
+            // Get the item's selling price
+            const [item] = await db.select({ sellingPrice: items.sellingPrice })
+              .from(items).where(eq(items.id, record.itemId));
+            const sellingPrice = parseFloat(item?.sellingPrice || "0");
+            
+            auditTotal += sold * sellingPrice;
+          }
+        }
+      }
 
       const variance1stHit = totalDeclared - totalCaptured;
       const variance2ndHit = auditTotal - totalCaptured;
