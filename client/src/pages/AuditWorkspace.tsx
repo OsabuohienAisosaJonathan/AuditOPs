@@ -1245,6 +1245,7 @@ function StoreTab({ clientId, departments, items, dateStr }: {
 interface InventoryDeptStock {
   id: string;
   storeNameId: string;
+  departmentId: string;
   inventoryType: string;
   status: string;
 }
@@ -1317,11 +1318,21 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    
+    // Get the department ID from the selected inventory department
+    const selectedInvDept = invDepts.find(d => d.id === fromLocation);
+    const deptIdToUse = selectedInvDept?.departmentId || departmentId;
+    
+    if (!deptIdToUse) {
+      toast.error("Please select a From Location");
+      return;
+    }
+    
     createMutation.mutate({
       clientId,
-      departmentId,
+      departmentId: deptIdToUse,
       movementType: movementType,
-      sourceLocation: fromLocation ? getSrdName(fromLocation) : formData.get("sourceLocation"),
+      sourceLocation: fromLocation ? getSrdName(fromLocation) : null,
       destinationLocation: needsToLocation && toLocation ? getSrdName(toLocation) : null,
       itemsDescription: formData.get("itemsDescription"),
       totalValue: formData.get("totalValue"),
