@@ -1009,14 +1009,32 @@ function StoreTab({ clientId, departments, items, dateStr }: {
   items: Item[];
   dateStr: string;
 }) {
-  const [issueDialogOpen, setIssueDialogOpen] = useState(false);
-  const [selectedFromDept, setSelectedFromDept] = useState<string>("");
-  const [selectedToDept, setSelectedToDept] = useState<string>("");
-  const [issueLines, setIssueLines] = useState<{ itemId: string; qtyIssued: string; costPriceSnapshot: string }[]>([]);
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState("");
   const queryClient = useQueryClient();
 
-  const storeDepartments = departments.filter(d => d.name.toLowerCase().includes("store") || d.name.toLowerCase().includes("main"));
-  const otherDepartments = departments.filter(d => !d.name.toLowerCase().includes("store") || d.name.toLowerCase() !== "main");
+  // Fetch inventory departments (SRDs) for proper From/To names
+  const { data: inventoryDepts = [] } = useQuery<InventoryDept[]>({
+    queryKey: ["inventory-departments", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments`);
+      if (!res.ok) throw new Error("Failed to fetch inventory departments");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+
+  // Fetch store names for display
+  const { data: storeNames = [] } = useQuery<StoreName[]>({
+    queryKey: ["store-names", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/store-names`);
+      if (!res.ok) throw new Error("Failed to fetch store names");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
 
   const { data: storeIssues = [] } = useQuery({
     queryKey: ["store-issues", clientId, dateStr],
@@ -1024,71 +1042,75 @@ function StoreTab({ clientId, departments, items, dateStr }: {
     enabled: !!clientId,
   });
 
-  const createIssueMutation = useMutation({
-    mutationFn: (data: any) => storeIssuesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-issues"] });
-      setIssueDialogOpen(false);
-      setIssueLines([]);
-      setSelectedFromDept("");
-      setSelectedToDept("");
-      toast.success("Store issue created successfully");
+  // Fetch store issue lines for all issues
+  const { data: storeIssueLines = [] } = useQuery<StoreIssueLine[]>({
+    queryKey: ["store-issue-lines", clientId, dateStr],
+    queryFn: async () => {
+      if (!clientId || storeIssues.length === 0) return [];
+      const allLines: StoreIssueLine[] = [];
+      for (const issue of storeIssues) {
+        const res = await fetch(`/api/store-issues/${issue.id}/lines`);
+        if (res.ok) {
+          const lines = await res.json();
+          allLines.push(...lines);
+        }
+      }
+      return allLines;
     },
-    onError: (error: any) => toast.error(error.message || "Failed to create store issue"),
+    enabled: !!clientId && storeIssues.length > 0,
   });
 
-  const handleAddLine = () => {
-    setIssueLines([...issueLines, { itemId: "", qtyIssued: "", costPriceSnapshot: "0" }]);
+  // Mutation for updating notes
+  const updateNotesMutation = useMutation({
+    mutationFn: async ({ issueId, notes }: { issueId: string; notes: string }) => {
+      const res = await fetch(`/api/store-issues/${issueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (!res.ok) throw new Error("Failed to update notes");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-issues"] });
+      setNoteDialogOpen(false);
+      setSelectedIssueId(null);
+      setNoteText("");
+      toast.success("Notes saved successfully");
+    },
+    onError: (error: any) => toast.error(error.message || "Failed to save notes"),
+  });
+
+  // Helper to get SRD name
+  const getSrdName = (id: string) => {
+    const srd = inventoryDepts.find(d => d.id === id);
+    if (!srd) return "Unknown";
+    const storeName = storeNames.find(sn => sn.id === srd.storeNameId);
+    return storeName?.name || "Unknown";
   };
 
-  const handleRemoveLine = (index: number) => {
-    setIssueLines(issueLines.filter((_, i) => i !== index));
-  };
-
-  const handleLineChange = (index: number, field: string, value: string) => {
-    const updatedLines = [...issueLines];
-    updatedLines[index] = { ...updatedLines[index], [field]: value };
-    if (field === "itemId") {
-      const item = items.find(i => i.id === value);
-      if (item) {
-        updatedLines[index].costPriceSnapshot = item.costPrice;
-      }
-    }
-    setIssueLines(updatedLines);
-  };
-
-  const handleSubmitIssue = () => {
-    if (!clientId || !selectedFromDept || !selectedToDept || issueLines.length === 0) {
-      toast.error("Please fill all required fields and add at least one item");
-      return;
-    }
-
-    createIssueMutation.mutate({
-      clientId,
-      issueDate: dateStr,
-      fromDepartmentId: selectedFromDept,
-      toDepartmentId: selectedToDept,
-      status: "posted",
-      lines: issueLines.filter(l => l.itemId && l.qtyIssued),
-    });
-  };
-
-  const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || "Unknown";
   const getItemName = (id: string) => items.find(i => i.id === id)?.name || "Unknown";
 
-  const totalIssuedValue = storeIssues.reduce((sum, _issue) => sum, 0);
+  // Get lines for a specific issue
+  const getLinesForIssue = (issueId: string) => storeIssueLines.filter(l => l.storeIssueId === issueId);
+
+  const handleOpenNoteDialog = (issueId: string, currentNotes: string | null) => {
+    setSelectedIssueId(issueId);
+    setNoteText(currentNotes || "");
+    setNoteDialogOpen(true);
+  };
+
+  const handleSaveNote = () => {
+    if (!selectedIssueId) return;
+    updateNotesMutation.mutate({ issueId: selectedIssueId, notes: noteText });
+  };
 
   return (
     <Card className="border-none shadow-none">
       <CardHeader className="px-0 pt-0 pb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Store Issues</CardTitle>
-            <CardDescription>Issue items from store to departments</CardDescription>
-          </div>
-          <Button onClick={() => setIssueDialogOpen(true)} className="gap-2" disabled={!clientId} data-testid="button-issue-to-dept">
-            <ArrowUpRight className="h-4 w-4" /> Issue to Department
-          </Button>
+        <div>
+          <CardTitle>Store Issues</CardTitle>
+          <CardDescription>View items issued from Main Store to Department Stores</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="px-0">
@@ -1099,6 +1121,8 @@ function StoreTab({ clientId, departments, items, dateStr }: {
                 <TableHead>Date</TableHead>
                 <TableHead>From</TableHead>
                 <TableHead>To</TableHead>
+                <TableHead>Item</TableHead>
+                <TableHead className="text-right">Quantity</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Notes</TableHead>
               </TableRow>
@@ -1106,24 +1130,74 @@ function StoreTab({ clientId, departments, items, dateStr }: {
             <TableBody>
               {storeIssues.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    No store issues recorded today. Click "Issue to Department" to create one.
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    No store issues recorded today. Issues are made from the Main Store SRD in Inventory Ledger.
                   </TableCell>
                 </TableRow>
               ) : (
-                storeIssues.map((issue) => (
-                  <TableRow key={issue.id} data-testid={`row-store-issue-${issue.id}`}>
-                    <TableCell>{format(new Date(issue.issueDate), "MMM d, yyyy")}</TableCell>
-                    <TableCell className="font-medium">{getDepartmentName(issue.fromDepartmentId)}</TableCell>
-                    <TableCell className="font-medium">{getDepartmentName(issue.toDepartmentId)}</TableCell>
-                    <TableCell>
-                      <Badge variant={issue.status === "posted" ? "default" : "secondary"}>
-                        {issue.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{issue.notes || "-"}</TableCell>
-                  </TableRow>
-                ))
+                storeIssues.flatMap((issue) => {
+                  const lines = getLinesForIssue(issue.id);
+                  if (lines.length === 0) {
+                    return (
+                      <TableRow key={issue.id} data-testid={`row-store-issue-${issue.id}`}>
+                        <TableCell>{format(new Date(issue.issueDate), "MMM d, yyyy")}</TableCell>
+                        <TableCell className="font-medium">{getSrdName(issue.fromDepartmentId)}</TableCell>
+                        <TableCell className="font-medium">{getSrdName(issue.toDepartmentId)}</TableCell>
+                        <TableCell className="text-muted-foreground">-</TableCell>
+                        <TableCell className="text-right text-muted-foreground">-</TableCell>
+                        <TableCell>
+                          <Badge variant={issue.status === "posted" ? "default" : "secondary"}>
+                            {issue.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleOpenNoteDialog(issue.id, issue.notes)}
+                            className="text-xs"
+                            data-testid={`button-note-${issue.id}`}
+                          >
+                            {issue.notes ? <span className="truncate max-w-[100px]">{issue.notes}</span> : <span className="text-muted-foreground">Add note</span>}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  return lines.map((line, idx) => (
+                    <TableRow key={`${issue.id}-${line.id}`} data-testid={`row-store-issue-line-${line.id}`}>
+                      {idx === 0 ? (
+                        <>
+                          <TableCell rowSpan={lines.length}>{format(new Date(issue.issueDate), "MMM d, yyyy")}</TableCell>
+                          <TableCell rowSpan={lines.length} className="font-medium">{getSrdName(issue.fromDepartmentId)}</TableCell>
+                          <TableCell rowSpan={lines.length} className="font-medium">{getSrdName(issue.toDepartmentId)}</TableCell>
+                        </>
+                      ) : null}
+                      <TableCell>{getItemName(line.itemId)}</TableCell>
+                      <TableCell className="text-right font-mono">{Number(line.qtyIssued).toFixed(2)}</TableCell>
+                      {idx === 0 ? (
+                        <>
+                          <TableCell rowSpan={lines.length}>
+                            <Badge variant={issue.status === "posted" ? "default" : "secondary"}>
+                              {issue.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell rowSpan={lines.length}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => handleOpenNoteDialog(issue.id, issue.notes)}
+                              className="text-xs"
+                              data-testid={`button-note-${issue.id}`}
+                            >
+                              {issue.notes ? <span className="truncate max-w-[100px]">{issue.notes}</span> : <span className="text-muted-foreground">Add note</span>}
+                            </Button>
+                          </TableCell>
+                        </>
+                      ) : null}
+                    </TableRow>
+                  ));
+                })
               )}
             </TableBody>
           </Table>
@@ -1137,115 +1211,33 @@ function StoreTab({ clientId, departments, items, dateStr }: {
         </div>
       </CardContent>
 
-      <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>
-        <DialogContent className="max-w-2xl">
+      {/* Notes Dialog */}
+      <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Issue Items to Department</DialogTitle>
-            <DialogDescription>Select store and destination department, then add items to issue</DialogDescription>
+            <DialogTitle>Issue Notes</DialogTitle>
+            <DialogDescription>Add or edit notes for this store issue</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>From Department (Store)</Label>
-                <Select value={selectedFromDept} onValueChange={setSelectedFromDept}>
-                  <SelectTrigger data-testid="select-from-dept">
-                    <SelectValue placeholder="Select store" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>To Department</Label>
-                <Select value={selectedToDept} onValueChange={setSelectedToDept}>
-                  <SelectTrigger data-testid="select-to-dept">
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.filter(d => d.id !== selectedFromDept).map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Items to Issue</Label>
-                <Button type="button" variant="outline" size="sm" onClick={handleAddLine}>
-                  <Plus className="h-4 w-4 mr-1" /> Add Item
-                </Button>
-              </div>
-              
-              {issueLines.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
-                  Click "Add Item" to add items to issue
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead className="w-32">Quantity</TableHead>
-                      <TableHead className="w-32">Unit Cost</TableHead>
-                      <TableHead className="w-16"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {issueLines.map((line, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          <Select value={line.itemId} onValueChange={(v) => handleLineChange(index, "itemId", v)}>
-                            <SelectTrigger data-testid={`select-item-${index}`}>
-                              <SelectValue placeholder="Select item" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {items.map((item) => (
-                                <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input 
-                            type="number" 
-                            step="0.01" 
-                            value={line.qtyIssued} 
-                            onChange={(e) => handleLineChange(index, "qtyIssued", e.target.value)}
-                            placeholder="0"
-                            data-testid={`input-qty-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell className="font-mono text-muted-foreground">
-                          ₦ {Number(line.costPriceSnapshot || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="sm" onClick={() => handleRemoveLine(index)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
+          <div className="py-4">
+            <Label htmlFor="issueNote">Note</Label>
+            <Textarea
+              id="issueNote"
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Enter any notes about this issue..."
+              rows={4}
+              data-testid="textarea-issue-note"
+            />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIssueDialogOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setNoteDialogOpen(false)}>Cancel</Button>
             <Button 
-              onClick={handleSubmitIssue} 
-              disabled={createIssueMutation.isPending || !selectedFromDept || !selectedToDept || issueLines.length === 0}
-              data-testid="button-submit-issue"
+              onClick={handleSaveNote}
+              disabled={updateNotesMutation.isPending}
+              data-testid="button-save-note"
             >
-              {createIssueMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
-              Post Issue
+              {updateNotesMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
+              Save Note
             </Button>
           </DialogFooter>
         </DialogContent>
