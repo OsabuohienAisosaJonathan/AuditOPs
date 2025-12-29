@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory,
+  receivables, receivableHistory, surpluses, surplusHistory, departmentInventoryLinks,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -25,6 +25,7 @@ import {
   type StoreStock, type InsertStoreStock,
   type StoreName, type InsertStoreName,
   type InventoryDepartment, type InsertInventoryDepartment,
+  type DepartmentInventoryLink, type InsertDepartmentInventoryLink,
   type GoodsReceivedNote, type InsertGoodsReceivedNote,
   type Receivable, type InsertReceivable,
   type ReceivableHistory, type InsertReceivableHistory,
@@ -272,6 +273,15 @@ export interface IStorage {
   updateInventoryDepartment(id: string, dept: Partial<InsertInventoryDepartment>): Promise<InventoryDepartment | undefined>;
   deleteInventoryDepartment(id: string): Promise<boolean>;
   addPurchaseToStoreStock(clientId: string, storeDepartmentId: string, itemId: string, quantity: number, costPrice: string, date: Date): Promise<StoreStock>;
+
+  // Department Inventory Links
+  getDepartmentInventoryLinks(clientId: string): Promise<DepartmentInventoryLink[]>;
+  getDepartmentInventoryLink(id: string): Promise<DepartmentInventoryLink | undefined>;
+  getDepartmentInventoryLinkByClientDepartment(clientId: string, clientDepartmentId: string): Promise<DepartmentInventoryLink | undefined>;
+  getDepartmentInventoryLinkByInventoryDepartment(clientId: string, inventoryDepartmentId: string): Promise<DepartmentInventoryLink | undefined>;
+  createDepartmentInventoryLink(link: InsertDepartmentInventoryLink): Promise<DepartmentInventoryLink>;
+  updateDepartmentInventoryLink(id: string, link: Partial<InsertDepartmentInventoryLink>): Promise<DepartmentInventoryLink | undefined>;
+  deleteDepartmentInventoryLink(id: string): Promise<boolean>;
 
   // Goods Received Notes (GRN)
   getGoodsReceivedNotes(clientId: string, date?: Date): Promise<GoodsReceivedNote[]>;
@@ -1936,6 +1946,58 @@ export class DbStorage implements IStorage {
       varianceQty: null,
       costPriceSnapshot: costPrice
     });
+  }
+
+  // Department Inventory Links
+  async getDepartmentInventoryLinks(clientId: string): Promise<DepartmentInventoryLink[]> {
+    return db.select().from(departmentInventoryLinks)
+      .where(eq(departmentInventoryLinks.clientId, clientId))
+      .orderBy(desc(departmentInventoryLinks.createdAt));
+  }
+
+  async getDepartmentInventoryLink(id: string): Promise<DepartmentInventoryLink | undefined> {
+    const [link] = await db.select().from(departmentInventoryLinks)
+      .where(eq(departmentInventoryLinks.id, id));
+    return link;
+  }
+
+  async getDepartmentInventoryLinkByClientDepartment(clientId: string, clientDepartmentId: string): Promise<DepartmentInventoryLink | undefined> {
+    const [link] = await db.select().from(departmentInventoryLinks)
+      .where(and(
+        eq(departmentInventoryLinks.clientId, clientId),
+        eq(departmentInventoryLinks.clientDepartmentId, clientDepartmentId),
+        eq(departmentInventoryLinks.status, "active")
+      ));
+    return link;
+  }
+
+  async getDepartmentInventoryLinkByInventoryDepartment(clientId: string, inventoryDepartmentId: string): Promise<DepartmentInventoryLink | undefined> {
+    const [link] = await db.select().from(departmentInventoryLinks)
+      .where(and(
+        eq(departmentInventoryLinks.clientId, clientId),
+        eq(departmentInventoryLinks.inventoryDepartmentId, inventoryDepartmentId),
+        eq(departmentInventoryLinks.status, "active")
+      ));
+    return link;
+  }
+
+  async createDepartmentInventoryLink(link: InsertDepartmentInventoryLink): Promise<DepartmentInventoryLink> {
+    const [newLink] = await db.insert(departmentInventoryLinks).values(link).returning();
+    return newLink;
+  }
+
+  async updateDepartmentInventoryLink(id: string, link: Partial<InsertDepartmentInventoryLink>): Promise<DepartmentInventoryLink | undefined> {
+    const [updated] = await db.update(departmentInventoryLinks)
+      .set({ ...link, updatedAt: new Date() })
+      .where(eq(departmentInventoryLinks.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDepartmentInventoryLink(id: string): Promise<boolean> {
+    const result = await db.delete(departmentInventoryLinks)
+      .where(eq(departmentInventoryLinks.id, id));
+    return true;
   }
 
   // Goods Received Notes (GRN)

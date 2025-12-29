@@ -461,6 +461,25 @@ export const inventoryDepartments = pgTable("inventory_departments", {
 });
 
 // ============================================================
+// DEPARTMENT INVENTORY LINKS (Links Client Departments to SRD Inventory Departments)
+// ============================================================
+
+export const LINK_STATUSES = ["active", "inactive"] as const;
+export type LinkStatus = typeof LINK_STATUSES[number];
+
+export const departmentInventoryLinks = pgTable("department_inventory_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  clientDepartmentId: varchar("client_department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  inventoryDepartmentId: varchar("inventory_department_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  inventoryType: text("inventory_type").notNull(),
+  status: text("status").notNull().default("active"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================
 // RECEIVABLES REGISTER (Cash Shortages from Department Comparison)
 // ============================================================
 
@@ -535,6 +554,7 @@ export const insertReceivableHistorySchema = createInsertSchema(receivableHistor
 export const insertSurplusSchema = createInsertSchema(surpluses).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSurplusHistorySchema = createInsertSchema(surplusHistory).omit({ id: true, createdAt: true });
 export const insertInventoryDepartmentSchema = createInsertSchema(inventoryDepartments).omit({ id: true, createdAt: true });
+export const insertDepartmentInventoryLinkSchema = createInsertSchema(departmentInventoryLinks).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true, createdAt: true });
@@ -619,6 +639,8 @@ export type InsertStoreName = z.infer<typeof insertStoreNameSchema>;
 export type StoreName = typeof storeNames.$inferSelect;
 export type InsertInventoryDepartment = z.infer<typeof insertInventoryDepartmentSchema>;
 export type InventoryDepartment = typeof inventoryDepartments.$inferSelect;
+export type InsertDepartmentInventoryLink = z.infer<typeof insertDepartmentInventoryLinkSchema>;
+export type DepartmentInventoryLink = typeof departmentInventoryLinks.$inferSelect;
 export type InsertGoodsReceivedNote = z.infer<typeof insertGoodsReceivedNoteSchema>;
 export type GoodsReceivedNote = typeof goodsReceivedNotes.$inferSelect;
 export type InsertReceivable = z.infer<typeof insertReceivableSchema>;
