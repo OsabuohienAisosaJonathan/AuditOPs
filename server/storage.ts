@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory,
+  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -31,7 +31,8 @@ import {
   type Receivable, type InsertReceivable,
   type ReceivableHistory, type InsertReceivableHistory,
   type Surplus, type InsertSurplus,
-  type SurplusHistory, type InsertSurplusHistory
+  type SurplusHistory, type InsertSurplusHistory,
+  type SrdTransfer, type InsertSrdTransfer
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -308,6 +309,14 @@ export interface IStorage {
   updateSurplus(id: string, surplus: Partial<InsertSurplus>): Promise<Surplus | undefined>;
   getSurplusHistory(surplusId: string): Promise<SurplusHistory[]>;
   createSurplusHistory(history: InsertSurplusHistory): Promise<SurplusHistory>;
+
+  // SRD Transfers (unified transfer engine)
+  getSrdTransfers(clientId: string, date?: Date): Promise<SrdTransfer[]>;
+  getSrdTransfersByRefId(refId: string): Promise<SrdTransfer[]>;
+  getSrdTransfersBySrd(srdId: string, date?: Date): Promise<SrdTransfer[]>;
+  createSrdTransfer(transfer: InsertSrdTransfer): Promise<SrdTransfer>;
+  recallSrdTransfer(refId: string): Promise<boolean>;
+  generateTransferRefId(clientId: string, date: Date): Promise<string>;
 }
 
 export class DbStorage implements IStorage {
@@ -2209,6 +2218,84 @@ export class DbStorage implements IStorage {
   async createSurplusHistory(insertHistory: InsertSurplusHistory): Promise<SurplusHistory> {
     const [history] = await db.insert(surplusHistory).values(insertHistory).returning();
     return history;
+  }
+
+  // SRD Transfers (unified transfer engine)
+  async getSrdTransfers(clientId: string, date?: Date): Promise<SrdTransfer[]> {
+    const conditions = [eq(srdTransfers.clientId, clientId)];
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(gte(srdTransfers.transferDate, start));
+      conditions.push(lte(srdTransfers.transferDate, end));
+    }
+    return db.select().from(srdTransfers)
+      .where(and(...conditions))
+      .orderBy(desc(srdTransfers.createdAt));
+  }
+
+  async getSrdTransfersByRefId(refId: string): Promise<SrdTransfer[]> {
+    return db.select().from(srdTransfers)
+      .where(eq(srdTransfers.refId, refId))
+      .orderBy(desc(srdTransfers.createdAt));
+  }
+
+  async getSrdTransfersBySrd(srdId: string, date?: Date): Promise<SrdTransfer[]> {
+    const srdCondition = or(
+      eq(srdTransfers.fromSrdId, srdId),
+      eq(srdTransfers.toSrdId, srdId)
+    );
+    
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      return db.select().from(srdTransfers)
+        .where(and(
+          srdCondition,
+          gte(srdTransfers.transferDate, start),
+          lte(srdTransfers.transferDate, end)
+        ))
+        .orderBy(desc(srdTransfers.createdAt));
+    }
+    
+    return db.select().from(srdTransfers)
+      .where(srdCondition)
+      .orderBy(desc(srdTransfers.createdAt));
+  }
+
+  async createSrdTransfer(transfer: InsertSrdTransfer): Promise<SrdTransfer> {
+    const [created] = await db.insert(srdTransfers).values(transfer).returning();
+    return created;
+  }
+
+  async recallSrdTransfer(refId: string): Promise<boolean> {
+    const result = await db.update(srdTransfers)
+      .set({ status: "recalled" })
+      .where(eq(srdTransfers.refId, refId))
+      .returning();
+    return result.length > 0;
+  }
+
+  async generateTransferRefId(clientId: string, date: Date): Promise<string> {
+    const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+    
+    const [result] = await db.select({ count: count() }).from(srdTransfers)
+      .where(and(
+        eq(srdTransfers.clientId, clientId),
+        gte(srdTransfers.transferDate, start),
+        lte(srdTransfers.transferDate, end)
+      ));
+    
+    const sequence = (result?.count || 0) + 1;
+    return `TRF-${dateStr}-${sequence.toString().padStart(3, '0')}`;
   }
 }
 
