@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store } from "lucide-react";
+import { CheckCircle2, Circle, Clock, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -273,14 +273,6 @@ export default function AuditWorkspace() {
                     </div>
                   </div>
                 ))}
-              </div>
-              
-              <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border">
-                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Evidence Locker</h4>
-                <div className="text-sm text-muted-foreground italic text-center py-4 border-2 border-dashed border-border rounded">
-                  <Upload className="h-5 w-5 mx-auto mb-1" />
-                  Drag & drop supporting docs
-                </div>
               </div>
             </CardContent>
           </Card>
