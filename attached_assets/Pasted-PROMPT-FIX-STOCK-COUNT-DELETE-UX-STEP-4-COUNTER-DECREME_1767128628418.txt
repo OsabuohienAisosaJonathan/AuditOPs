@@ -1,0 +1,100 @@
+PROMPT: FIX STOCK COUNT DELETE UX + STEP 4 COUNTER DECREMENT + FULL REVERSALS
+A) REPLACE UGLY BROWSER CONFIRM WITH A PROPER DELETE MODAL
+
+Remove any use of window.confirm() / browser-native confirm dialogs for deleting stock counts.
+
+Use the app’s standard UI modal (e.g., ShadCN AlertDialog / custom modal) so it matches the dashboard theme.
+
+Modal copy + layout:
+
+Title: “Delete Stock Count?”
+
+Message: “This will remove the recorded count for {ITEM_NAME} and return it to ‘Waiting Count’. Any calculated variance/sold impact from this count will be reversed.”
+
+Show a small summary line inside modal:
+
+Expected: {expectedQty} | Actual: {actualQty} | Variance: {varianceQty}
+
+Buttons:
+
+Cancel (secondary)
+
+Delete Count (destructive/red)
+
+After delete: show toast/snackbar: “Count deleted. Item returned to Waiting Count.”
+
+B) STEP 4 COUNTER MUST DECREASE WHEN A COUNT IS DELETED
+
+Right now Step 4 shows (X/Y) but X does not reduce after deleting a count.
+
+Fix rule:
+
+Step 4 “Counted X” must be derived from the current database counts for that date + SRD (or updated state that mirrors DB), not from a stale cached value.
+
+After successful delete:
+
+decrement X immediately in UI (optimistic update), OR refetch counts summary from backend and re-render.
+
+Ensure Step 4 status updates correctly:
+
+If waitingCountItems > 0 → Step 4 stays In Progress
+
+Only when waitingCountItems == 0 → Step 4 becomes Completed
+
+C) DELETING A COUNT MUST FULLY REVERSE SOLD / CLOSING AND RETURN ITEM TO “WAITING COUNT”
+
+Right now when a count is deleted:
+
+The item is removed, but Sold column and Closing/Expected computations don’t revert,
+
+The item does not properly return to “Waiting Count”.
+
+Correct behaviour on delete:
+
+Delete the physical count record for that item (date + SRD + itemId).
+
+Reverse any values that were produced/derived from that count, including:
+
+Actual → set to null/empty
+
+Variance → reset to 0/blank
+
+Status → set to Waiting Count
+
+Sold column → must revert to the pre-count state (remove any “count-derived sold”)
+
+Recompute the row numbers using the normal formula without the deleted count:
+
+Expected = Opening + Added - Sold (movement-based)
+
+With no count, Actual stays empty and no variance adjustment should remain.
+
+Ensure the item reappears in the Stock Count list as Waiting Count (so the user must count it again).
+
+The “Total Variance” footer must also recalc after delete.
+
+Backend safety requirement:
+
+Do the delete + reversals as a single transaction so partial updates can’t occur.
+
+Return updated payload after delete:
+
+updated row values
+
+updated Step 4 summary (counted, total, waiting)
+
+updated totals (total variance)
+
+D) QUICK TESTS (MUST PASS)
+
+Create a count for “PINEAPPLE JUICE” → Step 4 shows 2/6.
+
+Click delete “X” → shows the new themed modal (not browser confirm).
+
+Confirm delete → Step 4 becomes 1/6 immediately.
+
+The deleted item returns to the table as Waiting Count and:
+
+Sold/variance effects from that count are gone,
+
+Closing/Expected values reflect the pre-count state.

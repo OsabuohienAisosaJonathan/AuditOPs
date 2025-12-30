@@ -2172,6 +2172,27 @@ export async function registerRoutes(
 
   app.delete("/api/stock-counts/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
+      // Get the stock count before deleting to reverse store_stock
+      const stockCount = await storage.getStockCount(req.params.id);
+      if (!stockCount) {
+        return res.status(404).json({ error: "Stock count not found" });
+      }
+      
+      // Find and reverse associated storeStock record
+      // We need to find all DEPARTMENT_STORE SRDs for this client and check each for matching storeStock
+      const invDepts = await storage.getInventoryDepartments(stockCount.clientId);
+      const deptStoreSrds = invDepts.filter((d: any) => d.inventoryType === "DEPARTMENT_STORE");
+      
+      for (const srd of deptStoreSrds) {
+        const storeStockRecord = await storage.getStoreStockByItem(srd.id, stockCount.itemId, stockCount.date);
+        if (storeStockRecord && storeStockRecord.physicalClosingQty !== null) {
+          // Clear the physical closing qty to return item to "Waiting Count"
+          await storage.updateStoreStock(storeStockRecord.id, {
+            physicalClosingQty: null,
+          });
+        }
+      }
+      
       await storage.deleteStockCount(req.params.id);
       
       await storage.createAuditLog({
@@ -2179,7 +2200,7 @@ export async function registerRoutes(
         action: "Deleted Stock Count",
         entity: "StockCount",
         entityId: req.params.id,
-        details: `Stock count deleted`,
+        details: `Stock count deleted and SRD ledger reversed`,
         ipAddress: req.ip || "Unknown",
       });
 
@@ -2812,6 +2833,35 @@ export async function registerRoutes(
       }
       
       res.json(stock);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Bulk store-stock endpoint for fetching multiple SRDs in one call
+  app.get("/api/clients/:clientId/store-stock/bulk", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { departmentIds, date } = req.query;
+      
+      if (!departmentIds) {
+        return res.status(400).json({ error: "departmentIds is required" });
+      }
+      
+      const deptIdList = (departmentIds as string).split(",").filter(Boolean);
+      if (deptIdList.length === 0) {
+        return res.json([]);
+      }
+      
+      const dateFilter = date ? new Date(date as string) : undefined;
+      const allStock: any[] = [];
+      
+      for (const deptId of deptIdList) {
+        const stock = await storage.getStoreStock(clientId, deptId, dateFilter);
+        allStock.push(...stock);
+      }
+      
+      res.json(allStock);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

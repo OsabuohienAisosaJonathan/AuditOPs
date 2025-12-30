@@ -169,20 +169,15 @@ export default function AuditWorkspace() {
     enabled: !!clientId && departmentStoreSrds.length > 0,
   });
 
-  // Fetch store stock data for all DEPARTMENT_STORE SRDs for the selected date
-  const { data: allSrdStoreStock = [] } = useQuery<StoreStock[]>({
+  // Fetch store stock data for all DEPARTMENT_STORE SRDs for the selected date (bulk endpoint)
+  const { data: allSrdStoreStock = [], refetch: refetchAllSrdStoreStock } = useQuery<StoreStock[]>({
     queryKey: ["store-stock-all-srds", clientId, dateStr, departmentStoreSrds.map(s => s.id).join(",")],
     queryFn: async () => {
-      // Fetch store stock for each SRD and combine results
-      const allStock: StoreStock[] = [];
-      for (const srd of departmentStoreSrds) {
-        const res = await fetch(`/api/clients/${clientId}/store-stock?departmentId=${srd.id}&date=${dateStr}`);
-        if (res.ok) {
-          const srdStock = await res.json();
-          allStock.push(...srdStock);
-        }
-      }
-      return allStock;
+      const deptIds = departmentStoreSrds.map(s => s.id).join(",");
+      if (!deptIds) return [];
+      const res = await fetch(`/api/clients/${clientId}/store-stock/bulk?departmentIds=${deptIds}&date=${dateStr}`);
+      if (!res.ok) throw new Error("Failed to fetch store stock");
+      return res.json();
     },
     enabled: !!clientId && departmentStoreSrds.length > 0,
   });
@@ -1934,6 +1929,8 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [selectedSrdId, setSelectedSrdId] = useState<string>("");
   const [physicalCount, setPhysicalCount] = useState<string>("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [countToDelete, setCountToDelete] = useState<StockCount | null>(null);
   const queryClient = useQueryClient();
   
   const isEditMode = editingCount !== null;
@@ -2078,15 +2075,36 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
-      toast.success("Stock count deleted");
+      queryClient.invalidateQueries({ queryKey: ["store-stock-all-srds"] });
+      setDeleteDialogOpen(false);
+      setCountToDelete(null);
+      toast.success("Count deleted. Item returned to Waiting Count.");
     },
-    onError: (error: any) => toast.error(error.message || "Failed to delete count"),
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete count");
+      setDeleteDialogOpen(false);
+      setCountToDelete(null);
+    },
   });
 
   const handleDelete = (count: StockCount) => {
-    if (window.confirm(`Delete count for "${items.find(i => i.id === count.itemId)?.name || count.itemId}"?`)) {
-      deleteMutation.mutate(count.id);
+    setCountToDelete(count);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (countToDelete) {
+      deleteMutation.mutate(countToDelete.id);
     }
+  };
+
+  const getCountDetails = () => {
+    if (!countToDelete) return { itemName: "", expected: 0, actual: 0, variance: 0 };
+    const item = items.find(i => i.id === countToDelete.itemId);
+    const expected = Number(countToDelete.expectedClosingQty || 0);
+    const actual = Number(countToDelete.actualClosingQty || 0);
+    const variance = Number(countToDelete.varianceQty || 0);
+    return { itemName: item?.name || countToDelete.itemId, expected, actual, variance };
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -2417,6 +2435,50 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Stock Count?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the recorded count for <strong>{getCountDetails().itemName}</strong> and return it to 'Waiting Count'. Any calculated variance/sold impact from this count will be reversed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="bg-muted/50 rounded-md p-3 my-2">
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="text-center">
+                <p className="text-muted-foreground">Expected</p>
+                <p className="font-mono font-semibold">{getCountDetails().expected.toFixed(2)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-muted-foreground">Actual</p>
+                <p className="font-mono font-semibold">{getCountDetails().actual.toFixed(2)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-muted-foreground">Variance</p>
+                <p className={cn(
+                  "font-mono font-semibold",
+                  getCountDetails().variance < 0 ? "text-red-600" : 
+                  getCountDetails().variance > 0 ? "text-amber-600" : "text-emerald-600"
+                )}>
+                  {getCountDetails().variance > 0 ? "+" : ""}{getCountDetails().variance.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setCountToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
+              Delete Count
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
