@@ -33,7 +33,7 @@ import {
   type Surplus, type InsertSurplus,
   type SurplusHistory, type InsertSurplusHistory
 } from "@shared/schema";
-import { eq, desc, and, gte, lte, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
 export interface DashboardFilters {
   clientId?: string;
@@ -260,6 +260,7 @@ export interface IStorage {
   getStoreStock(clientId: string, storeDepartmentId: string, date?: Date): Promise<StoreStock[]>;
   getStoreStockByItem(storeDepartmentId: string, itemId: string, date: Date): Promise<StoreStock | undefined>;
   getPreviousDayClosing(storeDepartmentId: string, itemId: string, date: Date): Promise<string>;
+  getLatestClosingBeforeDate(storeDepartmentId: string, itemId: string, date: Date): Promise<{ closing: string; sourceDate: string | null }>;
   createStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
   updateStoreStock(id: string, stock: Partial<InsertStoreStock>): Promise<StoreStock | undefined>;
   upsertStoreStock(stock: InsertStoreStock): Promise<StoreStock>;
@@ -1802,28 +1803,37 @@ export class DbStorage implements IStorage {
   }
 
   async getPreviousDayClosing(storeDepartmentId: string, itemId: string, date: Date): Promise<string> {
-    const previousDay = new Date(date);
-    previousDay.setDate(previousDay.getDate() - 1);
-    const startOfPrevDay = new Date(previousDay);
-    startOfPrevDay.setHours(0, 0, 0, 0);
-    const endOfPrevDay = new Date(previousDay);
-    endOfPrevDay.setHours(23, 59, 59, 999);
+    // Use the new backward search function
+    const result = await this.getLatestClosingBeforeDate(storeDepartmentId, itemId, date);
+    return result.closing;
+  }
+
+  async getLatestClosingBeforeDate(storeDepartmentId: string, itemId: string, date: Date): Promise<{ closing: string; sourceDate: string | null }> {
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
     
+    // Search backward for the most recent record before the target date
     const [prevStock] = await db.select().from(storeStock).where(
       and(
         eq(storeStock.storeDepartmentId, storeDepartmentId),
         eq(storeStock.itemId, itemId),
-        gte(storeStock.date, startOfPrevDay),
-        lte(storeStock.date, endOfPrevDay)
+        lt(storeStock.date, targetDate)
       )
-    ).orderBy(desc(storeStock.updatedAt)).limit(1);
+    ).orderBy(desc(storeStock.date)).limit(1);
     
     if (prevStock) {
-      return prevStock.physicalClosingQty !== null && prevStock.physicalClosingQty !== undefined
+      const closing = prevStock.physicalClosingQty !== null && prevStock.physicalClosingQty !== undefined
         ? prevStock.physicalClosingQty
         : prevStock.closingQty || "0";
+      const sourceDate = prevStock.date instanceof Date 
+        ? prevStock.date.toISOString().split('T')[0]
+        : String(prevStock.date).split('T')[0];
+      console.log(`[Carry-over] SRD ${storeDepartmentId}, Item ${itemId}: Opening from ${sourceDate} closing = ${closing}`);
+      return { closing, sourceDate };
     }
-    return "0";
+    
+    console.log(`[Carry-over] SRD ${storeDepartmentId}, Item ${itemId}: No previous record found, using 0`);
+    return { closing: "0", sourceDate: null };
   }
 
   async createStoreStock(insertStock: InsertStoreStock): Promise<StoreStock> {
