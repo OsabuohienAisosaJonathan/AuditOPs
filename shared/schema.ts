@@ -153,18 +153,44 @@ export const purchases = pgTable("purchases", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Stock movements are now tied to departments
+// Stock movements are now tied to departments and SRDs
+export const MOVEMENT_TYPES = ["transfer", "adjustment", "write_off", "waste"] as const;
+export type MovementType = typeof MOVEMENT_TYPES[number];
+
+export const ADJUSTMENT_DIRECTIONS = ["increase", "decrease"] as const;
+export type AdjustmentDirection = typeof ADJUSTMENT_DIRECTIONS[number];
+
 export const stockMovements = pgTable("stock_movements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  outletId: varchar("outlet_id"),
   movementType: text("movement_type").notNull(),
+  fromSrdId: varchar("from_srd_id"),
+  toSrdId: varchar("to_srd_id"),
+  date: timestamp("date").defaultNow().notNull(),
+  adjustmentDirection: text("adjustment_direction"),
   sourceLocation: text("source_location"),
   destinationLocation: text("destination_location"),
-  itemsDescription: text("items_description").notNull(),
+  itemsDescription: text("items_description"),
+  totalQty: decimal("total_qty", { precision: 10, scale: 2 }).default("0.00"),
   totalValue: decimal("total_value", { precision: 12, scale: 2 }).default("0.00"),
+  notes: text("notes"),
   authorizedBy: text("authorized_by"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Stock movement line items for per-item tracking
+export const stockMovementLines = pgTable("stock_movement_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  movementId: varchar("movement_id").notNull().references(() => stockMovements.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  qty: decimal("qty", { precision: 10, scale: 2 }).notNull(),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 2 }).notNull(),
+  lineValue: decimal("line_value", { precision: 12, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -562,6 +588,7 @@ export const insertStockCountSchema = createInsertSchema(stockCounts).omit({ id:
 export const insertSalesEntrySchema = createInsertSchema(salesEntries).omit({ id: true, createdAt: true });
 export const insertPurchaseSchema = createInsertSchema(purchases).omit({ id: true, createdAt: true });
 export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({ id: true, createdAt: true });
+export const insertStockMovementLineSchema = createInsertSchema(stockMovementLines).omit({ id: true, createdAt: true });
 export const insertReconciliationSchema = createInsertSchema(reconciliations).omit({ id: true, createdAt: true });
 export const insertExceptionSchema = createInsertSchema(exceptions).omit({ id: true, createdAt: true, caseNumber: true });
 export const insertExceptionCommentSchema = createInsertSchema(exceptionComments).omit({ id: true, createdAt: true });
@@ -603,6 +630,8 @@ export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
 export type Purchase = typeof purchases.$inferSelect;
 export type InsertStockMovement = z.infer<typeof insertStockMovementSchema>;
 export type StockMovement = typeof stockMovements.$inferSelect;
+export type InsertStockMovementLine = z.infer<typeof insertStockMovementLineSchema>;
+export type StockMovementLine = typeof stockMovementLines.$inferSelect;
 export type InsertReconciliation = z.infer<typeof insertReconciliationSchema>;
 export type Reconciliation = typeof reconciliations.$inferSelect;
 export type InsertException = z.infer<typeof insertExceptionSchema>;
