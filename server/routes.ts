@@ -3180,6 +3180,60 @@ export async function registerRoutes(
     }
   });
 
+  // Helper function to adjust store stock quantities (follows upsertStoreStock pattern)
+  const adjustStoreStock = async (
+    clientId: string, 
+    srdId: string, 
+    itemId: string, 
+    qtyChange: number, 
+    costPrice: string, 
+    date: Date
+  ) => {
+    const existing = await storage.getStoreStockByItem(srdId, itemId, date);
+    
+    if (existing) {
+      // Update existing record
+      const currentClosing = parseFloat(existing.closingQty || "0");
+      const newClosing = Math.max(0, currentClosing + qtyChange);
+      
+      // For additions (positive qty), update addedQty; for deductions, update issuedQty
+      if (qtyChange > 0) {
+        const currentAdded = parseFloat(existing.addedQty || "0");
+        await storage.updateStoreStock(existing.id, {
+          addedQty: String(currentAdded + qtyChange),
+          closingQty: String(newClosing),
+        });
+      } else {
+        const currentIssued = parseFloat(existing.issuedQty || "0");
+        await storage.updateStoreStock(existing.id, {
+          issuedQty: String(currentIssued + Math.abs(qtyChange)),
+          closingQty: String(newClosing),
+        });
+      }
+    } else {
+      // Get previous day's closing balance as opening
+      const openingQty = await storage.getPreviousDayClosing(srdId, itemId, date);
+      const openingQtyNum = parseFloat(openingQty);
+      
+      // Calculate closing based on opening + changes
+      const addedQty = qtyChange > 0 ? qtyChange : 0;
+      const issuedQty = qtyChange < 0 ? Math.abs(qtyChange) : 0;
+      const closingQty = Math.max(0, openingQtyNum + addedQty - issuedQty);
+      
+      await storage.createStoreStock({
+        clientId,
+        storeDepartmentId: srdId,
+        itemId,
+        date,
+        openingQty: openingQty,
+        addedQty: String(addedQty),
+        issuedQty: String(issuedQty),
+        closingQty: String(closingQty),
+        costPriceSnapshot: costPrice,
+      });
+    }
+  };
+
   // Get stock movement with lines
   app.get("/api/stock-movements/:id/with-lines", requireAuth, async (req, res) => {
     try {
@@ -3257,12 +3311,37 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Duplicate items not allowed in a single movement" });
       }
       
+      const movementDate = movementData.date ? new Date(movementData.date) : new Date();
+      
+      // For movements that decrease stock, validate available quantities
+      if (movementType === "transfer" || movementType === "write_off" || movementType === "waste" ||
+          (movementType === "adjustment" && movementData.adjustmentDirection === "decrease")) {
+        const fromSrdId = movementData.fromSrdId;
+        for (const line of lines) {
+          const stockRecord = await storage.getStoreStockByItem(fromSrdId, line.itemId, movementDate);
+          let availableQty: number;
+          if (stockRecord) {
+            availableQty = parseFloat(stockRecord.closingQty || "0");
+          } else {
+            // No record for today - check previous day's closing
+            const prevClosing = await storage.getPreviousDayClosing(fromSrdId, line.itemId, movementDate);
+            availableQty = parseFloat(prevClosing);
+          }
+          if (Number(line.qty) > availableQty) {
+            const item = await storage.getItem(line.itemId);
+            return res.status(400).json({ 
+              error: `Insufficient stock for ${item?.name || "item"}: available ${availableQty}, requested ${line.qty}` 
+            });
+          }
+        }
+      }
+
       // Parse and validate the main movement data
       const parsedMovement = insertStockMovementSchema.parse({
         ...movementData,
         createdBy: req.session.userId!,
         totalQty: String(totalQty),
-        date: movementData.date ? new Date(movementData.date) : new Date(),
+        date: movementDate,
       });
       
       // Create the movement
@@ -3278,6 +3357,26 @@ export async function registerRoutes(
       }));
       
       const createdLines = await storage.createStockMovementLinesBulk(lineInserts);
+      
+      // Update store stock based on movement type
+      const clientId = movementData.clientId;
+      for (const line of lines) {
+        const qty = Number(line.qty);
+        const unitCost = String(line.unitCost || 0);
+        
+        if (movementType === "transfer") {
+          // Deduct from source SRD
+          await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, -qty, unitCost, movementDate);
+          // Add to destination SRD
+          await adjustStoreStock(clientId, movementData.toSrdId, line.itemId, qty, unitCost, movementDate);
+        } else if (movementType === "adjustment") {
+          const direction = movementData.adjustmentDirection === "increase" ? 1 : -1;
+          await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, qty * direction, unitCost, movementDate);
+        } else if (movementType === "write_off" || movementType === "waste") {
+          // Deduct from source SRD
+          await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, -qty, unitCost, movementDate);
+        }
+      }
       
       await storage.createAuditLog({
         userId: req.session.userId!,
