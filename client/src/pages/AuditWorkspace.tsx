@@ -583,6 +583,20 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
 
   const displaySummary = filteredSummary || salesSummary;
 
+  // Calculate captured totals from filtered entries (Amount, Complimentary, Vouchers, Voids, Others)
+  const capturedTotals = useMemo(() => {
+    return filteredEntries.reduce((acc, entry) => {
+      return {
+        amount: acc.amount + Number(entry.amount || 0),
+        complimentary: acc.complimentary + Number(entry.complimentaryAmount || 0),
+        vouchers: acc.vouchers + Number(entry.vouchersAmount || 0),
+        voids: acc.voids + Number(entry.voidsAmount || 0),
+        others: acc.others + Number(entry.othersAmount || 0),
+        totalCaptured: acc.totalCaptured + Number(entry.totalSales || 0),
+      };
+    }, { amount: 0, complimentary: 0, vouchers: 0, voids: 0, others: 0, totalCaptured: 0 });
+  }, [filteredEntries]);
+
   return (
     <div className="space-y-6">
       <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border-emerald-200 dark:border-emerald-800">
@@ -596,37 +610,39 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
                   : `${departments.find(d => d.id === selectedDeptFilter)?.name || "Department"} for ${dateStr}`}
               </CardDescription>
             </div>
-            {displaySummary && (
-              <div className="text-right">
-                <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 font-mono">
-                  ₦ {(displaySummary.grandTotal || 0).toLocaleString()}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {displaySummary.entriesCount || 0} entries
-                  {displaySummary.departmentsCount && selectedDeptFilter === "all" && ` across ${displaySummary.departmentsCount} departments`}
-                </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 font-mono">
+                ₦ {capturedTotals.totalCaptured.toLocaleString()}
               </div>
-            )}
+              <div className="text-xs text-muted-foreground">
+                {filteredEntries.length} entries
+                {selectedDeptFilter === "all" && entriesByDepartment.length > 0 && ` across ${entriesByDepartment.length} departments`}
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          {displaySummary ? (
-            <div className="grid grid-cols-4 gap-4">
+          {filteredEntries.length > 0 ? (
+            <div className="grid grid-cols-5 gap-4">
               <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
-                <div className="text-xs text-muted-foreground mb-1">Cash</div>
-                <div className="font-mono font-medium">₦ {(displaySummary.totalCash || 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mb-1">Amount</div>
+                <div className="font-mono font-medium">₦ {capturedTotals.amount.toLocaleString()}</div>
               </div>
               <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
-                <div className="text-xs text-muted-foreground mb-1">POS</div>
-                <div className="font-mono font-medium">₦ {(displaySummary.totalPos || 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mb-1">Complimentary</div>
+                <div className="font-mono font-medium">₦ {capturedTotals.complimentary.toLocaleString()}</div>
               </div>
               <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
-                <div className="text-xs text-muted-foreground mb-1">Transfers</div>
-                <div className="font-mono font-medium">₦ {(displaySummary.totalTransfer || 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mb-1">Vouchers</div>
+                <div className="font-mono font-medium">₦ {capturedTotals.vouchers.toLocaleString()}</div>
               </div>
               <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
-                <div className="text-xs text-muted-foreground mb-1">Voids/Comp</div>
-                <div className="font-mono font-medium text-muted-foreground">₦ {(displaySummary.totalVoids || 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mb-1">Voids</div>
+                <div className="font-mono font-medium text-muted-foreground">₦ {capturedTotals.voids.toLocaleString()}</div>
+              </div>
+              <div className="text-center p-3 bg-white/60 dark:bg-black/20 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">Others</div>
+                <div className="font-mono font-medium">₦ {capturedTotals.others.toLocaleString()}</div>
               </div>
             </div>
           ) : (
