@@ -426,6 +426,7 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
   const [declaredPos, setDeclaredPos] = useState<string>("");
   const [declaredTransfer, setDeclaredTransfer] = useState<string>("");
   const [declareNotes, setDeclareNotes] = useState<string>("");
+  const [noSalesToday, setNoSalesToday] = useState(false);
 
   const createDeclarationMutation = useMutation({
     mutationFn: (data: { departmentId: string; cash: string; pos: string; transfer: string; notes: string }) => 
@@ -455,7 +456,21 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
     setDeclaredPos("");
     setDeclaredTransfer("");
     setDeclareNotes("");
+    setNoSalesToday(false);
   };
+
+  // Map of captured totals per department (for the declare dialog)
+  const capturedByDepartment = useMemo(() => {
+    const map: Record<string, number> = {};
+    departments.forEach(dept => {
+      const deptEntries = salesEntries.filter(e => e.departmentId === dept.id);
+      map[dept.id] = deptEntries.reduce((sum, e) => sum + Number(e.totalSales || 0), 0);
+    });
+    return map;
+  }, [departments, salesEntries]);
+
+  // Get captured total for selected declare department
+  const selectedDeptCaptured = declareDeptId ? (capturedByDepartment[declareDeptId] || 0) : 0;
 
   const handleOpenDeclareDialog = (deptId?: string) => {
     if (deptId) {
@@ -471,6 +486,15 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
       toast.error("Please select a department");
       return;
     }
+    
+    const totalDeclared = Number(declaredCash || 0) + Number(declaredPos || 0) + Number(declaredTransfer || 0);
+    
+    // Validate: if captured = 0, declared must also be 0
+    if (selectedDeptCaptured === 0 && totalDeclared > 0) {
+      toast.error("No captured sales for this department today. Capture sales first or declare ₦0 for no transactions.");
+      return;
+    }
+    
     createDeclarationMutation.mutate({
       departmentId: declareDeptId,
       cash: declaredCash || "0",
@@ -478,6 +502,16 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
       transfer: declaredTransfer || "0",
       notes: declareNotes,
     });
+  };
+
+  // Handle "No sales today" checkbox
+  const handleNoSalesTodayChange = (checked: boolean) => {
+    setNoSalesToday(checked);
+    if (checked) {
+      setDeclaredCash("0");
+      setDeclaredPos("0");
+      setDeclaredTransfer("0");
+    }
   };
 
   const filteredEntries = useMemo(() => {
@@ -881,17 +915,36 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Department</Label>
-              <Select value={declareDeptId} onValueChange={setDeclareDeptId}>
+              <Select value={declareDeptId} onValueChange={(val) => { setDeclareDeptId(val); setNoSalesToday(false); }}>
                 <SelectTrigger data-testid="select-declare-department">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
                   {departments.map(dept => (
-                    <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                    <SelectItem key={dept.id} value={dept.id}>
+                      {dept.name} (Captured: ₦{(capturedByDepartment[dept.id] || 0).toLocaleString()})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {declareDeptId && selectedDeptCaptured === 0 && (
+              <div className="flex items-center space-x-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="noSalesToday"
+                  checked={noSalesToday}
+                  onChange={(e) => handleNoSalesTodayChange(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                  data-testid="checkbox-no-sales-today"
+                />
+                <Label htmlFor="noSalesToday" className="text-sm text-amber-800 dark:text-amber-200 cursor-pointer">
+                  No sales today - declare ₦0 for all payment methods
+                </Label>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label>Cash (₦)</Label>
@@ -902,6 +955,7 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
                   placeholder="0.00"
                   value={declaredCash}
                   onChange={(e) => setDeclaredCash(e.target.value)}
+                  disabled={noSalesToday}
                   data-testid="input-declared-cash"
                 />
               </div>
@@ -914,6 +968,7 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
                   placeholder="0.00"
                   value={declaredPos}
                   onChange={(e) => setDeclaredPos(e.target.value)}
+                  disabled={noSalesToday}
                   data-testid="input-declared-pos"
                 />
               </div>
@@ -926,6 +981,7 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
                   placeholder="0.00"
                   value={declaredTransfer}
                   onChange={(e) => setDeclaredTransfer(e.target.value)}
+                  disabled={noSalesToday}
                   data-testid="input-declared-transfer"
                 />
               </div>

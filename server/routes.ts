@@ -475,6 +475,27 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.message });
       }
       
+      // Backend validation: If captured sales = 0, declared must also be 0
+      // Get sales entries for the department on the specific date
+      const declarationDate = parsed.data.date;
+      const startOfDay = new Date(declarationDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(declarationDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const salesEntries = await storage.getSalesEntries(parsed.data.departmentId, startOfDay, endOfDay);
+      const totalCaptured = salesEntries.reduce((sum, e) => sum + Number(e.totalSales || 0), 0);
+      
+      const totalDeclared = Number(parsed.data.reportedCash || 0) + 
+                           Number(parsed.data.reportedPosSettlement || 0) + 
+                           Number(parsed.data.reportedTransfers || 0);
+      
+      if (totalCaptured === 0 && totalDeclared > 0) {
+        return res.status(400).json({ 
+          error: "No captured sales for this department today. Capture sales first or declare ₦0 for no transactions." 
+        });
+      }
+      
       // Check if declaration already exists for this client/department/date
       const existing = await storage.getPaymentDeclaration(
         parsed.data.clientId,
