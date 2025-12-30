@@ -490,7 +490,20 @@ export default function Inventory() {
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <Label htmlFor="name">Item Name</Label>
-                              <Input id="name" name="name" required data-testid="input-item-name" />
+                              <Input 
+                                id="name" 
+                                name="name" 
+                                required 
+                                onChange={(e) => {
+                                  // Auto Title Case while typing
+                                  const val = e.target.value;
+                                  e.target.value = val.split(' ').map(word => 
+                                    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                                  ).join(' ');
+                                }}
+                                data-testid="input-item-name" 
+                              />
+                              <p className="text-xs text-muted-foreground">Auto-formats as Title Case (e.g., Coca Cola)</p>
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="sku">SKU</Label>
@@ -1401,7 +1414,21 @@ export default function Inventory() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-name">Item Name</Label>
-                    <Input id="edit-name" name="name" defaultValue={selectedItem.name} required data-testid="input-edit-item-name" />
+                    <Input 
+                      id="edit-name" 
+                      name="name" 
+                      defaultValue={selectedItem.name} 
+                      required 
+                      onChange={(e) => {
+                        // Auto Title Case while typing
+                        const val = e.target.value;
+                        e.target.value = val.split(' ').map(word => 
+                          word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                        ).join(' ');
+                      }}
+                      data-testid="input-edit-item-name" 
+                    />
+                    <p className="text-xs text-muted-foreground">Auto-formats as Title Case (e.g., Coca Cola)</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-sku">SKU</Label>

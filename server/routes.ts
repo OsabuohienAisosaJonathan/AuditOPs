@@ -99,6 +99,16 @@ function validateNameLength(name: string, minLength: number = 2): boolean {
   return name.trim().length >= minLength;
 }
 
+// Helper function to convert text to Title Case (capitalize first letter of each word)
+function toTitleCase(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, ' ') // Normalize multiple spaces to single space
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1883,7 +1893,13 @@ export async function registerRoutes(
 
   app.post("/api/items", requireAuth, async (req, res) => {
     try {
-      const data = insertItemSchema.parse(req.body);
+      // Normalize item name to Title Case
+      const normalizedData = { ...req.body };
+      if (normalizedData.name) {
+        normalizedData.name = toTitleCase(normalizedData.name);
+      }
+      
+      const data = insertItemSchema.parse(normalizedData);
       const item = await storage.createItem(data);
       
       await storage.createAuditLog({
@@ -1904,6 +1920,11 @@ export async function registerRoutes(
   app.patch("/api/items/:id", requireAuth, async (req, res) => {
     try {
       const { purchaseQty, purchaseDate, ...updateData } = req.body;
+      
+      // Normalize item name to Title Case if being updated
+      if (updateData.name) {
+        updateData.name = toTitleCase(updateData.name);
+      }
       
       const existingItem = await storage.getItem(req.params.id);
       if (!existingItem) {
