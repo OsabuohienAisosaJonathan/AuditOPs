@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,15 +25,25 @@ export default function Exceptions() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
   const queryClient = useQueryClient();
+  
+  // Get date from URL params
+  const searchString = useSearch();
+  const urlParams = new URLSearchParams(searchString);
+  const dateFromUrl = urlParams.get("date") || format(new Date(), "yyyy-MM-dd");
 
   // Use global client context
   const { selectedClientId, clients } = useClientContext();
   const clientId = selectedClientId || clients?.[0]?.id || "";
 
   const { data: exceptions, isLoading } = useQuery({
-    queryKey: ["exceptions", statusFilter],
-    queryFn: () => exceptionsApi.getAll(statusFilter !== "all" ? { status: statusFilter } : undefined),
+    queryKey: ["exceptions", clientId, statusFilter],
+    queryFn: () => exceptionsApi.getAll({ 
+      clientId: clientId || undefined,
+      status: statusFilter !== "all" ? statusFilter : undefined 
+    }),
+    enabled: !!clientId,
   });
 
   const { data: departments } = useQuery({
@@ -44,19 +55,20 @@ export default function Exceptions() {
   const createMutation = useMutation({
     mutationFn: (data: Partial<Exception>) => exceptionsApi.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+      queryClient.invalidateQueries({ queryKey: ["exceptions", clientId] });
       setCreateDialogOpen(false);
+      setSelectedDepartmentId("");
       toast.success("Exception raised successfully");
     },
-    onError: () => {
-      toast.error("Failed to raise exception");
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to raise exception");
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Exception> }) => exceptionsApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+      queryClient.invalidateQueries({ queryKey: ["exceptions", clientId] });
       toast.success("Exception updated successfully");
     },
     onError: () => {
@@ -91,19 +103,37 @@ export default function Exceptions() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const departmentId = selectedDepartmentId;
+              const summary = (formData.get("summary") as string || "").trim();
+              const description = (formData.get("description") as string || "").trim();
+              const severity = formData.get("severity") as string || "medium";
+              
+              if (!departmentId) {
+                toast.error("Please select a department");
+                return;
+              }
+              if (!summary) {
+                toast.error("Summary is required");
+                return;
+              }
+              
               createMutation.mutate({
                 clientId,
-                departmentId: formData.get("departmentId") as string,
-                summary: formData.get("summary") as string,
-                description: formData.get("description") as string || null,
-                severity: formData.get("severity") as string,
+                departmentId,
+                date: dateFromUrl,
+                summary,
+                description: description || null,
+                severity,
                 status: "open",
               });
             }}>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="departmentId">Department</Label>
-                  <Select name="departmentId" required>
+                  <Select 
+                    value={selectedDepartmentId} 
+                    onValueChange={setSelectedDepartmentId}
+                  >
                     <SelectTrigger data-testid="select-exception-department">
                       <SelectValue placeholder="Select department" />
                     </SelectTrigger>

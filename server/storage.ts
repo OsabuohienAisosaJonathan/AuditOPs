@@ -908,7 +908,7 @@ export class DbStorage implements IStorage {
   }
 
   async createException(insertException: InsertException): Promise<Exception> {
-    const caseNumber = await this.generateExceptionCaseNumber();
+    const caseNumber = await this.generateExceptionCaseNumber(insertException.date);
     const [exception] = await db.insert(exceptions).values({ ...insertException, caseNumber }).returning();
     return exception;
   }
@@ -923,11 +923,18 @@ export class DbStorage implements IStorage {
     return true;
   }
 
-  async generateExceptionCaseNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const [result] = await db.select({ count: count() }).from(exceptions);
-    const nextNum = (result?.count || 0) + 1;
-    return `EXC-${year}-${String(nextNum).padStart(5, "0")}`;
+  async generateExceptionCaseNumber(dateStr?: string): Promise<string> {
+    // Use provided date or current date in YYYYMMDD format
+    const date = dateStr ? new Date(dateStr) : new Date();
+    const dateKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+    
+    // Count existing exceptions for this date
+    const existingForDate = await db.select({ count: count() })
+      .from(exceptions)
+      .where(sql`case_number LIKE ${'EXC-' + dateKey + '-%'}`);
+    
+    const nextNum = (existingForDate[0]?.count || 0) + 1;
+    return `EXC-${dateKey}-${String(nextNum).padStart(3, "0")}`;
   }
 
   // Exception Comments

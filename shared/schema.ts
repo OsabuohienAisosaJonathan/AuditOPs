@@ -219,6 +219,7 @@ export const exceptions = pgTable("exceptions", {
   caseNumber: text("case_number").notNull().unique(),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  date: text("date").notNull().default(sql`CURRENT_DATE::text`),
   summary: text("summary").notNull(),
   description: text("description"),
   impact: text("impact"),
