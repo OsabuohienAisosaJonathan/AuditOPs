@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { 
   users, clients, categories, departments, salesEntries, purchases,
-  stockMovements, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
+  stockMovements, stockMovementLines, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
@@ -9,7 +9,8 @@ import {
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
-  type StockMovement, type InsertStockMovement, type Reconciliation, type InsertReconciliation,
+  type StockMovement, type InsertStockMovement, type StockMovementLine, type InsertStockMovementLine,
+  type Reconciliation, type InsertReconciliation,
   type Exception, type InsertException, type ExceptionComment, type InsertExceptionComment,
   type AuditLog, type InsertAuditLog, type AdminActivityLog, type InsertAdminActivityLog,
   type Supplier, type InsertSupplier, type Item, type InsertItem,
@@ -143,10 +144,18 @@ export interface IStorage {
   // Stock Movements
   getStockMovements(clientId: string): Promise<StockMovement[]>;
   getStockMovementsByDepartment(departmentId: string): Promise<StockMovement[]>;
+  getStockMovementsBySrd(srdId: string): Promise<StockMovement[]>;
   getStockMovement(id: string): Promise<StockMovement | undefined>;
+  getStockMovementWithLines(id: string): Promise<{ movement: StockMovement; lines: StockMovementLine[] } | undefined>;
   createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
   updateStockMovement(id: string, movement: Partial<InsertStockMovement>): Promise<StockMovement | undefined>;
   deleteStockMovement(id: string): Promise<boolean>;
+  
+  // Stock Movement Lines
+  getStockMovementLines(movementId: string): Promise<StockMovementLine[]>;
+  createStockMovementLine(line: InsertStockMovementLine): Promise<StockMovementLine>;
+  createStockMovementLinesBulk(lines: InsertStockMovementLine[]): Promise<StockMovementLine[]>;
+  deleteStockMovementLines(movementId: string): Promise<boolean>;
 
   // Reconciliations
   getReconciliations(departmentId: string, date?: Date): Promise<Reconciliation[]>;
@@ -775,6 +784,42 @@ export class DbStorage implements IStorage {
 
   async deleteStockMovement(id: string): Promise<boolean> {
     await db.delete(stockMovements).where(eq(stockMovements.id, id));
+    return true;
+  }
+
+  async getStockMovementsBySrd(srdId: string): Promise<StockMovement[]> {
+    return db.select().from(stockMovements).where(
+      or(
+        eq(stockMovements.fromSrdId, srdId),
+        eq(stockMovements.toSrdId, srdId)
+      )
+    ).orderBy(desc(stockMovements.createdAt));
+  }
+
+  async getStockMovementWithLines(id: string): Promise<{ movement: StockMovement; lines: StockMovementLine[] } | undefined> {
+    const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id));
+    if (!movement) return undefined;
+    const lines = await db.select().from(stockMovementLines).where(eq(stockMovementLines.movementId, id));
+    return { movement, lines };
+  }
+
+  // Stock Movement Lines
+  async getStockMovementLines(movementId: string): Promise<StockMovementLine[]> {
+    return db.select().from(stockMovementLines).where(eq(stockMovementLines.movementId, movementId));
+  }
+
+  async createStockMovementLine(line: InsertStockMovementLine): Promise<StockMovementLine> {
+    const [result] = await db.insert(stockMovementLines).values(line).returning();
+    return result;
+  }
+
+  async createStockMovementLinesBulk(lines: InsertStockMovementLine[]): Promise<StockMovementLine[]> {
+    if (lines.length === 0) return [];
+    return db.insert(stockMovementLines).values(lines).returning();
+  }
+
+  async deleteStockMovementLines(movementId: string): Promise<boolean> {
+    await db.delete(stockMovementLines).where(eq(stockMovementLines.movementId, movementId));
     return true;
   }
 
