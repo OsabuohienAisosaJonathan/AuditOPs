@@ -99,6 +99,7 @@ export const stockCounts = pgTable("stock_counts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  storeDepartmentId: varchar("store_department_id").references(() => inventoryDepartments.id, { onDelete: "set null" }),
   itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
   openingQty: decimal("opening_qty", { precision: 10, scale: 2 }).default("0.00"),

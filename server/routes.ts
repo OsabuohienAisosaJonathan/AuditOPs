@@ -2101,6 +2101,7 @@ export async function registerRoutes(
       
       const data = insertStockCountSchema.parse({
         ...stockCountData,
+        storeDepartmentId: storeDepartmentId || null,
         date: dateValue,
         createdBy: req.session.userId!,
       });
@@ -2178,18 +2179,34 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Stock count not found" });
       }
       
-      // Find and reverse associated storeStock record
-      // We need to find all DEPARTMENT_STORE SRDs for this client and check each for matching storeStock
-      const invDepts = await storage.getInventoryDepartments(stockCount.clientId);
-      const deptStoreSrds = invDepts.filter((d: any) => d.inventoryType === "DEPARTMENT_STORE");
-      
-      for (const srd of deptStoreSrds) {
-        const storeStockRecord = await storage.getStoreStockByItem(srd.id, stockCount.itemId, stockCount.date);
+      // Find and reverse the associated storeStock record
+      if (stockCount.storeDepartmentId) {
+        // Use the stored storeDepartmentId (preferred)
+        const storeStockRecord = await storage.getStoreStockByItem(
+          stockCount.storeDepartmentId, 
+          stockCount.itemId, 
+          stockCount.date
+        );
         if (storeStockRecord && storeStockRecord.physicalClosingQty !== null) {
-          // Clear the physical closing qty to return item to "Waiting Count"
           await storage.updateStoreStock(storeStockRecord.id, {
             physicalClosingQty: null,
           });
+        }
+      } else {
+        // Fallback for existing counts without storeDepartmentId:
+        // Find any DEPARTMENT_STORE SRD that has a matching store_stock record
+        const invDepts = await storage.getInventoryDepartments(stockCount.clientId);
+        const deptStoreSrds = invDepts.filter((d: any) => d.inventoryType === "DEPARTMENT_STORE");
+        
+        for (const srd of deptStoreSrds) {
+          const storeStockRecord = await storage.getStoreStockByItem(srd.id, stockCount.itemId, stockCount.date);
+          if (storeStockRecord && storeStockRecord.physicalClosingQty !== null) {
+            // Found a matching record - clear it and break (only clear one)
+            await storage.updateStoreStock(storeStockRecord.id, {
+              physicalClosingQty: null,
+            });
+            break;
+          }
         }
       }
       
