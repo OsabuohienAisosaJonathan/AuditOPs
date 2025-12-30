@@ -848,7 +848,12 @@ export default function InventoryLedger() {
         totalIssued += qty;
       });
       
-      const closing = total - totalIssued;
+      // Also include issuedQty from store_stock (covers stock movements: adjustments, waste, write-offs, transfers)
+      const stockIssuedQty = parseFloat(stock?.issuedQty || "0");
+      // Use the greater of the two (store_stock issuedQty includes all movements)
+      const effectiveIssued = Math.max(totalIssued, stockIssuedQty);
+      
+      const closing = total - effectiveIssued;
       const cost = parseFloat(item.costPrice || "0");
       const value = closing * cost;
       
@@ -862,7 +867,7 @@ export default function InventoryLedger() {
         purchase,
         total,
         depIssues,
-        totalIssued,
+        totalIssued: effectiveIssued,
         closing,
         cost,
         value,
@@ -896,11 +901,19 @@ export default function InventoryLedger() {
       const stock = storeStockData?.find(s => s.itemId === item.id);
       const opening = getOpeningQty(item.id, stock);
       const added = parseFloat(stock?.addedQty || "0");
+      const issued = parseFloat(stock?.issuedQty || "0");
       const total = opening + added;
-      const closing = stock?.physicalClosingQty !== null && stock?.physicalClosingQty !== undefined 
-        ? parseFloat(stock.physicalClosingQty) 
-        : null;
-      const sold = closing !== null ? total - closing : null;
+      
+      // Adjusted total accounts for issued (transfers out, adjustments, waste, write-offs)
+      const adjustedTotal = total - issued;
+      
+      // Physical count determines closing; issued movements are shown separately
+      const hasPhysicalCount = stock?.physicalClosingQty !== null && stock?.physicalClosingQty !== undefined;
+      const closing = hasPhysicalCount ? parseFloat(stock.physicalClosingQty!) : null;
+      
+      // Sold = adjustedTotal - closing (only when physical count exists)
+      // This correctly excludes issued items from sales calculation
+      const sold = closing !== null ? adjustedTotal - closing : null;
       const sellingPrice = parseFloat(item.sellingPrice || "0");
       const amountSold = sold !== null ? sold * sellingPrice : null;
       
@@ -912,7 +925,8 @@ export default function InventoryLedger() {
         unit: item.unit,
         opening,
         added,
-        total,
+        issued,
+        total: adjustedTotal,
         sold,
         closing,
         sellingPrice,
@@ -1464,6 +1478,7 @@ export default function InventoryLedger() {
                     <TableHead className="w-[80px]">Unit</TableHead>
                     <TableHead className="w-[100px] text-right">Opening</TableHead>
                     <TableHead className="w-[100px] text-right">Added</TableHead>
+                    <TableHead className="w-[80px] text-right text-red-600">Issued</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Total</TableHead>
                     <TableHead className="w-[100px] text-right">Sold</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
@@ -1474,7 +1489,7 @@ export default function InventoryLedger() {
                     <TableBody>
                       {deptStoreLedger.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                             No items found. Add items in the Inventory page first.
                           </TableCell>
                         </TableRow>
@@ -1486,20 +1501,22 @@ export default function InventoryLedger() {
                           const catTotals = rows.reduce((acc, row) => {
                             const editedOpening = ledgerEdits[row.itemId]?.opening;
                             const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
-                            const displayTotal = displayOpening + row.added;
+                            // Total already includes issued deduction from row.total (adjustedTotal)
+                            const adjustedTotal = displayOpening + row.added - row.issued;
                             const displayClosing = row.closing !== null ? row.closing : null;
-                            const displaySold = displayClosing !== null ? displayTotal - displayClosing : null;
+                            const displaySold = displayClosing !== null ? adjustedTotal - displayClosing : null;
                             const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
                             
                             return {
                               opening: acc.opening + displayOpening,
                               added: acc.added + row.added,
-                              total: acc.total + displayTotal,
+                              issued: acc.issued + row.issued,
+                              total: acc.total + adjustedTotal,
                               sold: acc.sold + (displaySold || 0),
                               closing: acc.closing + (displayClosing || 0),
                               amountSold: acc.amountSold + (displayAmountSold || 0),
                             };
-                          }, { opening: 0, added: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
+                          }, { opening: 0, added: 0, issued: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
                           return (
                             <React.Fragment key={`cat-${category}`}>
                               <TableRow 
@@ -1507,7 +1524,7 @@ export default function InventoryLedger() {
                                 onClick={() => toggleCategory(category)}
                                 data-testid={`category-header-dept-${category}`}
                               >
-                                <TableCell colSpan={10} className="font-semibold text-sm py-2 text-white">
+                                <TableCell colSpan={11} className="font-semibold text-sm py-2 text-white">
                                   <div className="flex items-center justify-between w-full">
                                     <div className="flex items-center gap-2">
                                       {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -1529,7 +1546,8 @@ export default function InventoryLedger() {
                               {isExpanded && rows.map((row) => {
                                 const editedOpening = ledgerEdits[row.itemId]?.opening;
                                 const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
-                                const displayTotal = displayOpening + row.added;
+                                // Adjusted total = Opening + Added - Issued
+                                const displayTotal = displayOpening + row.added - row.issued;
                                 const displayClosing = row.closing;
                                 const displaySold = displayClosing !== null ? displayTotal - displayClosing : null;
                                 const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
@@ -1552,6 +1570,7 @@ export default function InventoryLedger() {
                                     />
                                   </TableCell>
                                   <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
+                                  <TableCell className="text-right text-red-600">{row.issued > 0 ? row.issued.toFixed(2) : "—"}</TableCell>
                                   <TableCell className="text-right bg-muted/30 font-medium">{displayTotal.toFixed(2)}</TableCell>
                                   <TableCell className="text-right">
                                     {displaySold !== null ? displaySold.toFixed(2) : <span className="text-muted-foreground">—</span>}
