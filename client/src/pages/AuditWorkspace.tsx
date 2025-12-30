@@ -1711,12 +1711,13 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
 
   // Fetch store names for display
   const { data: storeNames = [] } = useQuery<StoreName[]>({
-    queryKey: ["store-names"],
+    queryKey: ["store-names", clientId],
     queryFn: async () => {
-      const res = await fetch("/api/store-names");
+      const res = await fetch(`/api/clients/${clientId}/store-names`);
       if (!res.ok) throw new Error("Failed to fetch store names");
       return res.json();
     },
+    enabled: !!clientId,
   });
 
   // Fetch storeStock for selected SRD and date (to get Opening and Added)
