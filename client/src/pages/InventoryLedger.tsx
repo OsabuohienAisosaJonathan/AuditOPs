@@ -87,6 +87,22 @@ interface StoreIssueLine {
   qtyIssued: string;
 }
 
+interface SrdTransfer {
+  id: string;
+  refId: string;
+  clientId: string;
+  fromSrdId: string;
+  toSrdId: string;
+  itemId: string;
+  qty: string;
+  transferDate: string;
+  transferType: "issue" | "return" | "transfer";
+  notes: string | null;
+  status: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 interface StockCount {
   id: string;
   clientId: string;
@@ -284,7 +300,18 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId && !!selectedInvDept,
   });
 
-  // Fetch store issues for selected department and date
+  // Fetch SRD transfers for selected SRD and date (new unified transfer system)
+  const { data: srdTransfers } = useQuery<SrdTransfer[]>({
+    queryKey: ["srd-transfers", selectedClientId, selectedInvDept, selectedDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${selectedClientId}/srd-transfers?srdId=${selectedInvDept}&date=${selectedDate}`);
+      if (!res.ok) throw new Error("Failed to fetch SRD transfers");
+      return res.json();
+    },
+    enabled: !!selectedClientId && !!selectedInvDept,
+  });
+
+  // Legacy store issues (for backward compatibility) - TODO: migrate to srdTransfers
   const { data: storeIssues } = useQuery<StoreIssue[]>({
     queryKey: ["store-issues", selectedClientId, selectedDate],
     queryFn: async () => {
@@ -295,7 +322,7 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId,
   });
 
-  // Fetch issue lines for each store issue
+  // Fetch issue lines for each store issue (legacy)
   const { data: issueLines } = useQuery<{ issueId: string; lines: StoreIssueLine[] }[]>({
     queryKey: ["store-issue-lines", storeIssues?.map(i => i.id).join(",")],
     queryFn: async () => {
@@ -343,28 +370,99 @@ export default function InventoryLedger() {
     }
   }, [departmentStores]);
 
-  // Build issue breakdown by department and item (only count non-recalled issues)
+  // Build issue breakdown by department and item (combines legacy storeIssues and new srdTransfers)
   const issueBreakdown = useMemo(() => {
     const breakdown: Record<string, Record<string, number>> = {};
     
-    if (!storeIssues || !issueLines) return breakdown;
-    
-    storeIssues.forEach(issue => {
-      if (issue.fromDepartmentId !== selectedInvDept) return;
-      if (issue.status === "recalled") return;
-      
-      const lines = issueLines.find(il => il.issueId === issue.id)?.lines || [];
-      lines.forEach(line => {
-        if (!breakdown[line.itemId]) breakdown[line.itemId] = {};
-        if (!breakdown[line.itemId][issue.toDepartmentId]) breakdown[line.itemId][issue.toDepartmentId] = 0;
-        breakdown[line.itemId][issue.toDepartmentId] += parseFloat(line.qtyIssued || "0");
+    // Process new SRD transfers (primary source)
+    if (srdTransfers) {
+      srdTransfers.forEach(transfer => {
+        if (transfer.fromSrdId !== selectedInvDept) return;
+        if (transfer.status === "recalled") return;
+        
+        if (!breakdown[transfer.itemId]) breakdown[transfer.itemId] = {};
+        if (!breakdown[transfer.itemId][transfer.toSrdId]) breakdown[transfer.itemId][transfer.toSrdId] = 0;
+        breakdown[transfer.itemId][transfer.toSrdId] += parseFloat(transfer.qty || "0");
       });
-    });
+    }
+    
+    // Also process legacy store issues for backward compatibility
+    if (storeIssues && issueLines) {
+      storeIssues.forEach(issue => {
+        if (issue.fromDepartmentId !== selectedInvDept) return;
+        if (issue.status === "recalled") return;
+        
+        const lines = issueLines.find(il => il.issueId === issue.id)?.lines || [];
+        lines.forEach(line => {
+          if (!breakdown[line.itemId]) breakdown[line.itemId] = {};
+          if (!breakdown[line.itemId][issue.toDepartmentId]) breakdown[line.itemId][issue.toDepartmentId] = 0;
+          breakdown[line.itemId][issue.toDepartmentId] += parseFloat(line.qtyIssued || "0");
+        });
+      });
+    }
     
     return breakdown;
-  }, [storeIssues, issueLines, selectedInvDept]);
+  }, [srdTransfers, storeIssues, issueLines, selectedInvDept]);
 
-  // Create store issue
+  // Create SRD transfer (unified transfer engine)
+  const createTransferMutation = useMutation({
+    mutationFn: async (data: { itemId: string; toSrdId: string; qty: number; transferType?: string }) => {
+      const res = await fetch(`/api/clients/${selectedClientId}/srd-transfers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromSrdId: selectedInvDept,
+          toSrdId: data.toSrdId,
+          itemId: data.itemId,
+          qty: data.qty,
+          transferDate: selectedDate,
+          transferType: data.transferType || "issue",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create transfer");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["srd-transfers"] });
+      setIssueDialogOpen(false);
+      setIssueItemId(null);
+      setIssueToDeptId(null);
+      setIssueQty("");
+      toast.success("Stock transferred successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to transfer stock");
+    },
+  });
+
+  // Recall SRD transfer
+  const recallTransferMutation = useMutation({
+    mutationFn: async (refId: string) => {
+      const res = await fetch(`/api/srd-transfers/${refId}/recall`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to recall transfer");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["srd-transfers"] });
+      toast.success("Transfer recalled successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to recall transfer");
+    },
+  });
+
+  // Legacy: Create store issue (backward compatibility)
   const createIssueMutation = useMutation({
     mutationFn: async (data: { itemId: string; toDeptId: string; qty: number }) => {
       const res = await fetch(`/api/clients/${selectedClientId}/store-issues`, {
@@ -398,7 +496,7 @@ export default function InventoryLedger() {
     },
   });
 
-  // Recall store issue
+  // Legacy: Recall store issue
   const recallIssueMutation = useMutation({
     mutationFn: async (issueId: string) => {
       const res = await fetch(`/api/store-issues/${issueId}/recall`, {
@@ -879,10 +977,12 @@ export default function InventoryLedger() {
       return;
     }
     
-    createIssueMutation.mutate({
+    // Use new unified SRD transfer API
+    createTransferMutation.mutate({
       itemId: issueItemId,
-      toDeptId: issueToDeptId,
+      toSrdId: issueToDeptId,
       qty: qtyToIssue,
+      transferType: "issue",
     });
   };
 
@@ -1614,10 +1714,10 @@ export default function InventoryLedger() {
             <Button variant="outline" onClick={() => setIssueDialogOpen(false)}>Cancel</Button>
             <Button 
               onClick={handleIssueSubmit} 
-              disabled={!issueToDeptId || !issueQty || createIssueMutation.isPending || parseFloat(issueQty || "0") > getAvailableQty}
+              disabled={!issueToDeptId || !issueQty || createTransferMutation.isPending || parseFloat(issueQty || "0") > getAvailableQty}
               data-testid="button-confirm-issue"
             >
-              {createIssueMutation.isPending && <Spinner className="mr-2" />}
+              {createTransferMutation.isPending && <Spinner className="mr-2" />}
               Issue Stock
             </Button>
           </DialogFooter>
