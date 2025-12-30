@@ -2833,7 +2833,193 @@ export async function registerRoutes(
     }
   });
 
-  // ============== CLIENT-SCOPED STORE ISSUES ==============
+  // ============== CLIENT-SCOPED SRD TRANSFERS (Unified Transfer Engine) ==============
+  app.get("/api/clients/:clientId/srd-transfers", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { date, srdId } = req.query;
+      
+      const dateFilter = date ? new Date(date as string) : undefined;
+      
+      if (srdId) {
+        const transfers = await storage.getSrdTransfersBySrd(srdId as string, dateFilter);
+        return res.json(transfers);
+      }
+      
+      const transfers = await storage.getSrdTransfers(clientId, dateFilter);
+      res.json(transfers);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/srd-transfers", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { fromSrdId, toSrdId, itemId, qty, transferDate, transferType, notes } = req.body;
+      
+      if (!fromSrdId || !toSrdId || !itemId || !qty || !transferDate) {
+        return res.status(400).json({ error: "fromSrdId, toSrdId, itemId, qty, and transferDate are required" });
+      }
+      
+      if (fromSrdId === toSrdId) {
+        return res.status(400).json({ error: "Cannot transfer to the same SRD" });
+      }
+      
+      const parsedDate = new Date(transferDate);
+      const refId = await storage.generateTransferRefId(clientId, parsedDate);
+      const parsedQty = parseFloat(qty);
+      
+      // Get item details for cost price
+      const item = await storage.getItem(itemId);
+      if (!item) {
+        return res.status(400).json({ error: "Item not found" });
+      }
+      const costPrice = item.costPrice || "0.00";
+      
+      // Create the transfer record
+      const transfer = await storage.createSrdTransfer({
+        refId,
+        clientId,
+        fromSrdId,
+        toSrdId,
+        itemId,
+        qty: parsedQty.toString(),
+        transferDate: parsedDate,
+        transferType: transferType || "transfer",
+        notes: notes || null,
+        status: "posted",
+        createdBy: req.session.userId!,
+      });
+      
+      // Update stock in FROM SRD (decrease)
+      const existingFromStock = await storage.getStoreStockByItem(fromSrdId, itemId, parsedDate);
+      if (existingFromStock) {
+        const currentIssued = parseFloat(existingFromStock.issuedQty || "0");
+        const newIssued = currentIssued + parsedQty;
+        const opening = parseFloat(existingFromStock.openingQty || "0");
+        const added = parseFloat(existingFromStock.addedQty || "0");
+        const newClosing = opening + added - newIssued;
+        await storage.updateStoreStock(existingFromStock.id, {
+          issuedQty: newIssued.toString(),
+          closingQty: newClosing.toString(),
+        });
+      } else {
+        const prevClosing = await storage.getPreviousDayClosing(fromSrdId, itemId, parsedDate);
+        const opening = parseFloat(prevClosing);
+        await storage.createStoreStock({
+          clientId,
+          storeDepartmentId: fromSrdId,
+          itemId,
+          date: parsedDate,
+          openingQty: opening.toString(),
+          addedQty: "0",
+          issuedQty: parsedQty.toString(),
+          closingQty: (opening - parsedQty).toString(),
+          costPriceSnapshot: costPrice,
+          createdBy: req.session.userId!,
+        });
+      }
+      
+      // Update stock in TO SRD (increase)
+      const existingToStock = await storage.getStoreStockByItem(toSrdId, itemId, parsedDate);
+      if (existingToStock) {
+        const currentAdded = parseFloat(existingToStock.addedQty || "0");
+        const newAdded = currentAdded + parsedQty;
+        const opening = parseFloat(existingToStock.openingQty || "0");
+        const issued = parseFloat(existingToStock.issuedQty || "0");
+        const newClosing = opening + newAdded - issued;
+        await storage.updateStoreStock(existingToStock.id, {
+          addedQty: newAdded.toString(),
+          closingQty: newClosing.toString(),
+        });
+      } else {
+        const prevClosing = await storage.getPreviousDayClosing(toSrdId, itemId, parsedDate);
+        const opening = parseFloat(prevClosing);
+        await storage.createStoreStock({
+          clientId,
+          storeDepartmentId: toSrdId,
+          itemId,
+          date: parsedDate,
+          openingQty: opening.toString(),
+          addedQty: parsedQty.toString(),
+          issuedQty: "0",
+          closingQty: (opening + parsedQty).toString(),
+          costPriceSnapshot: costPrice,
+          createdBy: req.session.userId!,
+        });
+      }
+      
+      console.log(`[SRD Transfer] RefId: ${refId}, From: ${fromSrdId}, To: ${toSrdId}, Item: ${item.name}, Qty: ${parsedQty}, Type: ${transferType || 'transfer'}`);
+      
+      res.json(transfer);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/srd-transfers/:refId/recall", requireAuth, async (req, res) => {
+    try {
+      const { refId } = req.params;
+      
+      // Get all transfers with this refId
+      const transfers = await storage.getSrdTransfersByRefId(refId);
+      if (transfers.length === 0) {
+        return res.status(404).json({ error: "Transfer not found" });
+      }
+      
+      // Verify all are in posted status
+      const allPosted = transfers.every(t => t.status === "posted");
+      if (!allPosted) {
+        return res.status(400).json({ error: "Transfer already recalled" });
+      }
+      
+      // Reverse the stock movements for each transfer
+      for (const transfer of transfers) {
+        const parsedDate = new Date(transfer.transferDate);
+        const parsedQty = parseFloat(transfer.qty);
+        
+        // Reverse FROM SRD (add back)
+        const fromStock = await storage.getStoreStockByItem(transfer.fromSrdId, transfer.itemId, parsedDate);
+        if (fromStock) {
+          const currentIssued = parseFloat(fromStock.issuedQty || "0");
+          const newIssued = Math.max(0, currentIssued - parsedQty);
+          const opening = parseFloat(fromStock.openingQty || "0");
+          const added = parseFloat(fromStock.addedQty || "0");
+          const newClosing = opening + added - newIssued;
+          await storage.updateStoreStock(fromStock.id, {
+            issuedQty: newIssued.toString(),
+            closingQty: newClosing.toString(),
+          });
+        }
+        
+        // Reverse TO SRD (remove)
+        const toStock = await storage.getStoreStockByItem(transfer.toSrdId, transfer.itemId, parsedDate);
+        if (toStock) {
+          const currentAdded = parseFloat(toStock.addedQty || "0");
+          const newAdded = Math.max(0, currentAdded - parsedQty);
+          const opening = parseFloat(toStock.openingQty || "0");
+          const issued = parseFloat(toStock.issuedQty || "0");
+          const newClosing = opening + newAdded - issued;
+          await storage.updateStoreStock(toStock.id, {
+            addedQty: newAdded.toString(),
+            closingQty: newClosing.toString(),
+          });
+        }
+      }
+      
+      // Mark transfers as recalled
+      await storage.recallSrdTransfer(refId);
+      
+      console.log(`[SRD Transfer Recall] RefId: ${refId}, Count: ${transfers.length}`);
+      
+      res.json({ success: true, message: "Transfer recalled successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== CLIENT-SCOPED STORE ISSUES (LEGACY) ==============
   app.get("/api/clients/:clientId/store-issues", requireAuth, async (req, res) => {
     try {
       const { clientId } = req.params;
