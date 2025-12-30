@@ -261,11 +261,11 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId,
   });
 
-  // Fetch store stock for selected department and date
+  // Fetch store stock for selected department and date (with auto-seeding)
   const { data: storeStockData, isLoading: stockLoading } = useQuery<StoreStock[]>({
     queryKey: ["store-stock", selectedClientId, selectedInvDept, selectedDate],
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${selectedDate}`);
+      const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${selectedDate}&autoSeed=true`);
       if (!res.ok) throw new Error("Failed to fetch store stock");
       return res.json();
     },
@@ -561,6 +561,36 @@ export default function InventoryLedger() {
     setHasUnsavedChanges(false);
   };
 
+  // Recalculate ledger row values
+  const recalculateLedgerRow = (itemId: string, field: "opening" | "purchase" | "closing", value: string) => {
+    const item = items?.find(i => i.id === itemId);
+    const stockRecord = storeStockData?.find(s => s.itemId === itemId);
+    const isMainStore = selectedDept?.inventoryType === "MAIN_STORE";
+    
+    // Get current values (from edits or stock data)
+    const currentEdits = ledgerEdits[itemId] || {};
+    const opening = field === "opening" ? parseFloat(value || "0") : parseFloat(currentEdits.opening || stockRecord?.openingQty || "0");
+    const purchase = field === "purchase" ? parseFloat(value || "0") : parseFloat(currentEdits.purchase || stockRecord?.addedQty || "0");
+    
+    // Calculate total issues for this item (Main Store)
+    let totalIssued = 0;
+    if (isMainStore) {
+      departmentStores.forEach(dept => {
+        totalIssued += issueBreakdown[itemId]?.[dept.id] || 0;
+      });
+    }
+    
+    // Recalculate: Total = Opening + Purchase, Closing = Total - Issued
+    const total = opening + purchase;
+    const calculatedClosing = isMainStore ? total - totalIssued : total;
+    
+    return {
+      opening: opening.toString(),
+      purchase: purchase.toString(),
+      closing: field === "closing" ? value : calculatedClosing.toString(),
+    };
+  };
+
   // Handle cell edit with past date restrictions
   const handleCellEdit = (itemId: string, field: "opening" | "purchase" | "closing", value: string) => {
     // For past dates, non-super-admin cannot edit
@@ -576,11 +606,15 @@ export default function InventoryLedger() {
       return;
     }
     
+    // Recalculate the row values
+    const recalculated = recalculateLedgerRow(itemId, field, value);
+    
     setLedgerEdits(prev => ({
       ...prev,
       [itemId]: {
         ...prev[itemId],
-        [field]: value,
+        ...recalculated,
+        [field]: value, // Keep original edited value
       },
     }));
     setHasUnsavedChanges(true);
