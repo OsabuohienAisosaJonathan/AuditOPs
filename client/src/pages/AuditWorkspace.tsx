@@ -180,6 +180,10 @@ export default function AuditWorkspace() {
     enabled: !!clientId && departmentStoreSrds.length > 0,
   });
 
+  // Check if SRD queries are still loading
+  const srdDataLoading = departmentStoreSrds.length > 0 && 
+    (Object.keys(srdItemsMap).length === 0 || allSrdStoreStock === undefined);
+
   // Calculate stock counts progress: how many items counted vs total items across all DEPARTMENT_STORE SRDs
   const stockCountsProgress = useMemo(() => {
     let totalItems = 0;
@@ -194,7 +198,11 @@ export default function AuditWorkspace() {
         const stockRecord = allSrdStoreStock.find(
           s => s.storeDepartmentId === srd.id && s.itemId === item.id
         );
-        if (stockRecord && stockRecord.physicalClosingQty !== null && stockRecord.physicalClosingQty !== undefined) {
+        // physicalClosingQty is a string field - "0" is a valid count
+        // Only consider it counted if it's not null, not undefined, and not empty string
+        if (stockRecord && stockRecord.physicalClosingQty !== null && 
+            stockRecord.physicalClosingQty !== undefined && 
+            stockRecord.physicalClosingQty !== "") {
           countedItems++;
         }
       }
@@ -206,8 +214,9 @@ export default function AuditWorkspace() {
       waitingCount: totalItems - countedItems,
       isComplete: totalItems > 0 && countedItems >= totalItems,
       isEmpty: totalItems === 0,
+      isLoading: srdDataLoading,
     };
-  }, [departmentStoreSrds, srdItemsMap, allSrdStoreStock]);
+  }, [departmentStoreSrds, srdItemsMap, allSrdStoreStock, srdDataLoading]);
 
   const auditDepartment = departments.find(d => d.id === departmentId);
 
@@ -242,9 +251,12 @@ export default function AuditWorkspace() {
       },
       { 
         id: "counts", 
-        label: `Stock Counts (${stockCountsProgress.countedItems}/${stockCountsProgress.totalItems})`, 
+        label: stockCountsProgress.isLoading 
+          ? "Stock Counts (...)" 
+          : `Stock Counts (${stockCountsProgress.countedItems}/${stockCountsProgress.totalItems})`, 
         tab: "counts",
-        status: stockCountsProgress.isEmpty ? "not_started" : 
+        status: stockCountsProgress.isLoading ? "not_started" :
+                stockCountsProgress.isEmpty ? "not_started" : 
                 stockCountsProgress.isComplete ? "completed" : 
                 stockCountsProgress.countedItems > 0 ? "in_progress" : "not_started",
         lastUpdated: stockCounts.length > 0 ? format(new Date(stockCounts[0].date), "HH:mm") : undefined,
