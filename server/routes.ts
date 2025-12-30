@@ -2744,44 +2744,71 @@ export async function registerRoutes(
         dateFilter
       );
       
-      // Auto-seed missing records if requested and date is provided
+      // Auto-seed and recalculate opening balances if requested and date is provided
       if (autoSeed === "true" && dateFilter) {
         const items = await storage.getItemsForInventoryDepartment(departmentId as string);
         const existingItemIds = new Set(stock.map(s => s.itemId));
+        const stockMap = new Map(stock.map(s => [s.itemId, s]));
         
-        // Create missing records with proper carry-over
-        const newRecords = [];
+        const updatedStock = [];
+        
         for (const item of items) {
+          // Get the correct opening balance from previous day's closing
+          const { closing: correctOpening, sourceDate } = await storage.getLatestClosingBeforeDate(
+            departmentId as string,
+            item.id,
+            dateFilter
+          );
+          
           if (!existingItemIds.has(item.id)) {
-            const { closing: openingQty, sourceDate } = await storage.getLatestClosingBeforeDate(
-              departmentId as string,
-              item.id,
-              dateFilter
-            );
-            
-            console.log(`[Auto-seed] Creating ledger for ${item.name} on ${date}, Opening from ${sourceDate || 'N/A'}: ${openingQty}`);
+            // Create missing record with proper carry-over
+            console.log(`[Auto-seed] Creating ledger for ${item.name} on ${date}, Opening from ${sourceDate || 'N/A'}: ${correctOpening}`);
             
             const newStock = await storage.createStoreStock({
               clientId,
               storeDepartmentId: departmentId as string,
               itemId: item.id,
               date: dateFilter,
-              openingQty,
+              openingQty: correctOpening,
               addedQty: "0",
               issuedQty: "0",
-              closingQty: openingQty,
+              closingQty: correctOpening,
               physicalClosingQty: null,
               varianceQty: "0",
               costPriceSnapshot: item.costPrice || "0.00",
               createdBy: req.session.userId!,
             });
-            newRecords.push(newStock);
+            updatedStock.push(newStock);
+          } else {
+            // Check if existing record has incorrect opening balance and fix it
+            const existingRecord = stockMap.get(item.id)!;
+            const currentOpening = existingRecord.openingQty || "0";
+            
+            if (currentOpening !== correctOpening) {
+              console.log(`[Carry-over Fix] ${item.name} on ${date}: Correcting opening from ${currentOpening} to ${correctOpening} (source: ${sourceDate || 'N/A'})`);
+              
+              // Recalculate closing based on corrected opening
+              const added = parseFloat(existingRecord.addedQty || "0");
+              const issued = parseFloat(existingRecord.issuedQty || "0");
+              const newClosing = parseFloat(correctOpening) + added - issued;
+              
+              const updatedRecord = await storage.updateStoreStock(existingRecord.id, {
+                openingQty: correctOpening,
+                closingQty: newClosing.toString(),
+              });
+              
+              if (updatedRecord) {
+                updatedStock.push(updatedRecord);
+              } else {
+                updatedStock.push(existingRecord);
+              }
+            } else {
+              updatedStock.push(existingRecord);
+            }
           }
         }
         
-        if (newRecords.length > 0) {
-          stock = [...stock, ...newRecords];
-        }
+        stock = updatedStock;
       }
       
       res.json(stock);
