@@ -3729,6 +3729,27 @@ export async function registerRoutes(
       // Create the movement
       const movement = await storage.createStockMovement(parsedMovement);
       
+      // Build itemsDescription and totalValue from lines
+      const itemDescParts: string[] = [];
+      let calculatedTotalValue = 0;
+      
+      for (const line of lines) {
+        const item = await storage.getItem(line.itemId);
+        const itemName = item?.name || "Unknown";
+        const qty = Number(line.qty);
+        const unitCost = Number(line.unitCost || item?.costPrice || 0);
+        
+        itemDescParts.push(`${itemName} (${qty})`);
+        calculatedTotalValue += qty * unitCost;
+        
+        // Update line with correct unitCost if not provided
+        if (!line.unitCost && item?.costPrice) {
+          line.unitCost = Number(item.costPrice);
+        }
+      }
+      
+      const itemsDescription = itemDescParts.join(", ");
+      
       // Create the lines
       const lineInserts = lines.map((line: any) => ({
         movementId: movement.id,
@@ -3739,6 +3760,12 @@ export async function registerRoutes(
       }));
       
       const createdLines = await storage.createStockMovementLinesBulk(lineInserts);
+      
+      // Update movement with itemsDescription and totalValue
+      await storage.updateStockMovement(movement.id, {
+        itemsDescription,
+        totalValue: String(calculatedTotalValue),
+      });
       
       // Update store stock based on movement type
       const clientId = movementData.clientId;
@@ -3769,7 +3796,9 @@ export async function registerRoutes(
         ipAddress: req.ip || "Unknown",
       });
       
-      res.json({ movement, lines: createdLines });
+      // Return the updated movement with description and value
+      const updatedMovement = await storage.getStockMovement(movement.id);
+      res.json({ movement: updatedMovement, lines: createdLines });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

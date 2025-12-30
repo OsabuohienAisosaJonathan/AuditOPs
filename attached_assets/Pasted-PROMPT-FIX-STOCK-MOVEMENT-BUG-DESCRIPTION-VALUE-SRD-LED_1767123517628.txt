@@ -1,0 +1,71 @@
+PROMPT: FIX STOCK MOVEMENT BUG (DESCRIPTION + VALUE + SRD LEDGER POSTING)
+
+We already have a Stock Movements table in Audit Workspace (Stock tab). Do NOT redesign the UI or create a new module. Just fix the existing bug where:
+
+Description is not showing
+A) When a movement is recorded (e.g., Transfer JUICES OUTLET SR-D → MAIN STORE SR-D), the movement row must display a readable Description.
+B) Description should be generated from the movement line items:
+
+Format: PINEAPPLE JUICE (1), ORANGE JUICE (2)
+
+If only one item: PINEAPPLE JUICE (1)
+
+If backend already stores line items, the API should return them and the UI should render description. If not returned, fix the API response to include movementLines.
+
+Value is always ₦0
+A) Value should be computed as total stock value moved:
+
+Total Value = Σ(qty × unitCost) across all movement lines.
+B) unitCost must come from:
+i) movementLine.unitCost if it exists, else
+ii) inventory item cost price (or latest cost price) in the SRD/item master, else
+iii) 0 (fallback only)
+
+Most important bug: Movement not reflecting inside SRD Ledger tables
+When a movement is saved, it MUST immediately affect SRD ledger totals for that same date, so the ledger columns update correctly.
+
+Example test that must work:
+
+On Dec 30, transfer 1 qty PINEAPPLE JUICE from JUICES OUTLET SR-D → MAIN STORE SR-D
+Expected ledger effect on Dec 30:
+A) JUICES OUTLET SR-D ledger:
+
+must reduce stock (closing reduces by 1)
+B) MAIN STORE SR-D ledger:
+
+must increase stock (total/closing increases by 1)
+
+Posting logic (do not change schema — fix calculation / posting hook)
+A) Ensure movement save triggers a “ledger apply” step:
+
+Either inside the movement creation transaction OR as a guaranteed post-save function (but must run every time).
+B) Update the correct day’s ledger row:
+
+Find/create ledger record for that SRD + date.
+C) Apply movement impact based on movement type:
+i) TRANSFER: From SRD decreases, To SRD increases
+ii) ADJUSTMENT: increase or decrease based on sign/type
+iii) WASTE: decreases
+iv) WRITE-OFF: decreases
+
+Recalculate closing after posting
+After applying movement quantities, recalc:
+Closing = Opening + Purchase + Inflows − Outflows
+Where:
+
+inflows include TransferIn + AdjustmentIn
+
+outflows include TransferOut + Waste + WriteOff + AdjustmentOut
+
+Prevent duplicates
+If movement is edited or re-saved, don’t double-apply.
+Use movementId + lineId (or a posting reference) to ensure idempotency.
+
+Acceptance checks
+A) Stock Movements table shows:
+
+correct Description text
+
+correct Value (₦)
+B) Same movement reflects in BOTH SRD ledgers instantly for that date
+C) Works for Transfer + Adjustment + Waste + Write-off.
