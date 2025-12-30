@@ -540,7 +540,16 @@ export default function Clients() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="category-name">Category Name</Label>
-                <Input id="category-name" name="name" placeholder="e.g., F&B, Front Desk, Admin" required />
+                <Input 
+                  id="category-name" 
+                  name="name" 
+                  placeholder="e.g., F&B, FRONT DESK, ADMIN" 
+                  onChange={(e) => e.target.value = e.target.value.toUpperCase()}
+                  required 
+                />
+                <p className="text-xs text-muted-foreground">
+                  Category names will be saved as UPPERCASE.
+                </p>
               </div>
             </div>
             <DialogFooter>
@@ -593,12 +602,14 @@ export default function Clients() {
                 <Textarea 
                   id="bulk-depts"
                   value={bulkDeptInput}
-                  onChange={(e) => setBulkDeptInput(e.target.value)}
-                  placeholder="Enter department names, one per line:&#10;Kitchen&#10;Bar&#10;Restaurant Floor"
+                  onChange={(e) => setBulkDeptInput(e.target.value.toUpperCase())}
+                  placeholder="Enter department names, one per line:&#10;KITCHEN&#10;BAR&#10;RESTAURANT FLOOR"
                   rows={6}
                   required
                 />
-                <p className="text-xs text-muted-foreground">Enter one department name per line</p>
+                <p className="text-xs text-muted-foreground">
+                  Enter one department name per line. Names will be saved as UPPERCASE and end with "OUTLET" automatically.
+                </p>
               </div>
             </div>
             <DialogFooter>
@@ -636,8 +647,12 @@ export default function Clients() {
                   id="edit-dept-name" 
                   name="name" 
                   defaultValue={editingDepartment?.name} 
+                  onChange={(e) => e.target.value = e.target.value.toUpperCase()}
                   required 
                 />
+                <p className="text-xs text-muted-foreground">
+                  Names will be saved as UPPERCASE and end with "OUTLET" automatically.
+                </p>
               </div>
             </div>
             <DialogFooter>

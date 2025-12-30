@@ -72,6 +72,33 @@ function clearAttempts(identifier: string): void {
   loginAttempts.delete(identifier);
 }
 
+// Helper function to normalize department names: uppercase + ensure ends with " OUTLET"
+function normalizeDepartmentName(name: string): string {
+  // Trim and uppercase
+  let normalized = name.trim().toUpperCase();
+  
+  // Normalize multiple spaces to single space
+  normalized = normalized.replace(/\s+/g, ' ');
+  
+  // Ensure it ends with " OUTLET" (avoid duplicates like "GRILL OUTLET OUTLET")
+  if (!normalized.endsWith(' OUTLET')) {
+    normalized = normalized + ' OUTLET';
+  }
+  
+  return normalized;
+}
+
+// Helper function to normalize category names: uppercase only (no OUTLET suffix)
+function normalizeCategoryName(name: string): string {
+  // Trim, uppercase, and normalize spaces
+  return name.trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+// Validate name length (at least 2 characters after trimming)
+function validateNameLength(name: string, minLength: number = 2): boolean {
+  return name.trim().length >= minLength;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1444,8 +1471,15 @@ export async function registerRoutes(
 
   app.post("/api/categories", requireSupervisorOrAbove, async (req, res) => {
     try {
+      // Validate and normalize category name
+      if (!req.body.name || !validateNameLength(req.body.name)) {
+        return res.status(400).json({ error: "Category name must be at least 2 characters" });
+      }
+      const normalizedName = normalizeCategoryName(req.body.name);
+      
       const data = insertCategorySchema.parse({
         ...req.body,
+        name: normalizedName,
         createdBy: req.session.userId
       });
       const category = await storage.createCategory(data);
@@ -1467,7 +1501,16 @@ export async function registerRoutes(
 
   app.patch("/api/categories/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
-      const category = await storage.updateCategory(req.params.id, req.body);
+      // Normalize name if being updated
+      const updateData = { ...req.body };
+      if (updateData.name) {
+        if (!validateNameLength(updateData.name)) {
+          return res.status(400).json({ error: "Category name must be at least 2 characters" });
+        }
+        updateData.name = normalizeCategoryName(updateData.name);
+      }
+      
+      const category = await storage.updateCategory(req.params.id, updateData);
       if (!category) {
         return res.status(404).json({ error: "Category not found" });
       }
@@ -1523,14 +1566,21 @@ export async function registerRoutes(
     try {
       const { clientId } = req.params;
       
+      // Validate and normalize department name
+      if (!req.body.name || !validateNameLength(req.body.name)) {
+        return res.status(400).json({ error: "Department name must be at least 2 characters" });
+      }
+      const normalizedName = normalizeDepartmentName(req.body.name);
+      
       // Check for duplicate name
-      const nameExists = await storage.checkDepartmentNameExists(clientId, req.body.name);
+      const nameExists = await storage.checkDepartmentNameExists(clientId, normalizedName);
       if (nameExists) {
         return res.status(400).json({ error: "A department with this name already exists for this client" });
       }
       
       const data = { 
         ...req.body, 
+        name: normalizedName,
         clientId,
         createdBy: req.session.userId
       };
@@ -1565,13 +1615,16 @@ export async function registerRoutes(
         return res.status(400).json({ error: "clientId is required" });
       }
       
-      const insertData = deptList.map((name: string) => ({
-        name: name.trim(),
-        clientId,
-        categoryId: categoryId || null,
-        status: "active",
-        createdBy: req.session.userId,
-      })).filter((d: { name: string }) => d.name.length > 0);
+      const insertData = deptList
+        .map((name: string) => name.trim())
+        .filter((name: string) => validateNameLength(name))
+        .map((name: string) => ({
+          name: normalizeDepartmentName(name),
+          clientId,
+          categoryId: categoryId || null,
+          status: "active",
+          createdBy: req.session.userId,
+        }));
       
       const created = await storage.createDepartmentsBulk(insertData);
       
@@ -1644,7 +1697,25 @@ export async function registerRoutes(
   app.patch("/api/departments/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
       const existingDept = await storage.getDepartment(req.params.id);
-      const department = await storage.updateDepartment(req.params.id, req.body);
+      
+      // Normalize name if being updated
+      const updateData = { ...req.body };
+      if (updateData.name) {
+        if (!validateNameLength(updateData.name)) {
+          return res.status(400).json({ error: "Department name must be at least 2 characters" });
+        }
+        updateData.name = normalizeDepartmentName(updateData.name);
+        
+        // Check for duplicate name (excluding current department)
+        if (existingDept) {
+          const nameExists = await storage.checkDepartmentNameExists(existingDept.clientId, updateData.name, req.params.id);
+          if (nameExists) {
+            return res.status(400).json({ error: "A department with this name already exists for this client" });
+          }
+        }
+      }
+      
+      const department = await storage.updateDepartment(req.params.id, updateData);
       if (!department) {
         return res.status(404).json({ error: "Department not found" });
       }
