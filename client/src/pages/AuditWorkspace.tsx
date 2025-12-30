@@ -1302,7 +1302,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   const { data: items = [] } = useQuery<{ id: string; name: string; costPrice: string }[]>({
     queryKey: ["items-stock", clientId],
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${clientId}/items`);
+      const res = await fetch(`/api/items?clientId=${clientId}`);
       if (!res.ok) throw new Error("Failed to fetch items");
       return res.json();
     },
