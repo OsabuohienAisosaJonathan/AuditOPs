@@ -452,7 +452,17 @@ export default function Clients() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Client Name</Label>
-                <Input id="name" name="name" placeholder="Enter client name" required data-testid="input-client-name" />
+                <Input 
+                  id="name" 
+                  name="name" 
+                  placeholder="Enter client name" 
+                  onChange={(e) => e.target.value = e.target.value.toUpperCase()}
+                  required 
+                  data-testid="input-client-name" 
+                />
+                <p className="text-xs text-muted-foreground">
+                  Client names will be saved as UPPERCASE.
+                </p>
               </div>
             </div>
             <DialogFooter>
@@ -486,8 +496,12 @@ export default function Clients() {
                   id="edit-name" 
                   name="name" 
                   defaultValue={editingClient?.name} 
+                  onChange={(e) => e.target.value = e.target.value.toUpperCase()}
                   required 
                 />
+                <p className="text-xs text-muted-foreground">
+                  Client names will be saved as UPPERCASE.
+                </p>
               </div>
             </div>
             <DialogFooter>

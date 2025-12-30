@@ -1389,7 +1389,13 @@ export async function registerRoutes(
 
   app.post("/api/clients", requireSuperAdmin, async (req, res) => {
     try {
-      const data = insertClientSchema.parse(req.body);
+      // Validate and normalize client name
+      if (!req.body.name || !validateNameLength(req.body.name)) {
+        return res.status(400).json({ error: "Client name must be at least 2 characters" });
+      }
+      const normalizedName = req.body.name.trim().toUpperCase().replace(/\s+/g, ' ');
+      
+      const data = insertClientSchema.parse({ ...req.body, name: normalizedName });
       const client = await storage.createClient(data);
       
       await storage.createAuditLog({
@@ -1409,7 +1415,16 @@ export async function registerRoutes(
 
   app.patch("/api/clients/:id", requireSuperAdmin, async (req, res) => {
     try {
-      const client = await storage.updateClient(req.params.id, req.body);
+      // Normalize name if being updated
+      const updateData = { ...req.body };
+      if (updateData.name) {
+        if (!validateNameLength(updateData.name)) {
+          return res.status(400).json({ error: "Client name must be at least 2 characters" });
+        }
+        updateData.name = updateData.name.trim().toUpperCase().replace(/\s+/g, ' ');
+      }
+      
+      const client = await storage.updateClient(req.params.id, updateData);
       if (!client) {
         return res.status(404).json({ error: "Client not found" });
       }
