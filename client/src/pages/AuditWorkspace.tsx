@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -684,34 +684,61 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
               <TableBody>
                 {reportedPaymentsByDept.map((report) => {
                   return (
-                    <TableRow key={report.departmentId} data-testid={`row-payment-${report.departmentId}`}>
-                      <TableCell className="font-medium">{report.departmentName}</TableCell>
-                      <TableCell className="text-right font-mono">₦ {report.totalCaptured.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {report.hasDeclaration ? `₦ ${report.totalDeclared.toLocaleString()}` : <span className="text-muted-foreground">Pending</span>}
-                      </TableCell>
-                      <TableCell className={cn(
-                        "text-right font-mono font-medium",
-                        !report.hasDeclaration ? "text-amber-600" : report.variance === 0 ? "text-emerald-600" : report.variance < 0 ? "text-red-600" : "text-amber-600"
-                      )}>
-                        {!report.hasDeclaration 
-                          ? <span className="text-amber-600">₦ -{report.totalCaptured.toLocaleString()}</span>
-                          : report.variance === 0 
-                            ? "₦ 0" 
-                            : `₦ ${report.variance > 0 ? "+" : ""}${report.variance.toLocaleString()}`}
-                      </TableCell>
-                      <TableCell>
-                        {!report.hasDeclaration ? (
-                          <Badge variant="outline" className="text-amber-600 border-amber-600">Awaiting Declaration</Badge>
-                        ) : report.variance === 0 ? (
-                          <Badge variant="default" className="bg-emerald-600">Matched</Badge>
-                        ) : report.variance < 0 ? (
-                          <Badge variant="destructive">Short</Badge>
-                        ) : (
-                          <Badge variant="secondary" className="bg-amber-100 text-amber-800">Over</Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
+                    <React.Fragment key={report.departmentId}>
+                      <TableRow data-testid={`row-payment-${report.departmentId}`}>
+                        <TableCell className="font-medium">{report.departmentName}</TableCell>
+                        <TableCell className="text-right font-mono">₦ {report.totalCaptured.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {report.hasDeclaration ? `₦ ${report.totalDeclared.toLocaleString()}` : <span className="text-muted-foreground">Pending</span>}
+                        </TableCell>
+                        <TableCell className={cn(
+                          "text-right font-mono font-medium",
+                          !report.hasDeclaration ? "text-amber-600" : report.variance === 0 ? "text-emerald-600" : report.variance < 0 ? "text-red-600" : "text-amber-600"
+                        )}>
+                          {!report.hasDeclaration 
+                            ? <span className="text-amber-600">₦ -{report.totalCaptured.toLocaleString()}</span>
+                            : report.variance === 0 
+                              ? "₦ 0" 
+                              : `₦ ${report.variance > 0 ? "+" : ""}${report.variance.toLocaleString()}`}
+                        </TableCell>
+                        <TableCell>
+                          {!report.hasDeclaration ? (
+                            <Badge variant="outline" className="text-amber-600 border-amber-600">Awaiting Declaration</Badge>
+                          ) : report.variance === 0 ? (
+                            <Badge variant="default" className="bg-emerald-600">Matched</Badge>
+                          ) : report.variance < 0 ? (
+                            <Badge variant="destructive">Short</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-800">Over</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow className="bg-muted/20 border-b" data-testid={`row-payment-breakdown-${report.departmentId}`}>
+                        <TableCell className="py-2 pl-8">
+                          <span className="text-xs text-muted-foreground">Declared Breakdown:</span>
+                        </TableCell>
+                        <TableCell colSpan={4} className="py-2">
+                          <div className="flex items-center gap-6 text-sm">
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Cash:</span>
+                              <span className="font-mono">₦ {report.declaredCash.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">POS:</span>
+                              <span className="font-mono">₦ {report.declaredPos.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Transfer:</span>
+                              <span className="font-mono">₦ {report.declaredTransfer.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1 ml-auto">
+                              <span className="text-muted-foreground font-medium">Total:</span>
+                              <span className="font-mono font-semibold">₦ {report.totalDeclared.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
                   );
                 })}
               </TableBody>
