@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Upload, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1131,6 +1131,7 @@ function StoreTab({ clientId, departments, items, dateStr }: {
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   // Fetch inventory departments (SRDs) for proper From/To names
   const { data: inventoryDepts = [] } = useQuery<InventoryDept[]>({
@@ -1223,12 +1224,42 @@ function StoreTab({ clientId, departments, items, dateStr }: {
     updateNotesMutation.mutate({ issueId: selectedIssueId, notes: noteText });
   };
 
+  // Find the Main Store SRD for this client
+  const mainStoreSrd = useMemo(() => {
+    const mainStores = inventoryDepts.filter(d => d.inventoryType === "MAIN_STORE" && d.status === "active");
+    if (mainStores.length > 1) {
+      console.warn("Multiple active Main Store SRDs found for client. Using first one.");
+    }
+    return mainStores[0] || null;
+  }, [inventoryDepts]);
+
+  const handleGoToMainStore = () => {
+    if (!mainStoreSrd) {
+      toast.error("No Main Store SRD found for this client. Create one in Inventory Ledger first.");
+      return;
+    }
+    // Navigate to Inventory Ledger with the Main Store SRD selected
+    setLocation(`/inventory-ledger?srdId=${mainStoreSrd.id}&clientId=${clientId}`);
+  };
+
   return (
     <Card className="border-none shadow-none">
       <CardHeader className="px-0 pt-0 pb-4">
-        <div>
-          <CardTitle>Store Issues</CardTitle>
-          <CardDescription>View items issued from Main Store to Department Stores</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Store Issues</CardTitle>
+            <CardDescription>View items issued from Main Store to Department Stores</CardDescription>
+          </div>
+          <Button 
+            onClick={handleGoToMainStore} 
+            variant="outline" 
+            className="gap-2"
+            disabled={!clientId}
+            data-testid="button-go-to-main-store"
+          >
+            <Store className="h-4 w-4" />
+            Go to Main Store SRD
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="px-0">

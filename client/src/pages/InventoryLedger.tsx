@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, subDays, addDays, isToday, isBefore, startOfDay } from "date-fns";
+import { useSearch } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,8 +100,13 @@ export default function InventoryLedger() {
   const { selectedClient, clients } = useClientContext();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const searchString = useSearch();
+  const urlParams = new URLSearchParams(searchString);
+  const srdIdFromUrl = urlParams.get("srdId");
+  
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [selectedInvDept, setSelectedInvDept] = useState<string | null>(null);
+  const [initialSrdSet, setInitialSrdSet] = useState(false);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [issueItemId, setIssueItemId] = useState<string | null>(null);
   const [issueToDeptId, setIssueToDeptId] = useState<string | null>(null);
@@ -186,6 +192,14 @@ export default function InventoryLedger() {
   };
 
   const selectedClientId = selectedClient?.id || clients[0]?.id;
+  
+  // Set initial SRD from URL parameter if provided
+  useEffect(() => {
+    if (srdIdFromUrl && !initialSrdSet) {
+      setSelectedInvDept(srdIdFromUrl);
+      setInitialSrdSet(true);
+    }
+  }, [srdIdFromUrl, initialSrdSet]);
 
   // Fetch inventory departments for the client
   const { data: inventoryDepts, isLoading: invDeptsLoading } = useQuery<InventoryDepartment[]>({
