@@ -173,9 +173,16 @@ export default function AuditWorkspace() {
   const { data: allSrdStoreStock = [] } = useQuery<StoreStock[]>({
     queryKey: ["store-stock-all-srds", clientId, dateStr, departmentStoreSrds.map(s => s.id).join(",")],
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${clientId}/store-stock?date=${dateStr}`);
-      if (!res.ok) throw new Error("Failed to fetch store stock");
-      return res.json();
+      // Fetch store stock for each SRD and combine results
+      const allStock: StoreStock[] = [];
+      for (const srd of departmentStoreSrds) {
+        const res = await fetch(`/api/clients/${clientId}/store-stock?departmentId=${srd.id}&date=${dateStr}`);
+        if (res.ok) {
+          const srdStock = await res.json();
+          allStock.push(...srdStock);
+        }
+      }
+      return allStock;
     },
     enabled: !!clientId && departmentStoreSrds.length > 0,
   });
