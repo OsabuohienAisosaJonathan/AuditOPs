@@ -324,7 +324,7 @@ export default function Clients() {
                       
                       <TabsContent value="departments" className="mt-4">
                         <div className="flex items-center justify-between mb-4">
-                          <p className="text-sm text-muted-foreground">An Department outlet refers to a specific point of sale or service area within e.g (a hotel or restaurant group) that generates revenue by providing food, beverages, or other specialized services.</p>
+                          <p className="text-sm text-muted-foreground">A Department outlet refers to a specific point of sale or service area within e.g (a hotel or restaurant group) that generates sales/revenue by providing food, beverages, or other specialized services.</p>
                           <Button 
                             size="sm" 
                             onClick={() => {
