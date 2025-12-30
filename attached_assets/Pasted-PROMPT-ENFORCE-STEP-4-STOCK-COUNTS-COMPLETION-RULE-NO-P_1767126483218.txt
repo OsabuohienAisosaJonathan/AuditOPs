@@ -1,0 +1,53 @@
+PROMPT: ENFORCE STEP 4 “STOCK COUNTS” COMPLETION RULE (NO PARTIAL COUNTS)
+
+TASK: Fix the Daily Audit Checklist logic so Step 4: Stock Counts cannot be marked “Completed” until ALL pending (“Waiting Count”) items for the selected SRD and date have been counted — even if those items had no stock movement on that day.
+
+1) Define “Waiting Count” correctly
+
+A) For the selected date + SRD, generate the “stock count required list” from the SRD ledger items for that SRD.
+B) The count list must include every ledger item that exists/active in that SRD for that date, not only items with movement.
+C) Do not skip items because they had no transfers, purchases, issues, adjustments, waste, or write-off.
+
+Meaning: If an item is part of the SRD ledger for that day, it must be countable and must be counted before Step 4 can complete.
+
+2) Block Step 4 completion until all are counted
+
+A) Step 4 status rules:
+i) If waitingCountItems > 0 → Step 4 must stay Not Started / In Progress
+ii) Only when waitingCountItems == 0 → Step 4 can become Completed
+
+B) “Waiting Count” means:
+
+item has no submitted physical count record for that date + SRD, OR
+
+item count record exists but is still in draft/pending state.
+
+3) Make Step 4 progress visible (so users understand why it’s not complete)
+
+A) Show a counter on Step 4:
+Counted: X / Total: Y
+B) Show Waiting Count: (Y - X) clearly.
+
+4) Do not allow “silent completion”
+
+Even if Step 1–3 are completed, Step 4 must never auto-complete unless:
+
+all SRD ledger items for that date have a valid count submission.
+
+5) Edge cases (important)
+
+A) If an SRD has no items at all in its ledger for that date (rare), Step 4 may be marked complete only if the system confirms ledger is genuinely empty.
+B) If an item exists but has 0 closing, it must still be counted (because zero could be theft, stock-out, or missing entry).
+C) If items are filtered by category in UI, Step 4 completion must still be based on full SRD ledger list, not only currently filtered view.
+
+6) Verification checklist (must pass)
+
+Open Stock Counts for SRD + date with 50 ledger items.
+
+Count 10 items only.
+
+Step 4 must remain In Progress, showing 10/50 and Waiting Count: 40.
+
+Count remaining 40 items.
+
+Step 4 must flip to Completed immediately.

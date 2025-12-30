@@ -135,6 +135,80 @@ export default function AuditWorkspace() {
     enabled: !!clientId,
   });
 
+  // Fetch inventory departments (SRDs) for stock count progress tracking
+  const { data: inventoryDepts = [] } = useQuery<{ id: string; storeNameId: string; inventoryType: string; status: string }[]>({
+    queryKey: ["inventory-departments", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments`);
+      if (!res.ok) throw new Error("Failed to fetch inventory departments");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+
+  // Get DEPARTMENT_STORE SRDs only (these need stock counts)
+  const departmentStoreSrds = useMemo(() => {
+    return inventoryDepts.filter(d => d.inventoryType === "DEPARTMENT_STORE" && d.status === "active");
+  }, [inventoryDepts]);
+
+  // Fetch items for each DEPARTMENT_STORE SRD and store stock data
+  const { data: srdItemsMap = {} } = useQuery<Record<string, { id: string; name: string }[]>>({
+    queryKey: ["srd-items-all", clientId, departmentStoreSrds.map(s => s.id).join(",")],
+    queryFn: async () => {
+      const result: Record<string, { id: string; name: string }[]> = {};
+      for (const srd of departmentStoreSrds) {
+        const res = await fetch(`/api/clients/${clientId}/inventory-departments/${srd.id}/items`);
+        if (res.ok) {
+          result[srd.id] = await res.json();
+        } else {
+          result[srd.id] = [];
+        }
+      }
+      return result;
+    },
+    enabled: !!clientId && departmentStoreSrds.length > 0,
+  });
+
+  // Fetch store stock data for all DEPARTMENT_STORE SRDs for the selected date
+  const { data: allSrdStoreStock = [] } = useQuery<StoreStock[]>({
+    queryKey: ["store-stock-all-srds", clientId, dateStr, departmentStoreSrds.map(s => s.id).join(",")],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/store-stock?date=${dateStr}`);
+      if (!res.ok) throw new Error("Failed to fetch store stock");
+      return res.json();
+    },
+    enabled: !!clientId && departmentStoreSrds.length > 0,
+  });
+
+  // Calculate stock counts progress: how many items counted vs total items across all DEPARTMENT_STORE SRDs
+  const stockCountsProgress = useMemo(() => {
+    let totalItems = 0;
+    let countedItems = 0;
+
+    for (const srd of departmentStoreSrds) {
+      const srdItems = srdItemsMap[srd.id] || [];
+      totalItems += srdItems.length;
+
+      for (const item of srdItems) {
+        // Check if this item has a physical count for this SRD and date
+        const stockRecord = allSrdStoreStock.find(
+          s => s.storeDepartmentId === srd.id && s.itemId === item.id
+        );
+        if (stockRecord && stockRecord.physicalClosingQty !== null && stockRecord.physicalClosingQty !== undefined) {
+          countedItems++;
+        }
+      }
+    }
+
+    return {
+      totalItems,
+      countedItems,
+      waitingCount: totalItems - countedItems,
+      isComplete: totalItems > 0 && countedItems >= totalItems,
+      isEmpty: totalItems === 0,
+    };
+  }, [departmentStoreSrds, srdItemsMap, allSrdStoreStock]);
+
   const auditDepartment = departments.find(d => d.id === departmentId);
 
   const auditSteps: AuditStep[] = useMemo(() => {
@@ -168,9 +242,11 @@ export default function AuditWorkspace() {
       },
       { 
         id: "counts", 
-        label: "Stock Counts", 
+        label: `Stock Counts (${stockCountsProgress.countedItems}/${stockCountsProgress.totalItems})`, 
         tab: "counts",
-        status: getStepStatus(stockCounts.length > 0, stockCounts.length),
+        status: stockCountsProgress.isEmpty ? "not_started" : 
+                stockCountsProgress.isComplete ? "completed" : 
+                stockCountsProgress.countedItems > 0 ? "in_progress" : "not_started",
         lastUpdated: stockCounts.length > 0 ? format(new Date(stockCounts[0].date), "HH:mm") : undefined,
       },
       { 
@@ -181,7 +257,7 @@ export default function AuditWorkspace() {
         lastUpdated: reconciliations.length > 0 ? format(new Date(reconciliations[0].createdAt), "HH:mm") : undefined,
       },
     ];
-  }, [salesEntries, grns, stockMovements, stockCounts, reconciliations]);
+  }, [salesEntries, grns, stockMovements, stockCounts, reconciliations, stockCountsProgress]);
 
   const handleStepClick = (step: AuditStep) => {
     setActiveTab(step.tab);
