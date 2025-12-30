@@ -1255,6 +1255,13 @@ interface StoreNameStock {
   name: string;
 }
 
+interface MovementItemLine {
+  id: string;
+  itemId: string;
+  qty: number;
+  unitCost: number;
+}
+
 function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   stockMovements: StockMovement[];
   clientId: string | null;
@@ -1265,6 +1272,9 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   const [movementType, setMovementType] = useState("transfer");
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
+  const [adjustmentDirection, setAdjustmentDirection] = useState<"increase" | "decrease">("increase");
+  const [notes, setNotes] = useState("");
+  const [itemLines, setItemLines] = useState<MovementItemLine[]>([]);
 
   // Fetch inventory departments (SRDs) for the client
   const { data: invDepts = [] } = useQuery<InventoryDeptStock[]>({
@@ -1288,6 +1298,17 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
     enabled: !!clientId,
   });
 
+  // Fetch items for the client
+  const { data: items = [] } = useQuery<{ id: string; name: string; costPrice: string }[]>({
+    queryKey: ["items-stock", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/items`);
+      if (!res.ok) throw new Error("Failed to fetch items");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+
   const getSrdName = (deptId: string) => {
     const dept = invDepts.find(d => d.id === deptId);
     if (!dept) return "Unknown";
@@ -1296,16 +1317,62 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   };
 
   const needsToLocation = movementType === "transfer";
+  const isAdjustment = movementType === "adjustment";
   const queryClient = useQueryClient();
 
   const resetForm = () => {
     setMovementType("transfer");
     setFromLocation("");
     setToLocation("");
+    setAdjustmentDirection("increase");
+    setNotes("");
+    setItemLines([]);
+  };
+
+  const addItemLine = () => {
+    setItemLines([...itemLines, { id: crypto.randomUUID(), itemId: "", qty: 1, unitCost: 0 }]);
+  };
+
+  const updateItemLine = (id: string, field: keyof MovementItemLine, value: string | number) => {
+    setItemLines(itemLines.map(line => {
+      if (line.id !== id) return line;
+      const updated = { ...line, [field]: value };
+      // Auto-populate unit cost when item is selected
+      if (field === "itemId" && value) {
+        const item = items.find(i => i.id === value);
+        if (item) {
+          updated.unitCost = Number(item.costPrice) || 0;
+        }
+      }
+      return updated;
+    }));
+  };
+
+  const removeItemLine = (id: string) => {
+    setItemLines(itemLines.filter(line => line.id !== id));
+  };
+
+  const calculateTotalValue = () => {
+    return itemLines.reduce((sum, line) => sum + (line.qty * line.unitCost), 0);
+  };
+
+  const calculateTotalQty = () => {
+    return itemLines.reduce((sum, line) => sum + line.qty, 0);
   };
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => stockMovementsApi.create(data),
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/stock-movements/with-lines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create movement");
+      }
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
       setCreateOpen(false);
@@ -1317,7 +1384,6 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
     
     // Get the department ID from the selected inventory department
     const selectedInvDept = invDepts.find(d => d.id === fromLocation);
@@ -1327,16 +1393,42 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
       toast.error("Please select a From Location");
       return;
     }
+
+    if (itemLines.length === 0) {
+      toast.error("Please add at least one item");
+      return;
+    }
+
+    // Validate no duplicate items
+    const itemIds = itemLines.map(l => l.itemId);
+    if (new Set(itemIds).size !== itemIds.length) {
+      toast.error("Duplicate items not allowed");
+      return;
+    }
+
+    // Validate all items have valid qty
+    if (itemLines.some(l => !l.itemId || l.qty <= 0)) {
+      toast.error("All items must have a valid quantity");
+      return;
+    }
     
     createMutation.mutate({
-      clientId,
-      departmentId: deptIdToUse,
-      movementType: movementType,
-      sourceLocation: fromLocation ? getSrdName(fromLocation) : null,
-      destinationLocation: needsToLocation && toLocation ? getSrdName(toLocation) : null,
-      itemsDescription: formData.get("itemsDescription"),
-      totalValue: formData.get("totalValue"),
-      authorizedBy: formData.get("authorizedBy"),
+      movement: {
+        clientId,
+        departmentId: deptIdToUse,
+        movementType,
+        fromSrdId: fromLocation || null,
+        toSrdId: needsToLocation ? toLocation : null,
+        adjustmentDirection: isAdjustment ? adjustmentDirection : null,
+        notes: notes || null,
+        sourceLocation: fromLocation ? getSrdName(fromLocation) : null,
+        destinationLocation: needsToLocation && toLocation ? getSrdName(toLocation) : null,
+      },
+      lines: itemLines.map(line => ({
+        itemId: line.itemId,
+        qty: line.qty,
+        unitCost: line.unitCost,
+      })),
     });
   };
 
@@ -1401,28 +1493,43 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
       </CardContent>
 
       <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm(); }}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Record Stock Movement</DialogTitle>
-            <DialogDescription>Log transfers, adjustments, write-offs, or waste</DialogDescription>
+            <DialogDescription>Log transfers, adjustments, write-offs, or waste with item details</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="movementType">Movement Type</Label>
-                <Select value={movementType} onValueChange={setMovementType}>
-                  <SelectTrigger data-testid="select-movement-type"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="transfer">Transfer</SelectItem>
-                    <SelectItem value="adjustment">Adjustment</SelectItem>
-                    <SelectItem value="writeoff">Write-off</SelectItem>
-                    <SelectItem value="waste">Waste</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="movementType">Movement Type</Label>
+                  <Select value={movementType} onValueChange={setMovementType}>
+                    <SelectTrigger data-testid="select-movement-type"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="transfer">Transfer</SelectItem>
+                      <SelectItem value="adjustment">Adjustment</SelectItem>
+                      <SelectItem value="write_off">Write-off</SelectItem>
+                      <SelectItem value="waste">Waste</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isAdjustment && (
+                  <div className="space-y-2">
+                    <Label>Direction</Label>
+                    <Select value={adjustmentDirection} onValueChange={(v) => setAdjustmentDirection(v as "increase" | "decrease")}>
+                      <SelectTrigger data-testid="select-adjustment-direction"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="increase">Increase (+)</SelectItem>
+                        <SelectItem value="decrease">Decrease (-)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
+
               <div className={needsToLocation ? "grid grid-cols-2 gap-4" : ""}>
                 <div className="space-y-2">
-                  <Label htmlFor="sourceLocation">From Location (SRD)</Label>
+                  <Label htmlFor="sourceLocation">{needsToLocation ? "From SRD" : "Target SRD"}</Label>
                   <Select value={fromLocation} onValueChange={setFromLocation}>
                     <SelectTrigger data-testid="select-from-location"><SelectValue placeholder="Select SRD" /></SelectTrigger>
                     <SelectContent>
@@ -1436,7 +1543,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                 </div>
                 {needsToLocation && (
                   <div className="space-y-2">
-                    <Label htmlFor="destinationLocation">To Location (SRD)</Label>
+                    <Label htmlFor="destinationLocation">To SRD</Label>
                     <Select value={toLocation} onValueChange={setToLocation}>
                       <SelectTrigger data-testid="select-to-location"><SelectValue placeholder="Select SRD" /></SelectTrigger>
                       <SelectContent>
@@ -1450,24 +1557,107 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                   </div>
                 )}
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="itemsDescription">Items Description</Label>
-                <Textarea id="itemsDescription" name="itemsDescription" placeholder="List of items moved" required data-testid="input-items-description" />
+                <div className="flex items-center justify-between">
+                  <Label>Items</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addItemLine} data-testid="button-add-item-line">
+                    <Plus className="h-3 w-3 mr-1" /> Add Item
+                  </Button>
+                </div>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="w-[40%]">Item</TableHead>
+                        <TableHead className="w-[20%]">Qty</TableHead>
+                        <TableHead className="w-[25%]">Unit Cost (₦)</TableHead>
+                        <TableHead className="w-[15%] text-right">Value</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemLines.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
+                            Click "Add Item" to start adding items
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        itemLines.map((line) => (
+                          <TableRow key={line.id} data-testid={`row-item-line-${line.id}`}>
+                            <TableCell>
+                              <Select value={line.itemId} onValueChange={(v) => updateItemLine(line.id, "itemId", v)}>
+                                <SelectTrigger data-testid={`select-item-${line.id}`}><SelectValue placeholder="Select item" /></SelectTrigger>
+                                <SelectContent>
+                                  {items.map(item => (
+                                    <SelectItem key={item.id} value={item.id} disabled={itemLines.some(l => l.id !== line.id && l.itemId === item.id)}>
+                                      {item.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                value={line.qty}
+                                onChange={(e) => updateItemLine(line.id, "qty", Number(e.target.value))}
+                                data-testid={`input-qty-${line.id}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={line.unitCost}
+                                onChange={(e) => updateItemLine(line.id, "unitCost", Number(e.target.value))}
+                                data-testid={`input-unit-cost-${line.id}`}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ₦{(line.qty * line.unitCost).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removeItemLine(line.id)} data-testid={`button-remove-line-${line.id}`}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                  {itemLines.length > 0 && (
+                    <div className="bg-muted/30 p-3 flex justify-between border-t">
+                      <span className="text-sm text-muted-foreground">Total: {calculateTotalQty()} items</span>
+                      <span className="font-mono font-bold">₦{calculateTotalValue().toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="totalValue">Total Value (₦)</Label>
-                  <Input id="totalValue" name="totalValue" type="number" step="0.01" placeholder="0.00" data-testid="input-total-value" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="authorizedBy">Authorized By</Label>
-                  <Input id="authorizedBy" name="authorizedBy" placeholder="Manager name" data-testid="input-authorized-by" />
-                </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes (Optional)</Label>
+                <Textarea 
+                  id="notes" 
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional notes about this movement" 
+                  data-testid="input-notes"
+                />
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => { setCreateOpen(false); resetForm(); }}>Cancel</Button>
-              <Button type="submit" disabled={createMutation.isPending || !fromLocation || (needsToLocation && !toLocation)} data-testid="button-save-movement">
+              <Button 
+                type="submit" 
+                disabled={createMutation.isPending || !fromLocation || (needsToLocation && !toLocation) || itemLines.length === 0} 
+                data-testid="button-save-movement"
+              >
                 {createMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
                 Save Movement
               </Button>

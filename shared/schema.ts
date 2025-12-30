@@ -155,6 +155,7 @@ export const purchases = pgTable("purchases", {
 
 // Stock movements are now tied to departments and SRDs
 export const MOVEMENT_TYPES = ["transfer", "adjustment", "write_off", "waste"] as const;
+export const STOCK_MOVEMENT_TYPES = MOVEMENT_TYPES; // Alias for convenience
 export type MovementType = typeof MOVEMENT_TYPES[number];
 
 export const ADJUSTMENT_DIRECTIONS = ["increase", "decrease"] as const;
