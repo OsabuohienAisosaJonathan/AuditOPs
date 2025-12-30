@@ -393,7 +393,7 @@ export default function Clients() {
                       
                       <TabsContent value="categories" className="mt-4">
                         <div className="flex items-center justify-between mb-4">
-                          <p className="text-sm text-muted-foreground">Categories are optional grouping labels for departments/Sales Outlets</p>
+                          <p className="text-sm text-muted-foreground">Categories serve as optional grouping labels for departments and outlets to facilitate the efficient separation and organization of items within the Inventory Management page. Create before proceeding to Inventory & Purchases</p>
                           <Button 
                             size="sm" 
                             variant="outline"
