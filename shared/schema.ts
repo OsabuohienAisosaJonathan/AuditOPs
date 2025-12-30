@@ -393,7 +393,7 @@ export const auditChangeLog = pgTable("audit_change_log", {
 });
 
 // ============================================================
-// STORE ISSUES (Store → Department transfers)
+// STORE ISSUES (Store → Department transfers) - LEGACY
 // ============================================================
 
 export const storeIssues = pgTable("store_issues", {
@@ -414,6 +414,29 @@ export const storeIssueLines = pgTable("store_issue_lines", {
   itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
   qtyIssued: decimal("qty_issued", { precision: 10, scale: 2 }).notNull(),
   costPriceSnapshot: decimal("cost_price_snapshot", { precision: 12, scale: 2 }).default("0.00"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// SRD TRANSFERS (Unified SRD ↔ SRD movement: Issue, Return, Transfer)
+// ============================================================
+
+export const SRD_TRANSFER_TYPES = ["issue", "return", "transfer"] as const;
+export type SrdTransferType = typeof SRD_TRANSFER_TYPES[number];
+
+export const srdTransfers = pgTable("srd_transfers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  refId: varchar("ref_id").notNull(),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  fromSrdId: varchar("from_srd_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  toSrdId: varchar("to_srd_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  qty: decimal("qty", { precision: 10, scale: 2 }).notNull(),
+  transferDate: timestamp("transfer_date").notNull(),
+  transferType: text("transfer_type").notNull().default("transfer"),
+  notes: text("notes"),
+  status: text("status").notNull().default("posted"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -609,6 +632,9 @@ export const insertStoreStockSchema = createInsertSchema(storeStock).omit({ id: 
   date: z.coerce.date(),
 });
 export const insertGoodsReceivedNoteSchema = createInsertSchema(goodsReceivedNotes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSrdTransferSchema = createInsertSchema(srdTransfers).omit({ id: true, createdAt: true }).extend({
+  transferDate: z.coerce.date(),
+});
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -679,3 +705,5 @@ export type InsertSurplus = z.infer<typeof insertSurplusSchema>;
 export type Surplus = typeof surpluses.$inferSelect;
 export type InsertSurplusHistory = z.infer<typeof insertSurplusHistorySchema>;
 export type SurplusHistory = typeof surplusHistory.$inferSelect;
+export type InsertSrdTransfer = z.infer<typeof insertSrdTransferSchema>;
+export type SrdTransfer = typeof srdTransfers.$inferSelect;
