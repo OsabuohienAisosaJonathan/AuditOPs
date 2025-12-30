@@ -2731,18 +2731,59 @@ export async function registerRoutes(
   app.get("/api/clients/:clientId/store-stock", requireAuth, async (req, res) => {
     try {
       const { clientId } = req.params;
-      const { departmentId, date } = req.query;
+      const { departmentId, date, autoSeed } = req.query;
       
       if (!departmentId) {
         return res.status(400).json({ error: "departmentId is required" });
       }
       
       const dateFilter = date ? new Date(date as string) : undefined;
-      const stock = await storage.getStoreStock(
+      let stock = await storage.getStoreStock(
         clientId,
         departmentId as string,
         dateFilter
       );
+      
+      // Auto-seed missing records if requested and date is provided
+      if (autoSeed === "true" && dateFilter) {
+        const items = await storage.getItemsForInventoryDepartment(departmentId as string);
+        const existingItemIds = new Set(stock.map(s => s.itemId));
+        
+        // Create missing records with proper carry-over
+        const newRecords = [];
+        for (const item of items) {
+          if (!existingItemIds.has(item.id)) {
+            const { closing: openingQty, sourceDate } = await storage.getLatestClosingBeforeDate(
+              departmentId as string,
+              item.id,
+              dateFilter
+            );
+            
+            console.log(`[Auto-seed] Creating ledger for ${item.name} on ${date}, Opening from ${sourceDate || 'N/A'}: ${openingQty}`);
+            
+            const newStock = await storage.createStoreStock({
+              clientId,
+              storeDepartmentId: departmentId as string,
+              itemId: item.id,
+              date: dateFilter,
+              openingQty,
+              addedQty: "0",
+              issuedQty: "0",
+              closingQty: openingQty,
+              physicalClosingQty: null,
+              varianceQty: "0",
+              costPriceSnapshot: item.costPrice || "0.00",
+              createdBy: req.session.userId!,
+            });
+            newRecords.push(newStock);
+          }
+        }
+        
+        if (newRecords.length > 0) {
+          stock = [...stock, ...newRecords];
+        }
+      }
+      
       res.json(stock);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
