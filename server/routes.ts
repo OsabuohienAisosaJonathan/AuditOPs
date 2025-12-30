@@ -2664,7 +2664,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/inventory-departments/:id", requireAuth, requireRole(["super_admin"]), async (req, res) => {
+  app.delete("/api/inventory-departments/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
     try {
       await storage.deleteInventoryDepartment(req.params.id);
       res.json({ success: true });
