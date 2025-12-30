@@ -7,13 +7,13 @@ import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
 import { 
   insertUserSchema, insertClientSchema, insertCategorySchema, insertDepartmentSchema, 
-  insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, 
+  insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, insertStockMovementLineSchema,
   insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
   insertPaymentDeclarationSchema, insertStoreIssueSchema, insertStoreIssueLineSchema, insertStoreStockSchema,
   insertStoreNameSchema, insertInventoryDepartmentSchema, insertGoodsReceivedNoteSchema, INVENTORY_TYPES,
   insertReceivableSchema, insertReceivableHistorySchema, insertSurplusSchema, insertSurplusHistorySchema,
-  RECEIVABLE_STATUSES, SURPLUS_STATUSES,
+  RECEIVABLE_STATUSES, SURPLUS_STATUSES, STOCK_MOVEMENT_TYPES,
   type UserRole 
 } from "@shared/schema";
 import multer from "multer";
@@ -3175,6 +3175,120 @@ export async function registerRoutes(
       });
 
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get stock movement with lines
+  app.get("/api/stock-movements/:id/with-lines", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.getStockMovementWithLines(req.params.id);
+      if (!result) {
+        return res.status(404).json({ error: "Stock movement not found" });
+      }
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get stock movements by SRD (inventory department)
+  app.get("/api/inventory-departments/:srdId/movements", requireAuth, async (req, res) => {
+    try {
+      const movements = await storage.getStockMovementsBySrd(req.params.srdId);
+      res.json(movements);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create stock movement with lines (transactional)
+  app.post("/api/stock-movements/with-lines", requireAuth, async (req, res) => {
+    try {
+      const { movement: movementData, lines } = req.body;
+      
+      if (!movementData || !lines || !Array.isArray(lines)) {
+        return res.status(400).json({ error: "Movement and lines array are required" });
+      }
+      
+      if (lines.length === 0) {
+        return res.status(400).json({ error: "At least one item line is required" });
+      }
+      
+      const movementType = movementData.movementType;
+      if (!STOCK_MOVEMENT_TYPES.includes(movementType)) {
+        return res.status(400).json({ error: `Invalid movement type: ${movementType}` });
+      }
+      
+      // Validate movement type requirements
+      if (movementType === "transfer") {
+        if (!movementData.fromSrdId || !movementData.toSrdId) {
+          return res.status(400).json({ error: "Transfer requires both From and To SRD" });
+        }
+        if (movementData.fromSrdId === movementData.toSrdId) {
+          return res.status(400).json({ error: "From and To SRD must be different" });
+        }
+      } else if (movementType === "adjustment") {
+        if (!movementData.adjustmentDirection || !["increase", "decrease"].includes(movementData.adjustmentDirection)) {
+          return res.status(400).json({ error: "Adjustment requires a direction (increase or decrease)" });
+        }
+        if (!movementData.fromSrdId) {
+          return res.status(400).json({ error: "Adjustment requires a target SRD" });
+        }
+      } else if (movementType === "write_off" || movementType === "waste") {
+        if (!movementData.fromSrdId) {
+          return res.status(400).json({ error: `${movementType.replace("_", "-")} requires a From SRD` });
+        }
+      }
+      
+      // Calculate total quantity
+      let totalQty = 0;
+      for (const line of lines) {
+        if (!line.itemId || !line.qty || line.qty <= 0) {
+          return res.status(400).json({ error: "Each line must have an item and positive quantity" });
+        }
+        totalQty += Number(line.qty);
+      }
+      
+      // Check for duplicate items
+      const itemIds = lines.map((l: any) => l.itemId);
+      if (new Set(itemIds).size !== itemIds.length) {
+        return res.status(400).json({ error: "Duplicate items not allowed in a single movement" });
+      }
+      
+      // Parse and validate the main movement data
+      const parsedMovement = insertStockMovementSchema.parse({
+        ...movementData,
+        createdBy: req.session.userId!,
+        totalQty: String(totalQty),
+        date: movementData.date ? new Date(movementData.date) : new Date(),
+      });
+      
+      // Create the movement
+      const movement = await storage.createStockMovement(parsedMovement);
+      
+      // Create the lines
+      const lineInserts = lines.map((line: any) => ({
+        movementId: movement.id,
+        itemId: line.itemId,
+        qty: String(line.qty),
+        unitCost: String(line.unitCost || 0),
+        lineValue: String(Number(line.qty) * Number(line.unitCost || 0)),
+      }));
+      
+      const createdLines = await storage.createStockMovementLinesBulk(lineInserts);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: `Created Stock Movement`,
+        entity: "StockMovement",
+        entityId: movement.id,
+        details: `Created ${movementType} movement with ${lines.length} items, total qty: ${totalQty}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json({ movement, lines: createdLines });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
