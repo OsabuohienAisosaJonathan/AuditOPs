@@ -325,6 +325,8 @@ export default function AuditWorkspace() {
                 <PurchasesTab 
                   grns={grns}
                   clientId={clientId}
+                  departmentId={departmentId}
+                  dateStr={dateStr || format(new Date(), "yyyy-MM-dd")}
                   totalPurchases={totalPurchases}
                 />
               </TabsContent>
@@ -1028,11 +1030,24 @@ function SalesTab({ salesEntries, salesSummary, clientId, departments, dateStr }
   );
 }
 
-function PurchasesTab({ grns, clientId, totalPurchases }: {
+function PurchasesTab({ grns, clientId, departmentId, dateStr, totalPurchases }: {
   grns: GoodsReceivedNote[];
   clientId: string | null;
+  departmentId: string | null;
+  dateStr: string;
   totalPurchases: number;
 }) {
+  const [, setLocation] = useLocation();
+  
+  const handleRecordPurchase = () => {
+    const params = new URLSearchParams();
+    params.set("tab", "grn");
+    if (clientId) params.set("clientId", clientId);
+    if (departmentId) params.set("outletId", departmentId);
+    if (dateStr) params.set("date", dateStr);
+    setLocation(`/inventory?${params.toString()}`);
+  };
+
   return (
     <Card className="border-none shadow-none">
       <CardHeader className="px-0 pt-0 pb-4">
@@ -1041,6 +1056,10 @@ function PurchasesTab({ grns, clientId, totalPurchases }: {
             <CardTitle>Purchases & GRN</CardTitle>
             <CardDescription>View goods received note details</CardDescription>
           </div>
+          <Button onClick={handleRecordPurchase} data-testid="button-record-purchase">
+            <Plus className="h-4 w-4 mr-2" />
+            Record Purchase / Create GRN
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="px-0">
@@ -1059,8 +1078,11 @@ function PurchasesTab({ grns, clientId, totalPurchases }: {
             <TableBody>
               {grns.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No GRN records found for this date.
+                  <TableCell colSpan={6} className="text-center py-8">
+                    <div className="text-muted-foreground">No GRN records found for this date.</div>
+                    <div className="text-sm text-muted-foreground mt-2">
+                      No purchases recorded/GRN for this date. Click "Record Purchase / Create GRN" to add one.
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
