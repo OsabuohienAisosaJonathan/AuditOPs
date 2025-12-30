@@ -1597,13 +1597,64 @@ export default function InventoryLedger() {
         </Card>
       ) : null}
 
-      {/* Today's Issues with Recall Option - Only for Main Store */}
+      {/* Today's Transfers with Recall Option */}
+      {selectedDept?.inventoryType === "MAIN_STORE" && srdTransfers && srdTransfers.filter(t => t.fromSrdId === selectedInvDept && t.status === "posted").length > 0 && (
+        <Card className="mt-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" />
+              Today's Stock Transfers
+            </CardTitle>
+            <CardDescription>Click Recall to reverse a transfer and return stock to this SRD</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {srdTransfers
+                .filter(t => t.fromSrdId === selectedInvDept && t.status === "posted")
+                .map(transfer => {
+                  const toDept = inventoryDepts?.find(d => d.id === transfer.toSrdId);
+                  const toStoreName = getStoreNameById(toDept?.storeNameId || "")?.name || "Unknown";
+                  const item = items?.find(i => i.id === transfer.itemId);
+                  
+                  return (
+                    <div key={transfer.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">{transfer.refId}</Badge>
+                          <span>
+                            {transfer.transferType === "issue" ? "Issued" : transfer.transferType === "return" ? "Returned" : "Transferred"} to: <span className="text-primary">{toStoreName}</span>
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {item?.name || "Unknown"}: {parseFloat(transfer.qty).toFixed(2)} units
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => recallTransferMutation.mutate(transfer.refId)}
+                        disabled={recallTransferMutation.isPending}
+                        className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                        data-testid={`button-recall-${transfer.refId}`}
+                      >
+                        {recallTransferMutation.isPending ? <Spinner className="mr-1 h-3 w-3" /> : <RotateCcw className="mr-1 h-3 w-3" />}
+                        Recall
+                      </Button>
+                    </div>
+                  );
+                })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Legacy: Today's Issues with Recall Option (backward compatibility) */}
       {selectedDept?.inventoryType === "MAIN_STORE" && storeIssues && storeIssues.filter(i => i.fromDepartmentId === selectedInvDept && i.status !== "recalled").length > 0 && (
         <Card className="mt-6">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <RotateCcw className="h-5 w-5" />
-              Today's Issued Stock
+              Legacy Issues (Old System)
             </CardTitle>
             <CardDescription>Click Recall to return issued items back to Main Store</CardDescription>
           </CardHeader>
@@ -1635,7 +1686,7 @@ export default function InventoryLedger() {
                         onClick={() => recallIssueMutation.mutate(issue.id)}
                         disabled={recallIssueMutation.isPending}
                         className="text-orange-600 border-orange-600 hover:bg-orange-50"
-                        data-testid={`button-recall-${issue.id}`}
+                        data-testid={`button-recall-legacy-${issue.id}`}
                       >
                         {recallIssueMutation.isPending ? <Spinner className="mr-1 h-3 w-3" /> : <RotateCcw className="mr-1 h-3 w-3" />}
                         Recall
