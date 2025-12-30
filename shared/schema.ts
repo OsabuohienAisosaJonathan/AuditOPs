@@ -217,8 +217,9 @@ export const reconciliations = pgTable("reconciliations", {
 export const exceptions = pgTable("exceptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseNumber: text("case_number").notNull().unique(),
-  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  outletId: varchar("outlet_id").references(() => outlets.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").references(() => departments.id, { onDelete: "cascade" }),
   date: text("date").notNull().default(sql`CURRENT_DATE::text`),
   summary: text("summary").notNull(),
   description: text("description"),
