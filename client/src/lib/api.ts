@@ -282,17 +282,33 @@ export interface Exception {
   impact: string | null;
   severity: string | null;
   status: string | null;
+  outcome: string | null;
   evidenceUrls: string[] | null;
   assignedTo: string | null;
   resolvedAt: Date | null;
   createdBy: string;
   createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
 }
 
 export interface ExceptionComment {
   id: string;
   exceptionId: string;
   comment: string;
+  createdBy: string;
+  createdAt: Date;
+}
+
+export interface ExceptionActivity {
+  id: string;
+  exceptionId: string;
+  activityType: string;
+  message: string;
+  previousValue: string | null;
+  newValue: string | null;
   createdBy: string;
   createdAt: Date;
 }
@@ -844,15 +860,17 @@ export const reconciliationsApi = {
 };
 
 export const exceptionsApi = {
-  getAll: (filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string }) => {
+  getAll: (filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string; includeDeleted?: boolean }) => {
     const params = new URLSearchParams();
     if (filters?.clientId) params.append("clientId", filters.clientId);
     if (filters?.departmentId) params.append("departmentId", filters.departmentId);
     if (filters?.status) params.append("status", filters.status);
     if (filters?.severity) params.append("severity", filters.severity);
+    if (filters?.includeDeleted) params.append("includeDeleted", "true");
     return fetchApi<Exception[]>(`/exceptions${params.toString() ? `?${params}` : ""}`);
   },
   get: (id: string) => fetchApi<Exception>(`/exceptions/${id}`),
+  getDetails: (id: string) => fetchApi<{ exception: Exception; activity: ExceptionActivity[] }>(`/exceptions/${id}/details`),
   create: (data: any) =>
     fetchApi<Exception>("/exceptions", {
       method: "POST",
@@ -863,15 +881,22 @@ export const exceptionsApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  delete: (id: string) =>
-    fetchApi<void>(`/exceptions/${id}`, {
+  delete: (id: string, reason: string) =>
+    fetchApi<{ success: boolean; exception: Exception }>(`/exceptions/${id}`, {
       method: "DELETE",
+      body: JSON.stringify({ reason }),
     }),
   getComments: (exceptionId: string) => fetchApi<ExceptionComment[]>(`/exceptions/${exceptionId}/comments`),
   addComment: (id: string, comment: string) =>
     fetchApi<ExceptionComment>(`/exceptions/${id}/comments`, {
       method: "POST",
       body: JSON.stringify({ comment }),
+    }),
+  getActivity: (exceptionId: string) => fetchApi<ExceptionActivity[]>(`/exceptions/${exceptionId}/activity`),
+  addFeedback: (id: string, message: string) =>
+    fetchApi<ExceptionActivity>(`/exceptions/${id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
     }),
 };
 

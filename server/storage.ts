@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { 
   users, clients, categories, departments, salesEntries, purchases,
-  stockMovements, stockMovementLines, reconciliations, exceptions, exceptionComments, auditLogs, adminActivityLogs, systemSettings,
+  stockMovements, stockMovementLines, reconciliations, exceptions, exceptionComments, exceptionActivity, auditLogs, adminActivityLogs, systemSettings,
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
@@ -12,6 +12,7 @@ import {
   type StockMovement, type InsertStockMovement, type StockMovementLine, type InsertStockMovementLine,
   type Reconciliation, type InsertReconciliation,
   type Exception, type InsertException, type ExceptionComment, type InsertExceptionComment,
+  type ExceptionActivity, type InsertExceptionActivity,
   type AuditLog, type InsertAuditLog, type AdminActivityLog, type InsertAdminActivityLog,
   type Supplier, type InsertSupplier, type Item, type InsertItem,
   type PurchaseLine, type InsertPurchaseLine, type StockCount, type InsertStockCount,
@@ -168,16 +169,22 @@ export interface IStorage {
   deleteReconciliation(id: string): Promise<boolean>;
 
   // Exceptions
-  getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string }): Promise<Exception[]>;
+  getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string; includeDeleted?: boolean }): Promise<Exception[]>;
   getException(id: string): Promise<Exception | undefined>;
+  getExceptionWithActivity(id: string): Promise<{ exception: Exception; activity: ExceptionActivity[] } | undefined>;
   createException(exception: InsertException): Promise<Exception>;
   updateException(id: string, exception: Partial<InsertException>): Promise<Exception | undefined>;
   deleteException(id: string): Promise<boolean>;
+  softDeleteException(id: string, deletedBy: string, deleteReason: string): Promise<Exception | undefined>;
   generateExceptionCaseNumber(): Promise<string>;
 
   // Exception Comments
   getExceptionComments(exceptionId: string): Promise<ExceptionComment[]>;
   createExceptionComment(comment: InsertExceptionComment): Promise<ExceptionComment>;
+
+  // Exception Activity
+  getExceptionActivity(exceptionId: string): Promise<ExceptionActivity[]>;
+  createExceptionActivity(activity: InsertExceptionActivity): Promise<ExceptionActivity>;
 
   // Audit Logs
   getAuditLogs(filters?: { limit?: number; offset?: number; userId?: string; entity?: string; startDate?: Date; endDate?: Date }): Promise<{ logs: AuditLog[]; total: number }>;
@@ -890,8 +897,13 @@ export class DbStorage implements IStorage {
   }
 
   // Exceptions
-  async getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string }): Promise<Exception[]> {
+  async getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string; includeDeleted?: boolean }): Promise<Exception[]> {
     const conditions = [];
+    
+    // By default, exclude deleted exceptions
+    if (!filters?.includeDeleted) {
+      conditions.push(sql`${exceptions.deletedAt} IS NULL`);
+    }
     
     if (filters?.clientId) {
       conditions.push(eq(exceptions.clientId, filters.clientId));
@@ -917,6 +929,17 @@ export class DbStorage implements IStorage {
     return exception;
   }
 
+  async getExceptionWithActivity(id: string): Promise<{ exception: Exception; activity: ExceptionActivity[] } | undefined> {
+    const [exception] = await db.select().from(exceptions).where(eq(exceptions.id, id));
+    if (!exception) return undefined;
+    
+    const activity = await db.select().from(exceptionActivity)
+      .where(eq(exceptionActivity.exceptionId, id))
+      .orderBy(desc(exceptionActivity.createdAt));
+    
+    return { exception, activity };
+  }
+
   async createException(insertException: InsertException): Promise<Exception> {
     const caseNumber = await this.generateExceptionCaseNumber(insertException.date);
     const [exception] = await db.insert(exceptions).values({ ...insertException, caseNumber }).returning();
@@ -924,13 +947,29 @@ export class DbStorage implements IStorage {
   }
 
   async updateException(id: string, updateData: Partial<InsertException>): Promise<Exception | undefined> {
-    const [exception] = await db.update(exceptions).set(updateData).where(eq(exceptions.id, id)).returning();
+    const [exception] = await db.update(exceptions)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(exceptions.id, id))
+      .returning();
     return exception;
   }
 
   async deleteException(id: string): Promise<boolean> {
     await db.delete(exceptions).where(eq(exceptions.id, id));
     return true;
+  }
+
+  async softDeleteException(id: string, deletedBy: string, deleteReason: string): Promise<Exception | undefined> {
+    const [exception] = await db.update(exceptions)
+      .set({ 
+        deletedAt: new Date(), 
+        deletedBy, 
+        deleteReason,
+        updatedAt: new Date()
+      })
+      .where(eq(exceptions.id, id))
+      .returning();
+    return exception;
   }
 
   async generateExceptionCaseNumber(dateStr?: string): Promise<string> {
@@ -955,6 +994,18 @@ export class DbStorage implements IStorage {
   async createExceptionComment(insertComment: InsertExceptionComment): Promise<ExceptionComment> {
     const [comment] = await db.insert(exceptionComments).values(insertComment).returning();
     return comment;
+  }
+
+  // Exception Activity
+  async getExceptionActivity(exceptionId: string): Promise<ExceptionActivity[]> {
+    return db.select().from(exceptionActivity)
+      .where(eq(exceptionActivity.exceptionId, exceptionId))
+      .orderBy(desc(exceptionActivity.createdAt));
+  }
+
+  async createExceptionActivity(insertActivity: InsertExceptionActivity): Promise<ExceptionActivity> {
+    const [activity] = await db.insert(exceptionActivity).values(insertActivity).returning();
+    return activity;
   }
 
   // Audit Logs

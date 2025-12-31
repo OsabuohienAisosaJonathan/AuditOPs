@@ -8,7 +8,7 @@ import { pool } from "./db";
 import { 
   insertUserSchema, insertClientSchema, insertCategorySchema, insertDepartmentSchema, 
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, insertStockMovementLineSchema,
-  insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema,
+  insertReconciliationSchema, insertExceptionSchema, insertExceptionCommentSchema, insertExceptionActivitySchema,
   insertSupplierSchema, insertItemSchema, insertPurchaseLineSchema, insertStockCountSchema,
   insertPaymentDeclarationSchema, insertStoreIssueSchema, insertStoreIssueLineSchema, insertStoreStockSchema,
   insertStoreNameSchema, insertInventoryDepartmentSchema, insertGoodsReceivedNoteSchema, INVENTORY_TYPES,
@@ -4372,12 +4372,13 @@ export async function registerRoutes(
   // ============== EXCEPTIONS ==============
   app.get("/api/exceptions", requireAuth, async (req, res) => {
     try {
-      const { clientId, departmentId, status, severity } = req.query;
+      const { clientId, departmentId, status, severity, includeDeleted } = req.query;
       const exceptions = await storage.getExceptions({
         clientId: clientId as string | undefined,
         departmentId: departmentId as string | undefined,
         status: status as string | undefined,
         severity: severity as string | undefined,
+        includeDeleted: includeDeleted === "true",
       });
       res.json(exceptions);
     } catch (error: any) {
@@ -4397,6 +4398,19 @@ export async function registerRoutes(
     }
   });
 
+  // Get exception with activity feed
+  app.get("/api/exceptions/:id/details", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.getExceptionWithActivity(req.params.id);
+      if (!result) {
+        return res.status(404).json({ error: "Exception not found" });
+      }
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/exceptions", requireAuth, async (req, res) => {
     try {
       const data = insertExceptionSchema.parse({
@@ -4404,6 +4418,14 @@ export async function registerRoutes(
         createdBy: req.session.userId!,
       });
       const exception = await storage.createException(data);
+      
+      // Create initial activity entry
+      await storage.createExceptionActivity({
+        exceptionId: exception.id,
+        activityType: "system",
+        message: `Exception created with status "${exception.status}" and severity "${exception.severity}"`,
+        createdBy: req.session.userId!,
+      });
       
       await storage.createAuditLog({
         userId: req.session.userId!,
@@ -4422,6 +4444,11 @@ export async function registerRoutes(
 
   app.patch("/api/exceptions/:id", requireAuth, async (req, res) => {
     try {
+      const existingException = await storage.getException(req.params.id);
+      if (!existingException) {
+        return res.status(404).json({ error: "Exception not found" });
+      }
+      
       const updateData = { ...req.body };
       
       if (req.body.status === "resolved" && !req.body.resolvedAt) {
@@ -4433,12 +4460,35 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Exception not found" });
       }
       
+      // Create activity entries for status/outcome changes
+      if (req.body.status && req.body.status !== existingException.status) {
+        await storage.createExceptionActivity({
+          exceptionId: exception.id,
+          activityType: "status_change",
+          message: `Status changed from "${existingException.status}" to "${req.body.status}"`,
+          previousValue: existingException.status || undefined,
+          newValue: req.body.status,
+          createdBy: req.session.userId!,
+        });
+      }
+      
+      if (req.body.outcome && req.body.outcome !== existingException.outcome) {
+        await storage.createExceptionActivity({
+          exceptionId: exception.id,
+          activityType: "outcome_change",
+          message: `Outcome set to "${req.body.outcome.toUpperCase()}"`,
+          previousValue: existingException.outcome || undefined,
+          newValue: req.body.outcome,
+          createdBy: req.session.userId!,
+        });
+      }
+      
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Updated Exception",
         entity: exception.caseNumber,
         entityId: exception.id,
-        details: `Exception status: ${exception.status}`,
+        details: `Exception status: ${exception.status}, outcome: ${exception.outcome}`,
         ipAddress: req.ip || "Unknown",
       });
 
@@ -4448,25 +4498,72 @@ export async function registerRoutes(
     }
   });
 
+  // Soft delete with reason required
   app.delete("/api/exceptions/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
+      const { reason } = req.body;
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        return res.status(400).json({ error: "Delete reason is required" });
+      }
+      
       const exception = await storage.getException(req.params.id);
       if (!exception) {
         return res.status(404).json({ error: "Exception not found" });
       }
       
-      await storage.deleteException(req.params.id);
+      const deletedException = await storage.softDeleteException(
+        req.params.id, 
+        req.session.userId!, 
+        reason.trim()
+      );
+      
+      // Create activity entry for deletion
+      await storage.createExceptionActivity({
+        exceptionId: exception.id,
+        activityType: "system",
+        message: `Exception deleted. Reason: ${reason.trim()}`,
+        createdBy: req.session.userId!,
+      });
       
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Deleted Exception",
         entity: exception.caseNumber,
         entityId: req.params.id,
-        details: `Exception deleted`,
+        details: `Exception soft deleted. Reason: ${reason.trim()}`,
         ipAddress: req.ip || "Unknown",
       });
 
-      res.json({ success: true });
+      res.json({ success: true, exception: deletedException });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== EXCEPTION ACTIVITY ==============
+  app.get("/api/exceptions/:exceptionId/activity", requireAuth, async (req, res) => {
+    try {
+      const activity = await storage.getExceptionActivity(req.params.exceptionId);
+      res.json(activity);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/exceptions/:exceptionId/feedback", requireAuth, async (req, res) => {
+    try {
+      const data = insertExceptionActivitySchema.parse({
+        exceptionId: req.params.exceptionId,
+        activityType: "note",
+        message: req.body.message,
+        createdBy: req.session.userId!,
+      });
+      const activity = await storage.createExceptionActivity(data);
+      
+      // Update the exception's updatedAt timestamp
+      await storage.updateException(req.params.exceptionId, {});
+      
+      res.json(activity);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

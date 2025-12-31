@@ -229,17 +229,34 @@ export const exceptions = pgTable("exceptions", {
   impact: text("impact"),
   severity: text("severity").default("medium"),
   status: text("status").default("open"),
+  outcome: text("outcome").default("pending"), // pending, true, false, mismatched, partial
   evidenceUrls: text("evidence_urls").array(),
   assignedTo: varchar("assigned_to").references(() => users.id),
   resolvedAt: timestamp("resolved_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: varchar("deleted_by").references(() => users.id),
+  deleteReason: text("delete_reason"),
 });
 
 export const exceptionComments = pgTable("exception_comments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   exceptionId: varchar("exception_id").notNull().references(() => exceptions.id, { onDelete: "cascade" }),
   comment: text("comment").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Exception activity feed for investigation timeline
+export const exceptionActivity = pgTable("exception_activity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  exceptionId: varchar("exception_id").notNull().references(() => exceptions.id, { onDelete: "cascade" }),
+  activityType: text("activity_type").notNull().default("note"), // note, status_change, outcome_change, system
+  message: text("message").notNull(),
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -642,8 +659,9 @@ export const insertPurchaseSchema = createInsertSchema(purchases).omit({ id: tru
 export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({ id: true, createdAt: true });
 export const insertStockMovementLineSchema = createInsertSchema(stockMovementLines).omit({ id: true, createdAt: true });
 export const insertReconciliationSchema = createInsertSchema(reconciliations).omit({ id: true, createdAt: true });
-export const insertExceptionSchema = createInsertSchema(exceptions).omit({ id: true, createdAt: true, caseNumber: true });
+export const insertExceptionSchema = createInsertSchema(exceptions).omit({ id: true, createdAt: true, caseNumber: true, updatedAt: true });
 export const insertExceptionCommentSchema = createInsertSchema(exceptionComments).omit({ id: true, createdAt: true });
+export const insertExceptionActivitySchema = createInsertSchema(exceptionActivity).omit({ id: true, createdAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 export const insertAdminActivityLogSchema = createInsertSchema(adminActivityLogs).omit({ id: true, createdAt: true });
 export const insertPaymentDeclarationSchema = createInsertSchema(paymentDeclarations).omit({ id: true, createdAt: true, updatedAt: true });
@@ -693,6 +711,8 @@ export type InsertException = z.infer<typeof insertExceptionSchema>;
 export type Exception = typeof exceptions.$inferSelect;
 export type InsertExceptionComment = z.infer<typeof insertExceptionCommentSchema>;
 export type ExceptionComment = typeof exceptionComments.$inferSelect;
+export type InsertExceptionActivity = z.infer<typeof insertExceptionActivitySchema>;
+export type ExceptionActivity = typeof exceptionActivity.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAdminActivityLog = z.infer<typeof insertAdminActivityLogSchema>;

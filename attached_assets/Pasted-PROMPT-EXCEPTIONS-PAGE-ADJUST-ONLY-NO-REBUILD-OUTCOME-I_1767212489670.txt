@@ -1,0 +1,239 @@
+PROMPT: EXCEPTIONS PAGE — ADJUST ONLY (NO REBUILD) + OUTCOME + INVESTIGATION FEEDBACK + SOFT DELETE + REPORT
+
+You are working inside my existing project. Do NOT rebuild Exceptions from scratch. The tables, page, and create modal already exist. This task is only adjustments + missing wiring/fields, so it should not be treated as a new build.
+
+CORE GOAL
+
+Fix and enhance the existing Exceptions Register so that:
+
+It supports Investigation feedback (timeline/feed)
+
+It supports Edit / Delete (must request reason)
+
+It supports Outcome/Result (TRUE/FALSE/MISMATCHED/PENDING) shown on the table
+
+It supports Report generation/export (CSV + printable PDF view is enough)
+
+A) TABLE UI ADJUSTMENTS (EXCEPTIONS REGISTER)
+A1. Replace the “Assigned To” column on the table UI (NOT database)
+
+On the Exceptions table, replace the column title “Assigned To” with “Outcome”.
+
+“Outcome” is a badge/pill with values:
+
+PENDING (default)
+
+TRUE
+
+FALSE
+
+MISMATCHED
+
+PARTIAL (optional)
+
+IMPORTANT: Do not delete “Assigned To” from database if it already exists.
+If “Assigned To” is needed, move it into the case details drawer/modal (not in the main table).
+
+A2. Add “Last Updated” column if not already present
+
+Shows updatedAt or lastActivityAt.
+
+A3. Row actions
+
+Each row must have:
+
+View / Open Case
+
+Edit Case
+
+Delete Case (soft delete + reason required)
+
+Generate Report (per-case)
+
+B) INVESTIGATION FEEDBACK / CASE FEED (EDITABLE)
+B1. Add a case details drawer/modal (use existing UI patterns)
+
+When user clicks a case, open a details panel that shows:
+
+Case header: Case#, Summary, Department, Severity, Status, Outcome
+
+Investigation Feed (timeline) with entries:
+
+Timestamp
+
+User
+
+Note text
+
+Optional attachment/link (optional)
+
+Optional “type” (note/status_change/system)
+
+B2. Add “Add Feedback” box
+
+Textarea + “Post Note”
+
+Posting creates a feed entry and updates updatedAt/lastActivityAt.
+
+B3. Status + Outcome control
+
+Inside the case details panel:
+
+Allow user to update:
+
+Status: open / investigating / resolved / closed (use existing)
+
+Outcome: pending/true/false/mismatched/partial
+
+Every change should create a feed entry automatically like:
+“Status changed from Open → Investigating”
+“Outcome set to TRUE”
+
+DO NOT create new complex workflow. Just update existing record + append feed entry.
+
+C) EDIT EXCEPTION (MINIMAL)
+C1. “Edit” must reuse existing “Raise New Exception” modal
+
+Same form, but loaded with existing values.
+
+Save updates the record.
+
+Log changes into the feed as a system entry (optional but preferred).
+
+D) DELETE EXCEPTION (SOFT DELETE ONLY + REASON REQUIRED)
+D1. Replace browser confirm popup with proper UI modal
+
+Current delete confirmation uses browser alert/confirm. Replace with a modal:
+
+Title: “Delete Exception?”
+
+Message: “This will remove it from the register but keep it in audit trail.”
+
+Required input: “Reason for deletion” (textarea)
+
+Buttons: Cancel / Delete
+
+D2. Soft delete rules
+
+Do NOT hard delete.
+
+Store:
+
+deletedAt timestamp
+
+deletedBy userId/email (whatever auth system provides)
+
+deleteReason text
+
+Default list should show only non-deleted cases.
+
+Add an optional filter/toggle: “Show deleted”.
+
+E) REPORT GENERATION (NO NEW MODULE — JUST EXPORT)
+E1. Case-level report
+
+From inside case details, user can click “Generate Report”:
+
+Output a printable view (new modal or route) containing:
+
+Case details
+
+Feed entries
+
+Outcome + Status
+
+Created/updated timestamps
+
+E2. List export
+
+On Exceptions table page add:
+
+“Export CSV” button: exports current filtered view
+
+“Print/PDF” button: opens printable summary view (browser print is fine)
+
+Keep it simple: CSV and printable HTML is enough.
+
+F) BACKEND: DO NOT DISTURB EXISTING STRUCTURE
+F1. Use existing tables/fields if present
+
+Before adding anything, search the codebase for:
+
+exceptions table schema
+
+exceptions routes
+
+existing assignedTo, status fields, etc.
+
+F2. If missing fields, add minimal additive fields only
+
+If not present, add to exceptions record:
+
+outcome (string enum)
+
+deletedAt (nullable)
+
+deletedBy (nullable)
+
+deleteReason (nullable)
+
+updatedAt/lastActivityAt (if missing)
+
+F3. Investigation feed storage
+
+If there is already a “notes/comments” table, reuse it.
+If none exists, create a minimal table:
+
+exception_activity
+
+id
+
+exceptionId (FK)
+
+activityType (note|status_change|outcome_change|system)
+
+message
+
+createdAt
+
+createdBy
+
+Expose minimal routes:
+
+GET /api/exceptions/:id (includes feed)
+
+POST /api/exceptions/:id/feedback
+
+PATCH /api/exceptions/:id (edit status/outcome/fields)
+
+DELETE /api/exceptions/:id (soft delete; requires reason)
+
+Do NOT remove or rename existing routes. If routes exist, extend them.
+
+G) OUTPUT REQUIRED (VERY IMPORTANT)
+
+Show exact file paths you edited.
+
+For each file, print first 10–15 lines so I can confirm it’s the correct file.
+
+Provide full code patches with START/END markers for each section replaced.
+
+Provide DB migration steps ONLY if schema changes were made.
+
+Provide a test checklist:
+
+Create exception → appears in list
+
+Edit exception → updates + feed log
+
+Add feedback → feed shows correct timestamp/user
+
+Change outcome/status → reflected in table outcome badge + feed entry
+
+Delete → requires reason + disappears from list + “show deleted” reveals it
+
+Export CSV respects filters
+
+Print report includes case + feed
+
+END PROMPT.
