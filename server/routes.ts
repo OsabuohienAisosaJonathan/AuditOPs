@@ -3232,13 +3232,15 @@ export async function registerRoutes(
         }
       }
       
-      // Include SRD name mapping
+      // Include SRD name and type mapping
       const srdNames: Record<string, string> = {};
-      allInvDepts.forEach(d => {
+      const srdTypes: Record<string, string> = {};
+      allInvDepts.forEach((d: any) => {
         srdNames[d.id] = getSrdName(d.id);
+        srdTypes[d.id] = d.inventoryType;
       });
       
-      res.json({ breakdown, srdNames });
+      res.json({ breakdown, srdNames, srdTypes });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

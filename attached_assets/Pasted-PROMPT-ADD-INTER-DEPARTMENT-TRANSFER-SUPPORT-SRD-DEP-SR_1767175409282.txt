@@ -1,0 +1,92 @@
+PROMPT: ADD INTER-DEPARTMENT TRANSFER SUPPORT (SRD-DEP ↔ SRD-DEP) + LEDGER IMPACT
+
+Context:
+
+Stock Movements already supports transfer / adjustment / write-off / waste and displays correctly in Audit Workspace.
+
+SRD Department Store ledger currently lacks proper fields to reflect inter-department transfers (Department SRD → Department SRD), and the translation to SRD tables is incomplete.
+
+We must support:
+
+Main Store ↔ Department Store transfers (existing)
+
+Department Store ↔ Department Store transfers (NEW)
+
+Requirements
+A) Stock Movement Types and Rules
+
+Transfer must allow:
+a) From SRD = Department Store SRD
+b) To SRD = Another Department Store SRD
+c) Item line(s): qty, unit cost, value, description
+
+Validate:
+a) From SRD must have sufficient available stock (based on ledger expected/closing rules)
+b) Qty must be > 0
+
+B) SRD Department Store Ledger Columns (Data Model + UI)
+
+Department Store SRD ledger must reflect transfer movements using these fields (grouped + expandable):
+
+Received (Transfers In) (expandable group)
+a) From Main Store
+b) From Other Departments ✅ (THIS IS THE “INTER-DEPARTMENT” PART)
+
+Issued (Transfers Out) (already exists but must be accurate)
+a) To Main Store
+b) To Other Departments ✅
+
+Losses (expandable group)
+a) Waste
+b) Write-off
+(Losses reduce stock: subtract from totals)
+
+Totals math must be consistent and auto-recalc:
+Expected = Opening + Added/Purchase + TransfersIn − TransfersOut − Losses
+Closing is from Stock Count (Awaiting Count until done)
+
+C) Ledger Translation Logic (Critical)
+
+When a transfer is posted:
+
+On From SRD (source department):
+a) increase TransfersOut (To Other Departments)
+b) reduce Expected/Closing accordingly
+
+On To SRD (destination department):
+a) increase TransfersIn (From Other Departments)
+b) increase Expected/Closing accordingly
+
+This must happen for the correct date and SRD selected in Audit Workspace.
+
+D) UI Expand/Collapse
+
+Add “Transfers” group in SRD Department Store ledger header:
+a) Expand shows: “In (Main Store)”, “In (Other Depts)”, “Out (Main Store)”, “Out (Other Depts)”
+b) Collapse shows a single “Transfers” summary column.
+
+E) Edit + Reverse
+
+Every Stock Movement record must support:
+a) Edit (update qty/description/cost)
+b) Reverse (creates an automatic reversal entry that fully restores ledger values)
+
+Reversal must update both SRDs correctly (From and To).
+
+F) Must Not Break Existing Backend
+
+Fix/extend current movement-to-ledger translation functions.
+
+If new fields are needed, add them in a backward-compatible way (default 0).
+
+Provide file path + first 10–15 lines before replacing any code, and give full file code replacements.
+
+Acceptance tests:
+
+Transfer 5 Malt from BAR OUTLET SR-D → JUICES OUTLET SR-D
+a) BAR ledger shows TransfersOut (Other Depts) +5 and reduced expected/closing
+b) JUICES ledger shows TransfersIn (Other Depts) +5 and increased expected/closing
+
+Reversing the transfer restores both ledgers to previous values.
+
+Transfer from Main Store → Department still works as before.

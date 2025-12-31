@@ -323,7 +323,7 @@ export default function InventoryLedger() {
     issuedTo: Record<string, number>;
   }
   
-  const { data: movementBreakdownData } = useQuery<{ breakdown: Record<string, MovementBreakdown>; srdNames: Record<string, string> }>({
+  const { data: movementBreakdownData } = useQuery<{ breakdown: Record<string, MovementBreakdown>; srdNames: Record<string, string>; srdTypes: Record<string, string> }>({
     queryKey: ["movement-breakdown", selectedClientId, selectedInvDept, selectedDate],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${selectedClientId}/movement-breakdown?srdId=${selectedInvDept}&date=${selectedDate}`);
@@ -335,11 +335,13 @@ export default function InventoryLedger() {
   
   const movementBreakdown = movementBreakdownData?.breakdown || {};
   const srdNameMap = movementBreakdownData?.srdNames || {};
+  const srdTypeMap = movementBreakdownData?.srdTypes || {};
   
   // Collapse/expand state for column groups
   const [returnInwardCollapsed, setReturnInwardCollapsed] = useState(true);
   const [lossesCollapsed, setLossesCollapsed] = useState(true);
   const [receivedCollapsed, setReceivedCollapsed] = useState(true);
+  const [transfersCollapsed, setTransfersCollapsed] = useState(true);
 
   // Legacy store issues (for backward compatibility) - TODO: migrate to srdTransfers
   const { data: storeIssues } = useQuery<StoreIssue[]>({
@@ -960,9 +962,31 @@ export default function InventoryLedger() {
         returnIn: {}, returnOut: {}, received: {}, issuedTo: {}
       };
       
-      // Received from other SRDs (Main Store + other departments)
+      // Received from other SRDs - separate Main Store from Other Departments
       const receivedFrom: Record<string, number> = itemBreakdown.received;
-      const totalReceived = Object.values(receivedFrom).reduce((sum, val) => sum + val, 0);
+      let receivedFromMainStore = 0;
+      let receivedFromOtherDepts = 0;
+      Object.entries(receivedFrom).forEach(([srdId, qty]) => {
+        if (srdTypeMap[srdId] === "MAIN_STORE") {
+          receivedFromMainStore += qty;
+        } else {
+          receivedFromOtherDepts += qty;
+        }
+      });
+      const totalReceived = receivedFromMainStore + receivedFromOtherDepts;
+      
+      // Issued to other SRDs - separate Main Store from Other Departments
+      const issuedTo: Record<string, number> = itemBreakdown.issuedTo;
+      let issuedToMainStore = 0;
+      let issuedToOtherDepts = 0;
+      Object.entries(issuedTo).forEach(([srdId, qty]) => {
+        if (srdTypeMap[srdId] === "MAIN_STORE") {
+          issuedToMainStore += qty;
+        } else {
+          issuedToOtherDepts += qty;
+        }
+      });
+      const totalIssuedOut = issuedToMainStore + issuedToOtherDepts;
       
       // Returned out to Main Store
       const returnedOut = Object.values(itemBreakdown.returnOut).reduce((sum, val) => sum + val, 0);
@@ -1000,7 +1024,13 @@ export default function InventoryLedger() {
         opening,
         added,
         receivedFrom,
+        receivedFromMainStore,
+        receivedFromOtherDepts,
         totalReceived,
+        issuedTo,
+        issuedToMainStore,
+        issuedToOtherDepts,
+        totalIssuedOut,
         adjustmentIn: itemBreakdown.adjustmentIn,
         adjustmentOut: itemBreakdown.adjustmentOut,
         adjustmentNet,
@@ -1017,7 +1047,7 @@ export default function InventoryLedger() {
         stockId: stock?.id,
       };
     });
-  }, [items, selectedDept, storeStockData, prevDayStock, movementBreakdown]);
+  }, [items, selectedDept, storeStockData, prevDayStock, movementBreakdown, srdTypeMap]);
 
   // Group dept store ledger by category
   const deptStoreLedgerByCategory = useMemo(() => {
@@ -1629,6 +1659,25 @@ export default function InventoryLedger() {
                     <TableHead className="w-[80px]">Unit</TableHead>
                     <TableHead className="w-[100px] text-right">Opening</TableHead>
                     <TableHead className="w-[100px] text-right">Added</TableHead>
+                    {/* Transfers (In/Out) - Collapsible Group */}
+                    <TableHead 
+                      className="w-[80px] text-right bg-blue-50 cursor-pointer hover:bg-blue-100"
+                      onClick={() => setTransfersCollapsed(!transfersCollapsed)}
+                      title="Click to expand/collapse Transfers columns"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        {transfersCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        <span className="text-xs">Transfers</span>
+                      </div>
+                    </TableHead>
+                    {!transfersCollapsed && (
+                      <>
+                        <TableHead className="w-[70px] text-right text-xs bg-green-50">In (Main)</TableHead>
+                        <TableHead className="w-[70px] text-right text-xs bg-green-50">In (Depts)</TableHead>
+                        <TableHead className="w-[70px] text-right text-xs bg-orange-50">Out (Main)</TableHead>
+                        <TableHead className="w-[70px] text-right text-xs bg-orange-50">Out (Depts)</TableHead>
+                      </>
+                    )}
                     {/* Losses (Waste/Write-Off) - Collapsible Group */}
                     <TableHead 
                       className="w-[80px] text-right bg-red-50 cursor-pointer hover:bg-red-100"
@@ -1646,7 +1695,6 @@ export default function InventoryLedger() {
                         <TableHead className="w-[70px] text-right text-xs bg-red-50">Write-Off</TableHead>
                       </>
                     )}
-                    <TableHead className="w-[80px] text-right text-orange-600">Issued</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Total</TableHead>
                     <TableHead className="w-[100px] text-right">Sold</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
@@ -1657,7 +1705,7 @@ export default function InventoryLedger() {
                     <TableBody>
                       {deptStoreLedger.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={12 + (transfersCollapsed ? 0 : 4) + (lossesCollapsed ? 0 : 2)} className="text-center py-8 text-muted-foreground">
                             No items found. Add items in the Inventory page first.
                           </TableCell>
                         </TableRow>
@@ -1669,8 +1717,8 @@ export default function InventoryLedger() {
                           const catTotals = rows.reduce((acc, row) => {
                             const editedOpening = ledgerEdits[row.itemId]?.opening;
                             const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
-                            // Total already includes issued deduction from row.total (adjustedTotal)
-                            const adjustedTotal = displayOpening + row.added - row.issued;
+                            // Total = Opening + Added + Received - Issued Out - Losses
+                            const adjustedTotal = displayOpening + row.added + row.totalReceived - row.totalIssuedOut - row.waste - row.writeOff;
                             const displayClosing = row.closing !== null ? row.closing : null;
                             const displaySold = displayClosing !== null ? adjustedTotal - displayClosing : null;
                             const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
@@ -1678,13 +1726,20 @@ export default function InventoryLedger() {
                             return {
                               opening: acc.opening + displayOpening,
                               added: acc.added + row.added,
-                              issued: acc.issued + row.issued,
+                              receivedFromMainStore: acc.receivedFromMainStore + row.receivedFromMainStore,
+                              receivedFromOtherDepts: acc.receivedFromOtherDepts + row.receivedFromOtherDepts,
+                              totalReceived: acc.totalReceived + row.totalReceived,
+                              issuedToMainStore: acc.issuedToMainStore + row.issuedToMainStore,
+                              issuedToOtherDepts: acc.issuedToOtherDepts + row.issuedToOtherDepts,
+                              totalIssuedOut: acc.totalIssuedOut + row.totalIssuedOut,
+                              waste: acc.waste + row.waste,
+                              writeOff: acc.writeOff + row.writeOff,
                               total: acc.total + adjustedTotal,
                               sold: acc.sold + (displaySold || 0),
                               closing: acc.closing + (displayClosing || 0),
                               amountSold: acc.amountSold + (displayAmountSold || 0),
                             };
-                          }, { opening: 0, added: 0, issued: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
+                          }, { opening: 0, added: 0, receivedFromMainStore: 0, receivedFromOtherDepts: 0, totalReceived: 0, issuedToMainStore: 0, issuedToOtherDepts: 0, totalIssuedOut: 0, waste: 0, writeOff: 0, total: 0, sold: 0, closing: 0, amountSold: 0 });
                           return (
                             <React.Fragment key={`cat-${category}`}>
                               <TableRow 
@@ -1692,7 +1747,7 @@ export default function InventoryLedger() {
                                 onClick={() => toggleCategory(category)}
                                 data-testid={`category-header-dept-${category}`}
                               >
-                                <TableCell colSpan={11} className="font-semibold text-sm py-2 text-white">
+                                <TableCell colSpan={12 + (transfersCollapsed ? 0 : 4) + (lossesCollapsed ? 0 : 2)} className="font-semibold text-sm py-2 text-white">
                                   <div className="flex items-center justify-between w-full">
                                     <div className="flex items-center gap-2">
                                       {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -1714,8 +1769,8 @@ export default function InventoryLedger() {
                               {isExpanded && rows.map((row) => {
                                 const editedOpening = ledgerEdits[row.itemId]?.opening;
                                 const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
-                                // Adjusted total = Opening + Added - Issued
-                                const displayTotal = displayOpening + row.added - row.issued;
+                                // Adjusted total = Opening + Added + Received - Issued Out - Losses
+                                const displayTotal = displayOpening + row.added + row.totalReceived - row.totalIssuedOut - row.waste - row.writeOff;
                                 const displayClosing = row.closing;
                                 const displaySold = displayClosing !== null ? displayTotal - displayClosing : null;
                                 const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
@@ -1738,6 +1793,26 @@ export default function InventoryLedger() {
                                     />
                                   </TableCell>
                                   <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
+                                  {/* Transfers Summary/Detail */}
+                                  <TableCell className="text-right bg-blue-50">
+                                    {(row.totalReceived + row.totalIssuedOut) > 0 ? (row.totalReceived - row.totalIssuedOut).toFixed(2) : "-"}
+                                  </TableCell>
+                                  {!transfersCollapsed && (
+                                    <>
+                                      <TableCell className="text-right text-green-600 bg-green-50 text-xs">
+                                        {row.receivedFromMainStore > 0 ? row.receivedFromMainStore.toFixed(2) : "-"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-green-600 bg-green-50 text-xs">
+                                        {row.receivedFromOtherDepts > 0 ? row.receivedFromOtherDepts.toFixed(2) : "-"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-orange-600 bg-orange-50 text-xs">
+                                        {row.issuedToMainStore > 0 ? row.issuedToMainStore.toFixed(2) : "-"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-orange-600 bg-orange-50 text-xs">
+                                        {row.issuedToOtherDepts > 0 ? row.issuedToOtherDepts.toFixed(2) : "-"}
+                                      </TableCell>
+                                    </>
+                                  )}
                                   {/* Losses Summary/Detail */}
                                   <TableCell className="text-right text-red-600 bg-red-50">
                                     {(row.waste + row.writeOff) > 0 ? (row.waste + row.writeOff).toFixed(2) : "-"}
@@ -1752,7 +1827,6 @@ export default function InventoryLedger() {
                                       </TableCell>
                                     </>
                                   )}
-                                  <TableCell className="text-right text-orange-600">{row.issued > 0 ? row.issued.toFixed(2) : "—"}</TableCell>
                                   <TableCell className="text-right bg-muted/30 font-medium">{displayTotal.toFixed(2)}</TableCell>
                                   <TableCell className="text-right">
                                     {displaySold !== null ? displaySold.toFixed(2) : <span className="text-muted-foreground">—</span>}
@@ -1780,6 +1854,28 @@ export default function InventoryLedger() {
                                   <TableCell>—</TableCell>
                                   <TableCell className="text-right">{catTotals.opening.toFixed(2)}</TableCell>
                                   <TableCell className="text-right text-green-600">{catTotals.added.toFixed(2)}</TableCell>
+                                  {/* Transfers totals */}
+                                  <TableCell className="text-right bg-blue-50">
+                                    {(catTotals.totalReceived - catTotals.totalIssuedOut).toFixed(2)}
+                                  </TableCell>
+                                  {!transfersCollapsed && (
+                                    <>
+                                      <TableCell className="text-right text-green-600 bg-green-50 text-xs">{catTotals.receivedFromMainStore.toFixed(2)}</TableCell>
+                                      <TableCell className="text-right text-green-600 bg-green-50 text-xs">{catTotals.receivedFromOtherDepts.toFixed(2)}</TableCell>
+                                      <TableCell className="text-right text-orange-600 bg-orange-50 text-xs">{catTotals.issuedToMainStore.toFixed(2)}</TableCell>
+                                      <TableCell className="text-right text-orange-600 bg-orange-50 text-xs">{catTotals.issuedToOtherDepts.toFixed(2)}</TableCell>
+                                    </>
+                                  )}
+                                  {/* Losses totals */}
+                                  <TableCell className="text-right text-red-600 bg-red-50">
+                                    {(catTotals.waste + catTotals.writeOff).toFixed(2)}
+                                  </TableCell>
+                                  {!lossesCollapsed && (
+                                    <>
+                                      <TableCell className="text-right text-red-600 bg-red-50 text-xs">{catTotals.waste.toFixed(2)}</TableCell>
+                                      <TableCell className="text-right text-red-600 bg-red-50 text-xs">{catTotals.writeOff.toFixed(2)}</TableCell>
+                                    </>
+                                  )}
                                   <TableCell className="text-right bg-muted/30 font-bold">{catTotals.total.toFixed(2)}</TableCell>
                                   <TableCell className="text-right">{catTotals.sold.toFixed(2)}</TableCell>
                                   <TableCell className="text-right bg-muted/30 font-bold">{catTotals.closing.toFixed(2)}</TableCell>
