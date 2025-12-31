@@ -81,6 +81,8 @@ export const items = pgTable("items", {
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }).default("0.00"),
   sellingPrice: decimal("selling_price", { precision: 12, scale: 2 }).default("0.00"),
   reorderLevel: integer("reorder_level").default(10),
+  serialTracking: text("serial_tracking").notNull().default("none"),
+  serialNotes: text("serial_notes"),
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -596,7 +598,30 @@ export const surplusHistory = pgTable("surplus_history", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ============================================================
+// ITEM SERIAL EVENTS (Serial Number Tracking)
+// ============================================================
+
+export const SERIAL_EVENT_TYPES = ["count", "transfer", "adjustment", "waste", "write_off", "received"] as const;
+export type SerialEventType = typeof SERIAL_EVENT_TYPES[number];
+
+export const itemSerialEvents = pgTable("item_serial_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  srdId: varchar("srd_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  refId: varchar("ref_id"),
+  serialNumber: text("serial_number").notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert schemas
+export const insertItemSerialEventSchema = createInsertSchema(itemSerialEvents).omit({ id: true, createdAt: true }).extend({
+  date: z.coerce.date(),
+});
 export const insertStoreNameSchema = createInsertSchema(storeNames).omit({ id: true, createdAt: true });
 export const insertReceivableSchema = createInsertSchema(receivables).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertReceivableHistorySchema = createInsertSchema(receivableHistory).omit({ id: true, createdAt: true });
@@ -708,3 +733,5 @@ export type InsertSurplusHistory = z.infer<typeof insertSurplusHistorySchema>;
 export type SurplusHistory = typeof surplusHistory.$inferSelect;
 export type InsertSrdTransfer = z.infer<typeof insertSrdTransferSchema>;
 export type SrdTransfer = typeof srdTransfers.$inferSelect;
+export type InsertItemSerialEvent = z.infer<typeof insertItemSerialEventSchema>;
+export type ItemSerialEvent = typeof itemSerialEvents.$inferSelect;

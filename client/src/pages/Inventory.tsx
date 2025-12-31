@@ -31,6 +31,7 @@ export default function Inventory() {
   const [editItemOpen, setEditItemOpen] = useState(false);
   const [editSupplierOpen, setEditSupplierOpen] = useState(false);
   const [deleteItemOpen, setDeleteItemOpen] = useState(false);
+  const [editItemSerialTracking, setEditItemSerialTracking] = useState<string>("none");
   const [deleteSupplierOpen, setDeleteSupplierOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
@@ -55,6 +56,7 @@ export default function Inventory() {
   const [selectedGrn, setSelectedGrn] = useState<GoodsReceivedNote | null>(null);
   const [grnFilterDate, setGrnFilterDate] = useState<Date | undefined>(undefined);
   const [newItemCategoryId, setNewItemCategoryId] = useState<string>("");
+  const [newItemSerialTracking, setNewItemSerialTracking] = useState<string>("none");
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const toggleCategory = (category: string) => {
@@ -360,6 +362,7 @@ export default function Inventory() {
 
   const handleEditItem = (item: Item) => {
     setSelectedItem(item);
+    setEditItemSerialTracking(item.serialTracking || "none");
     setEditItemOpen(true);
   };
 
@@ -487,8 +490,11 @@ export default function Inventory() {
                           sellingPrice: formData.get("sellingPrice") as string,
                           reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
                           status: "active",
+                          serialTracking: newItemSerialTracking as "none" | "serial" | "batch" | "lot" | "imei",
+                          serialNotes: formData.get("serialNotes") as string || null,
                         });
                         setNewItemCategoryId("");
+                        setNewItemSerialTracking("none");
                       }}>
                         <div className="space-y-4 py-4">
                           <div className="grid grid-cols-2 gap-4">
@@ -548,6 +554,31 @@ export default function Inventory() {
                             <Label htmlFor="reorderLevel">Reorder Level</Label>
                             <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue="10" data-testid="input-item-reorder" />
                           </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="serialTracking">Serial Tracking</Label>
+                              <Select value={newItemSerialTracking} onValueChange={setNewItemSerialTracking}>
+                                <SelectTrigger data-testid="select-item-serial-tracking">
+                                  <SelectValue placeholder="Select tracking type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">None</SelectItem>
+                                  <SelectItem value="serial">Serial Number</SelectItem>
+                                  <SelectItem value="batch">Batch Number</SelectItem>
+                                  <SelectItem value="lot">Lot Number</SelectItem>
+                                  <SelectItem value="imei">IMEI</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[10px] text-muted-foreground">Track individual units by serial/batch</p>
+                            </div>
+                            {newItemSerialTracking !== "none" && (
+                              <div className="space-y-2">
+                                <Label htmlFor="serialNotes">Serial Format Notes</Label>
+                                <Input id="serialNotes" name="serialNotes" placeholder="e.g., XX-YYYY-NNN" data-testid="input-item-serial-notes" />
+                                <p className="text-[10px] text-muted-foreground">Document expected format</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <DialogFooter>
                           <Button type="button" variant="outline" onClick={() => setCreateItemOpen(false)}>Cancel</Button>
@@ -588,6 +619,7 @@ export default function Inventory() {
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Cost Price</TableHead>
                       <TableHead className="text-right">Selling Price</TableHead>
+                      <TableHead>Serial Tracking</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="w-[80px]">Actions</TableHead>
                     </TableRow>
@@ -616,6 +648,15 @@ export default function Inventory() {
                               <TableCell>{item.unit}</TableCell>
                               <TableCell className="text-right font-mono">₦{Number(item.costPrice).toLocaleString()}</TableCell>
                               <TableCell className="text-right font-mono">₦{Number(item.sellingPrice).toLocaleString()}</TableCell>
+                              <TableCell>
+                                {item.serialTracking && item.serialTracking !== "none" ? (
+                                  <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200" data-testid={`badge-serial-tracking-${item.id}`}>
+                                    {item.serialTracking.toUpperCase()}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">—</span>
+                                )}
+                              </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={cn(
                                   item.status === "active" 
@@ -1411,6 +1452,8 @@ export default function Inventory() {
                   reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
                   purchaseQty: purchaseQty && parseFloat(purchaseQty) > 0 ? purchaseQty : undefined,
                   purchaseDate: purchaseQty && parseFloat(purchaseQty) > 0 && purchaseDate ? purchaseDate : undefined,
+                  serialTracking: editItemSerialTracking as "none" | "serial" | "batch" | "lot" | "imei",
+                  serialNotes: formData.get("serialNotes") as string || null,
                 },
               });
             }}>
@@ -1475,6 +1518,31 @@ export default function Inventory() {
                 <div className="space-y-2">
                   <Label htmlFor="edit-reorderLevel">Reorder Level</Label>
                   <Input id="edit-reorderLevel" name="reorderLevel" type="number" defaultValue={selectedItem.reorderLevel || 0} data-testid="input-edit-item-reorder" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-serialTracking">Serial Tracking</Label>
+                    <Select value={editItemSerialTracking} onValueChange={setEditItemSerialTracking}>
+                      <SelectTrigger data-testid="select-edit-item-serial-tracking">
+                        <SelectValue placeholder="Select tracking type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="serial">Serial Number</SelectItem>
+                        <SelectItem value="batch">Batch Number</SelectItem>
+                        <SelectItem value="lot">Lot Number</SelectItem>
+                        <SelectItem value="imei">IMEI</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">Track individual units by serial/batch</p>
+                  </div>
+                  {editItemSerialTracking !== "none" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-serialNotes">Serial Format Notes</Label>
+                      <Input id="edit-serialNotes" name="serialNotes" defaultValue={selectedItem.serialNotes || ""} placeholder="e.g., XX-YYYY-NNN" data-testid="input-edit-item-serial-notes" />
+                      <p className="text-[10px] text-muted-foreground">Document expected format</p>
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter>

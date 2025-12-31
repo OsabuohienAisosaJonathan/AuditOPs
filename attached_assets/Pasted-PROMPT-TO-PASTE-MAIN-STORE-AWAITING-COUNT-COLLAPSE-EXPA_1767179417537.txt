@@ -1,0 +1,146 @@
+PROMPT TO PASTE (MAIN STORE AWAITING COUNT + COLLAPSE/EXPAND + SERIAL NUMBERS)
+A) MAIN STORE SRD LEDGER: ADD “AWAITING COUNT” + VARIANCE + VALUE (WITH COLLAPSE/EXPAND)
+
+In the SRD Main Store ledger table, add these new computed + input columns (place them near the Closing area):
+a) Awaiting Count (editable input, default blank / show “Awaiting Count” badge until entered)
+b) Variance (Qty) = AwaitingCount − ClosingExpected
+c) Variance Value (₦) = VarianceQty × UnitCost
+d) Count Value (₦) = AwaitingCount × UnitCost (value based on cost using awaiting count)
+
+ClosingExpected is the current closing value computed from your existing ledger logic:
+
+Opening + Purchase/Added + Returns − Losses − ReqDep totals
+Keep the same math; just treat it as “Expected Closing.”
+
+The Awaiting Count must be used ONLY for:
+a) variance computation
+b) cost/value computations
+c) NOT altering carry-over automatically (do not change carry-over logic here unless already implemented elsewhere)
+
+Add a Save Count action that persists AwaitingCount per (date, SRD, itemId).
+
+If a stock count table/endpoint already exists, reuse it.
+
+If not, create minimal new backend storage that does not disturb existing tables.
+
+Add a small indicator in the Main Store ledger header:
+a) Count Progress: X/Y counted
+b) counted = AwaitingCount is filled for that row
+
+B) COLLAPSE/EXPAND COLUMN GROUPS (BOTH MAIN STORE + DEPARTMENT SRD LEDGERS)
+
+We need better viewing. Implement collapse/expand for wide column groups.
+
+On Main Store SRD ledger, add collapsible column groups:
+a) Req Dep group (Dep1–Dep10) collapsible into a single “Req Dep Total”
+
+When collapsed: show only “Req Dep Total”
+
+When expanded: show Dep1..Dep10 + still show Req Dep Total at the far right of that group
+
+b) Returns group (incoming transfers from departments back to Main Store)
+
+If returns already exist, show “Returns Total” collapsed and department-level returns expanded.
+
+If returns are not tracked, do not rework existing movement logic—just collapse/expand whatever returns fields currently exist.
+
+On Department Store SRD ledger, add collapsible groups:
+a) Inter-Department Transfers (Transfers In + Transfers Out) collapsible
+b) Losses group (Waste + Write-off) collapsible and positioned BEFORE Sold column
+
+When collapsed: show “Losses Total”
+
+When expanded: show Waste and Write-off
+
+Collapsing MUST NOT break totals. Totals and computed fields must remain correct whether collapsed or expanded.
+
+Implementation rules:
+
+Use React state for collapsed groups.
+
+Keep layout consistent with existing UI components (table.tsx patterns).
+
+C) PRODUCT SERIAL NUMBER: ADD TO INVENTORY REGISTRATION + SRD LEDGERS + INVENTORY TABLES
+
+We need product serial numbers support.
+
+Inventory Registration (“Create New Item” form):
+a) Add a field called Serial Tracking with options: None / Optional / Required
+b) Add a field called Serial Number Format / Notes (optional text), e.g., Batch/LOT/IMEI/Serial
+c) Save these fields on the item record.
+
+Backend / Schema changes (minimal and safe):
+a) Update items/inventory table schema to include:
+
+serialTracking (enum/string: none|optional|required)
+
+serialNotes (TEXT nullable)
+b) If there’s a schema.ts or migration pattern, update and run migration safely.
+
+SRD Ledger tables (Main Store + Department Store):
+a) Add a new column Serial Required
+
+Show Yes/No (or None/Optional/Required) based on item.serialTracking
+b) Add a Serial Entries action/button for items with Optional/Required
+
+Opens modal to add serial numbers for movements/counts.
+
+Inventory Management table (registered items list):
+a) Add columns:
+
+Serial Tracking
+
+Serial Notes
+b) Add filter: Serial Required only
+
+Serial numbers must be captured on:
+a) Stock Movement (transfer, adjustment, write_off, waste)
+b) Stock Count (if serialTracking = Required, user must enter serials matching qty)
+
+Rules:
+
+If Required: cannot save movement/count unless serial count equals qty.
+
+If Optional: allow save without serials but show warning.
+
+If None: hide serial UI.
+
+Create minimal data store for serial entries (additive only):
+Recommended table: item_serial_events
+
+id, date, srdId, itemId, eventType (count|transfer|adjustment|waste|write_off), refId (movementId or countId), serialNumber, createdAt
+Must not break existing logic.
+
+DO NOT BREAK EXISTING BACKEND
+
+Constraints:
+
+Do NOT remove or rename existing API routes.
+
+Do NOT delete existing DB columns/tables.
+
+Add only what is necessary.
+
+If a bug exists in movement-to-ledger translation, FIX the bug—do not redesign the backend.
+
+G) OUTPUT REQUIRED FROM YOU (AI BUILDER)
+
+Show exact file paths edited.
+
+For each edited file, print first 10–15 lines to confirm correct file.
+
+Provide code patches with clear START/END markers.
+
+Provide migration steps if DB schema changed.
+
+Provide a test checklist:
+
+serial-required item movement test
+
+serial-required item count test
+
+transfer department → main store returns still reflect
+
+waste/write-off still reflect correctly
+
+collapsing columns does not break totals

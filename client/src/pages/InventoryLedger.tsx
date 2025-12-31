@@ -342,6 +342,10 @@ export default function InventoryLedger() {
   const [lossesCollapsed, setLossesCollapsed] = useState(true);
   const [receivedCollapsed, setReceivedCollapsed] = useState(true);
   const [transfersCollapsed, setTransfersCollapsed] = useState(true);
+  const [reqDepCollapsed, setReqDepCollapsed] = useState(true);
+  
+  // Awaiting count edits (for Main Store physical count entry)
+  const [awaitingCountEdits, setAwaitingCountEdits] = useState<Record<string, string>>({});
 
   // Legacy store issues (for backward compatibility) - TODO: migrate to srdTransfers
   const { data: storeIssues } = useQuery<StoreIssue[]>({
@@ -1292,15 +1296,28 @@ export default function InventoryLedger() {
                   Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Edit Opening & Purchase directly
                 </CardDescription>
               </div>
-              <Button 
-                onClick={handleSaveLedger} 
-                disabled={!hasUnsavedChanges || saveLedgerMutation.isPending}
-                className="gap-2"
-                data-testid="button-save-ledger"
-              >
-                {saveLedgerMutation.isPending ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                {saveLedgerMutation.isPending ? "Saving..." : "Save Ledger"}
-              </Button>
+              <div className="flex items-center gap-4">
+                {/* Count Progress Indicator */}
+                {mainStoreLedger.length > 0 && (
+                  <Badge variant="outline" className="h-9 px-3 bg-purple-50 text-purple-700 border-purple-200 gap-1.5" data-testid="badge-count-progress">
+                    <Package className="h-4 w-4" />
+                    Count Progress: {mainStoreLedger.filter(row => {
+                      const editedCount = awaitingCountEdits[row.itemId];
+                      // Item is counted if it has a persisted count value OR a local edit
+                      return row.awaitingCount !== null && row.awaitingCount !== undefined || editedCount !== undefined && editedCount !== "";
+                    }).length}/{mainStoreLedger.length}
+                  </Badge>
+                )}
+                <Button 
+                  onClick={handleSaveLedger} 
+                  disabled={!hasUnsavedChanges && Object.keys(awaitingCountEdits).filter(k => awaitingCountEdits[k]).length === 0 || saveLedgerMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-save-ledger"
+                >
+                  {saveLedgerMutation.isPending ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                  {saveLedgerMutation.isPending ? "Saving..." : "Save Ledger"}
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -1382,21 +1399,35 @@ export default function InventoryLedger() {
                       </>
                     )}
                     <TableHead className="w-[80px] text-right bg-muted/30">Total</TableHead>
-                    {visibleDeptList.map((dept, idx) => (
+                    {/* Req Dep (Department Issues) - Collapsible Group */}
+                    <TableHead 
+                      className="w-[80px] text-right bg-orange-50 cursor-pointer hover:bg-orange-100"
+                      onClick={() => setReqDepCollapsed(!reqDepCollapsed)}
+                      title="Click to expand/collapse Department Issues columns"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        {reqDepCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        <span className="text-xs">Req Dep</span>
+                      </div>
+                    </TableHead>
+                    {!reqDepCollapsed && visibleDeptList.map((dept, idx) => (
                       <TableHead key={dept.id} className="w-[80px] text-right text-xs bg-orange-50" title={getStoreNameById(dept.storeNameId)?.name}>
                         {getStoreNameById(dept.storeNameId)?.name?.slice(0, 8) || `Dep${idx + 1}`}
                       </TableHead>
                     ))}
-                    <TableHead className="w-[80px] text-right bg-muted/30">Closing</TableHead>
+                    <TableHead className="w-[80px] text-right bg-muted/30">Expected</TableHead>
+                    <TableHead className="w-[90px] text-right bg-purple-50">Count</TableHead>
+                    <TableHead className="w-[80px] text-right bg-purple-50">Variance</TableHead>
+                    <TableHead className="w-[100px] text-right bg-purple-50">Var. Value</TableHead>
                     <TableHead className="w-[80px] text-right">Cost</TableHead>
-                    <TableHead className="w-[100px] text-right">Value</TableHead>
+                    <TableHead className="w-[100px] text-right">Count Value</TableHead>
                     <TableHead className="w-[80px]">Issue</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {mainStoreLedger.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11 + visibleDeptList.length} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={15 + (returnInwardCollapsed ? 0 : departmentStores.length) + (lossesCollapsed ? 0 : 2) + (reqDepCollapsed ? 0 : visibleDeptList.length)} className="text-center py-8 text-muted-foreground">
                         No items found. Add items in the Inventory page first.
                       </TableCell>
                     </TableRow>
@@ -1433,7 +1464,7 @@ export default function InventoryLedger() {
                             onClick={() => toggleCategory(category)}
                             data-testid={`category-header-${category}`}
                           >
-                            <TableCell colSpan={11 + visibleDeptList.length} className="font-semibold text-sm py-2 sticky left-0 text-white">
+                            <TableCell colSpan={15 + (returnInwardCollapsed ? 0 : departmentStores.length) + (lossesCollapsed ? 0 : 2) + (reqDepCollapsed ? 0 : visibleDeptList.length)} className="font-semibold text-sm py-2 sticky left-0 text-white">
                               <div className="flex items-center justify-between w-full">
                                 <div className="flex items-center gap-2">
                                   {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -1516,14 +1547,56 @@ export default function InventoryLedger() {
                                 </>
                               )}
                               <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
-                              {visibleDeptList.map(dept => (
-                                <TableCell key={dept.id} className="text-right text-orange-600 bg-orange-50">
+                              {/* Req Dep Summary/Detail */}
+                              <TableCell className="text-right text-orange-600 bg-orange-50 font-medium">
+                                {row.totalIssued > 0 ? row.totalIssued.toFixed(2) : "-"}
+                              </TableCell>
+                              {!reqDepCollapsed && visibleDeptList.map(dept => (
+                                <TableCell key={dept.id} className="text-right text-orange-600 bg-orange-50 text-xs">
                                   {(row.depIssues[dept.id] || 0) > 0 ? (row.depIssues[dept.id] || 0).toFixed(2) : "-"}
                                 </TableCell>
                               ))}
-                              <TableCell className="text-right bg-muted/30 font-medium">{row.closing.toFixed(2)}</TableCell>
+                              <TableCell className="text-right bg-muted/30 font-medium">{displayClosing.toFixed(2)}</TableCell>
+                              {/* Awaiting Count (editable) */}
+                              <TableCell className="p-1 bg-purple-50">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Count"
+                                  className={cn("h-8 w-20 text-right", isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed")}
+                                  value={awaitingCountEdits[row.itemId] || ""}
+                                  onChange={(e) => setAwaitingCountEdits(prev => ({ ...prev, [row.itemId]: e.target.value }))}
+                                  disabled={isPastDate && !isSuperAdmin}
+                                  data-testid={`input-count-${row.itemId}`}
+                                />
+                              </TableCell>
+                              {/* Variance = Count - Expected */}
+                              <TableCell className={cn("text-right bg-purple-50", 
+                                awaitingCountEdits[row.itemId] && parseFloat(awaitingCountEdits[row.itemId]) !== displayClosing && "font-medium",
+                                awaitingCountEdits[row.itemId] && parseFloat(awaitingCountEdits[row.itemId]) < displayClosing && "text-red-600",
+                                awaitingCountEdits[row.itemId] && parseFloat(awaitingCountEdits[row.itemId]) > displayClosing && "text-green-600"
+                              )}>
+                                {awaitingCountEdits[row.itemId] 
+                                  ? (parseFloat(awaitingCountEdits[row.itemId]) - displayClosing).toFixed(2) 
+                                  : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
+                              {/* Variance Value = Variance × Cost */}
+                              <TableCell className={cn("text-right bg-purple-50", 
+                                awaitingCountEdits[row.itemId] && parseFloat(awaitingCountEdits[row.itemId]) !== displayClosing && "font-medium",
+                                awaitingCountEdits[row.itemId] && parseFloat(awaitingCountEdits[row.itemId]) < displayClosing && "text-red-600",
+                                awaitingCountEdits[row.itemId] && parseFloat(awaitingCountEdits[row.itemId]) > displayClosing && "text-green-600"
+                              )}>
+                                {awaitingCountEdits[row.itemId] 
+                                  ? ((parseFloat(awaitingCountEdits[row.itemId]) - displayClosing) * row.cost).toFixed(2) 
+                                  : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
                               <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
-                              <TableCell className="text-right font-medium">{displayValue.toFixed(2)}</TableCell>
+                              {/* Count Value = Count × Cost */}
+                              <TableCell className="text-right font-medium">
+                                {awaitingCountEdits[row.itemId] 
+                                  ? (parseFloat(awaitingCountEdits[row.itemId]) * row.cost).toFixed(2) 
+                                  : <span className="text-muted-foreground">{displayValue.toFixed(2)}</span>}
+                              </TableCell>
                               <TableCell>
                                 <Button 
                                   variant="outline" 
@@ -1559,12 +1632,19 @@ export default function InventoryLedger() {
                                 </>
                               )}
                               <TableCell className="text-right bg-muted/30 font-bold">{catTotals.total.toFixed(2)}</TableCell>
-                              {visibleDeptList.map(dept => (
-                                <TableCell key={`total-${dept.id}`} className="text-right text-orange-600 font-bold bg-orange-50">
+                              {/* Req Dep totals */}
+                              <TableCell className="text-right text-orange-600 font-bold bg-orange-50">
+                                {Object.values(catTotals.depIssues).reduce((a, b) => a + b, 0).toFixed(2)}
+                              </TableCell>
+                              {!reqDepCollapsed && visibleDeptList.map(dept => (
+                                <TableCell key={`total-${dept.id}`} className="text-right text-orange-600 font-bold bg-orange-50 text-xs">
                                   {(catTotals.depIssues[dept.id] || 0).toFixed(2)}
                                 </TableCell>
                               ))}
                               <TableCell className="text-right bg-muted/30 font-bold">{catTotals.closing.toFixed(2)}</TableCell>
+                              <TableCell className="text-right bg-purple-50">—</TableCell>
+                              <TableCell className="text-right bg-purple-50">—</TableCell>
+                              <TableCell className="text-right bg-purple-50">—</TableCell>
                               <TableCell className="text-right">—</TableCell>
                               <TableCell className="text-right font-bold">{catTotals.value.toFixed(2)}</TableCell>
                               <TableCell>—</TableCell>
