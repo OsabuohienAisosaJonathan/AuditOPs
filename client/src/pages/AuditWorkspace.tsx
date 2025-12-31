@@ -1537,8 +1537,8 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
     enabled: !!clientId,
   });
 
-  // Fetch items for the client
-  const { data: items = [] } = useQuery<{ id: string; name: string; costPrice: string }[]>({
+  // Fetch items for the client (used for unit cost lookup)
+  const { data: allItems = [] } = useQuery<{ id: string; name: string; costPrice: string; status: string; category: string }[]>({
     queryKey: ["items-stock", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/items?clientId=${clientId}`);
@@ -1547,6 +1547,20 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
     },
     enabled: !!clientId,
   });
+
+  // Fetch items filtered by From SRD's allowed categories
+  const { data: srdFilteredItemsMovement = [], isLoading: movementItemsLoading } = useQuery<{ id: string; name: string; costPrice: string; status: string; category: string }[]>({
+    queryKey: ["srd-items-movement", clientId, fromLocation],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments/${fromLocation}/items`);
+      if (!res.ok) throw new Error("Failed to fetch SRD items");
+      return res.json();
+    },
+    enabled: !!clientId && !!fromLocation,
+  });
+
+  // Use filtered items for dropdown, but allItems for cost lookup
+  const items = allItems;
 
   const getSrdName = (deptId: string) => {
     const dept = invDepts.find(d => d.id === deptId);
@@ -1857,7 +1871,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
               <div className={needsToLocation ? "grid grid-cols-2 gap-4" : ""}>
                 <div className="space-y-2">
                   <Label htmlFor="sourceLocation">{needsToLocation ? "From SRD" : "Target SRD"}</Label>
-                  <Select value={fromLocation} onValueChange={setFromLocation}>
+                  <Select value={fromLocation} onValueChange={(val) => { setFromLocation(val); setItemLines([]); }}>
                     <SelectTrigger data-testid="select-from-location"><SelectValue placeholder="Select SRD" /></SelectTrigger>
                     <SelectContent>
                       {invDepts.filter(d => d.status === "active").map(dept => (
@@ -1888,10 +1902,22 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Items</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addItemLine} data-testid="button-add-item-line">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={addItemLine} 
+                    disabled={!fromLocation || srdFilteredItemsMovement.length === 0}
+                    data-testid="button-add-item-line"
+                  >
                     <Plus className="h-3 w-3 mr-1" /> Add Item
                   </Button>
                 </div>
+                {fromLocation && srdFilteredItemsMovement.length === 0 && !movementItemsLoading ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                    No categories allowed for this SRD. Configure allowed categories first.
+                  </div>
+                ) : (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader className="bg-muted/50">
@@ -1907,7 +1933,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                       {itemLines.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
-                            Click "Add Item" to start adding items
+                            {!fromLocation ? "Select From SRD first" : movementItemsLoading ? "Loading items..." : "Click \"Add Item\" to start adding items"}
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -1917,9 +1943,9 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                               <Select value={line.itemId} onValueChange={(v) => updateItemLine(line.id, "itemId", v)}>
                                 <SelectTrigger data-testid={`select-item-${line.id}`}><SelectValue placeholder="Select item" /></SelectTrigger>
                                 <SelectContent>
-                                  {items.map(item => (
+                                  {srdFilteredItemsMovement.filter(i => i.status === "active").map(item => (
                                     <SelectItem key={item.id} value={item.id} disabled={itemLines.some(l => l.id !== line.id && l.itemId === item.id)}>
-                                      {item.name}
+                                      {item.name} ({item.category})
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -1965,6 +1991,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                     </div>
                   )}
                 </div>
+              )}
               </div>
 
               <div className="space-y-2">
@@ -2197,6 +2224,17 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
     queryFn: async () => {
       const res = await fetch(`/api/clients/${clientId}/store-stock?departmentId=${selectedSrdId}&date=${previousDate}`);
       if (!res.ok) throw new Error("Failed to fetch previous day store stock");
+      return res.json();
+    },
+    enabled: !!clientId && !!selectedSrdId,
+  });
+
+  // Fetch items filtered by selected SRD's allowed categories
+  const { data: srdFilteredItems = [], isLoading: itemsLoading } = useQuery<Item[]>({
+    queryKey: ["srd-items", clientId, selectedSrdId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments/${selectedSrdId}/items`);
+      if (!res.ok) throw new Error("Failed to fetch SRD items");
       return res.json();
     },
     enabled: !!clientId && !!selectedSrdId,
@@ -2563,20 +2601,30 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
                   
                   <div className="space-y-2">
                     <Label htmlFor="itemId">Item</Label>
-                    <Select 
-                      value={selectedItemId} 
-                      onValueChange={(val) => { setSelectedItemId(val); setPhysicalCount(""); }}
-                      disabled={!selectedSrdId}
-                    >
-                      <SelectTrigger data-testid="select-item-count">
-                        <SelectValue placeholder={selectedSrdId ? "Select item" : "Select SRD first"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {items.filter(i => i.status === "active").map(item => (
-                          <SelectItem key={item.id} value={item.id}>{item.name} ({item.category})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {selectedSrdId && srdFilteredItems.length === 0 && !itemsLoading ? (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                        No categories allowed for this SRD. Configure allowed categories first.
+                      </div>
+                    ) : (
+                      <Select 
+                        value={selectedItemId} 
+                        onValueChange={(val) => { setSelectedItemId(val); setPhysicalCount(""); }}
+                        disabled={!selectedSrdId || srdFilteredItems.length === 0}
+                      >
+                        <SelectTrigger data-testid="select-item-count">
+                          <SelectValue placeholder={
+                            !selectedSrdId ? "Select SRD first" : 
+                            itemsLoading ? "Loading items..." : 
+                            "Select item"
+                          } />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {srdFilteredItems.filter(i => i.status === "active").map(item => (
+                            <SelectItem key={item.id} value={item.id}>{item.name} ({item.category})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
 
                   {selectedItemId && (

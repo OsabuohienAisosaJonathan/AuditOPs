@@ -1,0 +1,50 @@
+PROMPT (Stock Count + Movement item dropdown must respect Allowed Categories)
+
+Use this prompt with your AI builder (this matches your request exactly and won’t disturb working backend—only fixes filtering + selection logic).
+
+PROMPT: FIX ITEM SELECTION FILTERING FOR “ADD STOCK COUNT” + “RECORD STOCK MOVEMENT” USING SRD ALLOWED CATEGORIES
+
+Context:
+
+The Add Stock Count modal currently shows all inventory items, even when a user selected a specific SRD (e.g., BAR OUTLET SR-D).
+
+Each SRD ledger already has Allowed Categories which determines what items appear on that SRD table.
+
+We must use the same Allowed Categories logic to filter what items appear in:
+
+Add Stock Count → Item dropdown
+
+Record Stock Movement → Item dropdown
+
+Requirements:
+
+Add Stock Count modal:
+a) When user selects SRD, fetch that SRD’s Allowed Categories for the selected date/client.
+b) Filter dropdown items to ONLY items whose category is included in Allowed Categories for that SRD.
+c) If Allowed Categories is empty, show: “No categories allowed for this SRD. Configure allowed categories first.”
+d) Do NOT show items outside the SRD table scope.
+
+Record Stock Movement modal:
+a) For From SRD, item dropdown must only show items allowed for the From SRD (Allowed Categories filter).
+b) For transfer movements, validate on save: every line item must be allowed in From SRD categories (server-side validation too).
+c) Optional (recommended): If “To SRD” does not allow the item category, warn user: “Item category not allowed in destination SRD, proceed?” (configurable), but still allow transfer if business rules permit.
+
+Backend:
+a) Do not break existing endpoints.
+b) If you need a new endpoint, add a small one like:
+
+GET /api/srd/:srdId/allowed-categories?date=YYYY-MM-DD
+c) Or reuse existing SRD ledger endpoint that already returns allowed categories.
+
+UI implementation:
+a) Show file path + first 10–15 lines of any file you edit before you provide replacements.
+b) Give full updated code for each file you modify.
+c) Ensure dropdown performance: do not load all items then filter in UI repeatedly; filter at source where possible.
+
+Acceptance tests:
+
+BAR OUTLET SR-D Allowed Categories = {F&B}. Dropdown must show only F&B items (Fanta, Coca Cola, Malt).
+
+JUICES OUTLET SR-D Allowed Categories = {Fresh Fruit}. Dropdown must show only juice items (Orange, Pineapple, Water Melon).
+
+Changing SRD instantly updates dropdown list and clears previously selected invalid items.

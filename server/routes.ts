@@ -3918,6 +3918,21 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Duplicate items not allowed in a single movement" });
       }
       
+      // Validate that all items are in allowed categories for the From SRD
+      const fromSrdIdForValidation = movementData.fromSrdId;
+      if (fromSrdIdForValidation) {
+        const allowedItems = await storage.getItemsForInventoryDepartment(fromSrdIdForValidation);
+        const allowedItemIds = new Set(allowedItems.map((item: any) => item.id));
+        for (const line of lines) {
+          if (!allowedItemIds.has(line.itemId)) {
+            const item = await storage.getItem(line.itemId);
+            return res.status(400).json({ 
+              error: `Item "${item?.name || line.itemId}" is not in the allowed categories for this SRD` 
+            });
+          }
+        }
+      }
+      
       const movementDate = movementData.date ? new Date(movementData.date) : new Date();
       
       // For movements that decrease stock, validate available quantities
