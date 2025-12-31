@@ -98,8 +98,12 @@ export default function Inventory() {
 
   const updateItemMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Item> & { purchaseQty?: string; purchaseDate?: string } }) => itemsApi.update(id, data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
+      // If purchase was made, also invalidate store-stock so ledger updates immediately
+      if (variables.data.purchaseQty && parseFloat(variables.data.purchaseQty) > 0) {
+        queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      }
       setEditItemOpen(false);
       setSelectedItem(null);
       toast.success("Item updated successfully");
