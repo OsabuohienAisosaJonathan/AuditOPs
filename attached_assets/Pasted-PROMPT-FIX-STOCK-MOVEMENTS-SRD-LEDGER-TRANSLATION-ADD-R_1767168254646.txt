@@ -1,0 +1,194 @@
+PROMPT: FIX STOCK MOVEMENTS → SRD LEDGER TRANSLATION (ADD RETURN-INWARD COLUMNS + WASTE/WRITEOFF + EDIT/REVERSE)
+
+You are working on Miemploya AuditOps. Stock Movements already display correctly on Audit Workspace → Stock Movements (Transfers, Adjustments, Write-offs). The problem is: Movements do not correctly update the SRD Ledgers (Main Store SRD ledger + Department SRD ledger). Fix the bug by upgrading the SRD ledger structure and calculation logic — WITHOUT breaking existing database tables. Only fix what is needed; do not disrupt working features.
+
+1) CRITICAL GOAL
+
+Every Stock Movement record must correctly impact SRD ledger calculations for the selected date:
+A) Transfer Main → Department must reduce Main Store closing and increase Department totals/closing.
+B) Transfer Department → Main (Return Inward) must increase Main Store totals/closing and reduce Department closing.
+C) Transfer Department → Department must reduce “From Department” closing and increase “To Department” totals/closing.
+D) Adjustment must increase or decrease stock depending on sign (positive adds, negative subtracts).
+E) Waste and Write-off must subtract from stock (negative impact) and reduce closing.
+
+2) SRD MAIN STORE LEDGER: ADD “RETURN INWARD” + “WASTE/WRITE-OFF” CAPABILITY
+
+The Main Store SRD table currently lacks the columns needed to properly receive returns from departments and to properly account for waste/write-off as separate movement types.
+
+2.1 Add Return Inward Columns (Per Department)
+
+For every department issue column that exists on the Main Store SRD ledger (Dep1…Dep10, etc.), create a matching Return Inward column on the SAME Main Store ledger.
+
+Example:
+
+Existing issue-out columns: Dep1, Dep2, Dep3...
+
+Add matching return-in columns: Dep1 Return In, Dep2 Return In, Dep3 Return In...
+
+Placement rule:
+
+These new “Return Inward” columns must be placed immediately after the Purchase column.
+
+2.2 Add Waste + Write-Off Columns (Main Store)
+
+Create:
+
+Waste
+
+Write-Off
+
+These must always be treated as negative columns (they reduce stock).
+
+Placement rule:
+
+Place these after Return Inward columns (still before outward issue columns).
+
+2.3 Main Store Calculation Rules (Auto)
+
+Update formulas so Main Store recalculates automatically:
+
+Total = Opening + Purchase + Sum(Return Inward Columns) + Adjustments_In - Waste - WriteOff
+
+Closing = Total - Sum(Department Issue-Out Columns)
+
+Where:
+
+Department Issue-Out Columns already exist (Dep1..Dep10) = transfers out of main store.
+
+Return Inward Columns = transfers INTO main store from department SRDs.
+
+Adjustments can be positive/negative depending on movement record.
+
+Waste/WriteOff always subtract.
+
+3) SRD DEPARTMENT STORE LEDGER: ADD “RECEIVED FROM OTHER SRD” + “WASTE/WRITE-OFF”
+
+Department SRD ledger already has an “Issue” column (outgoing), but it lacks columns for:
+
+Receiving transfers from other departments (department-to-department transfers), and
+
+Waste/Write-off.
+
+3.1 Add “Received” Columns
+
+Add a column:
+
+Received (Transfers In)
+
+This must capture:
+
+Transfers from Main Store → Department
+
+Transfers from other Department SRDs → this Department
+
+3.2 Add Waste + Write-Off Columns (Department SRD)
+
+Create:
+
+Waste
+
+Write-Off
+
+Placement rule:
+
+Place Waste and Write-Off before the Sold column.
+
+3.3 Department Calculation Rules (Auto)
+
+Update formulas so Department SRD recalculates automatically:
+
+Total = Opening + Added + Received + Adjustments_In - Issued - Waste - WriteOff
+
+Closing = Total - Sold (or keep your existing Closing logic if “Closing from Stock Count” is enforced — but movements must still affect Expected/Total correctly)
+
+Important:
+
+If your department ledger uses “Awaiting Count”, ensure these movements still change the “Expected” figure used during Stock Count.
+
+4) COLLAPSE / EXPAND COLUMN GROUPS (UI)
+
+To keep the ledger readable, add a collapse/expand toggle for these grouped columns:
+
+A) Main Store:
+
+Return Inward group (Dep1 Return In … Dep10 Return In)
+
+Waste/Write-off group
+
+B) Department Store:
+
+Received group
+
+Waste/Write-off group
+
+Default view:
+
+Keep the most important columns visible by default.
+
+Collapsed groups should show a small indicator like “+ Return Inward (3)” or “+ Losses (Waste/Write-off)”.
+
+5) STOCK MOVEMENT MUST BE EDITABLE + REVERSABLE (FULLY)
+
+Add actions on Stock Movements list:
+
+Edit
+
+Reverse
+
+Rules:
+A) Editing a movement must update the movement record AND trigger recalculation of impacted ledgers for that date.
+B) Reversing must NOT silently delete history. Use one of these safe approaches:
+
+Mark original as reversed=true and create a new “reversal” movement (opposite quantity/value), OR
+
+Store a reversal reference and apply a compensating entry.
+
+Acceptance:
+
+After reverse, SRD ledgers must revert exactly as if the movement never happened.
+
+6) STOCK MOVEMENT “DESCRIPTION” + “VALUE” MUST ALWAYS DISPLAY
+
+On the Audit Workspace Stock Movements table, ensure each record always shows:
+
+Description (e.g., Malt (2) or Pineapple Juice (1) plus optional note)
+
+Value (₦)
+If the value is derived, compute it consistently (qty × cost or qty × selling price, whichever your system defines as “Value”).
+
+7) DO NOT BREAK DATABASE — FIX VIA TRANSLATION / COMPUTATION
+
+Do NOT disturb existing working tables. If new fields are needed, prefer:
+
+Derived columns in ledger computation layer, OR
+
+Non-breaking optional fields with safe defaults.
+
+8) TEST CASES (MUST PASS)
+
+Main Store → Juices Outlet (qty 5):
+Main Store Dep1 issue-out increases by 5 and Main closing reduces by 5. Department Received increases by 5.
+
+Juices Outlet → Main Store return (qty 1):
+Main Store Dep1 Return In increases by 1, Main Total/Closing increases by 1. Department Issued increases by 1 (or a dedicated “Returned Out” if implemented), and Department Closing reduces by 1.
+
+Bar Outlet → Grill Outlet transfer:
+Bar closing reduces; Grill totals/closing increases (via Received).
+
+Waste/write-off in Bar Outlet:
+Waste/write-off subtracts and reduces closing.
+
+Reverse any of the above movements:
+Everything returns to previous state.
+
+Deliverables:
+
+Update ledger column structure (UI)
+
+Update ledger computation logic
+
+Add collapse/expand toggles
+
+Add edit/reverse actions and ensure recalculation works
+
+Ensure description/value always show on Stock Movements list
