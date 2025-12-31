@@ -52,6 +52,28 @@ PostgreSQL database with the following core entities:
 - **reconciliations**: Daily stock comparisons
 - **exceptions/exceptionComments**: Audit discrepancy cases
 - **auditLogs/adminActivityLogs**: Compliance logging
+- **itemSerialEvents**: Serial number tracking events for inventory movements
+
+### Serial Number Tracking
+Items can be configured with serial tracking types:
+- **none**: No serial tracking (default)
+- **serial**: Standard serial number tracking
+- **batch**: Batch number tracking
+- **lot**: Lot number tracking  
+- **imei**: IMEI tracking for electronics
+
+The `serialNotes` field documents expected format patterns (e.g., "XX-YYYY-NNN").
+
+### Inventory Ledger Features
+Main Store ledger includes:
+- Collapsible column groups: Return Inward, Losses, Req Dep (Requisition Department)
+- Count Progress indicator showing items counted vs total
+- Awaiting Count, Variance, Variance Value, and Count Value columns with purple highlighting
+- Dynamic colspan calculations that adjust when column groups expand/collapse
+
+Department Store ledger includes:
+- Collapsible Transfers column group with In/Out breakdowns by source type
+- Opening + Added + Received - Issued Out - Losses formula for totals
 
 ### Department Architecture
 The department system supports flexible inheritance:
