@@ -4029,6 +4029,126 @@ export async function registerRoutes(
     }
   });
 
+  // Reverse a stock movement (creates a compensating movement)
+  app.post("/api/stock-movements/:id/reverse", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const movementId = req.params.id;
+      const { reason } = req.body;
+      
+      if (!reason?.trim()) {
+        return res.status(400).json({ error: "Reversal reason is required" });
+      }
+      
+      // Get the original movement with lines
+      const original = await storage.getStockMovementWithLines(movementId);
+      if (!original) {
+        return res.status(404).json({ error: "Stock movement not found" });
+      }
+      
+      const { movement: origMovement, lines: origLines } = original;
+      
+      // Determine reversal logic based on movement type
+      let reversedMovementType = origMovement.movementType;
+      let reversedDirection = null;
+      let reversedFromSrdId = origMovement.fromSrdId;
+      let reversedToSrdId = origMovement.toSrdId;
+      let reversedSourceLocation = origMovement.sourceLocation;
+      let reversedDestLocation = origMovement.destinationLocation;
+      
+      if (origMovement.movementType === "transfer") {
+        // Swap from/to for reversal
+        reversedFromSrdId = origMovement.toSrdId;
+        reversedToSrdId = origMovement.fromSrdId;
+        reversedSourceLocation = origMovement.destinationLocation;
+        reversedDestLocation = origMovement.sourceLocation;
+      } else if (origMovement.movementType === "adjustment") {
+        // Flip the direction
+        reversedDirection = origMovement.adjustmentDirection === "increase" ? "decrease" : "increase";
+      } else if (origMovement.movementType === "write_off" || origMovement.movementType === "waste") {
+        // Convert to adjustment increase to restore stock
+        reversedMovementType = "adjustment";
+        reversedDirection = "increase";
+        reversedToSrdId = null;
+      }
+      
+      const now = new Date();
+      const reversalNotes = `REVERSAL of movement ${movementId.slice(0, 8)}... Reason: ${reason}`;
+      
+      // Create the reversal movement
+      const reversalMovement = await storage.createStockMovement({
+        clientId: origMovement.clientId,
+        departmentId: origMovement.departmentId,
+        outletId: origMovement.outletId,
+        movementType: reversedMovementType,
+        fromSrdId: reversedFromSrdId,
+        toSrdId: reversedToSrdId,
+        date: now,
+        adjustmentDirection: reversedDirection,
+        sourceLocation: reversedSourceLocation,
+        destinationLocation: reversedDestLocation,
+        itemsDescription: `[REVERSAL] ${origMovement.itemsDescription || ""}`,
+        totalQty: origMovement.totalQty,
+        totalValue: origMovement.totalValue,
+        notes: reversalNotes,
+        authorizedBy: origMovement.authorizedBy,
+        createdBy: req.session.userId!,
+      });
+      
+      // Create reversal lines
+      const reversalLines = origLines.map((line: any) => ({
+        movementId: reversalMovement.id,
+        itemId: line.itemId,
+        qty: line.qty,
+        unitCost: line.unitCost,
+        lineValue: line.lineValue,
+      }));
+      
+      await storage.createStockMovementLinesBulk(reversalLines);
+      
+      // Apply stock adjustments (reverse the original changes)
+      const clientId = origMovement.clientId;
+      for (const line of origLines) {
+        const qty = Number(line.qty);
+        const unitCost = line.unitCost;
+        
+        if (origMovement.movementType === "transfer") {
+          // Reverse transfer: add back to original from, deduct from original to
+          await adjustStoreStock(clientId, origMovement.fromSrdId!, line.itemId, qty, unitCost, now);
+          await adjustStoreStock(clientId, origMovement.toSrdId!, line.itemId, -qty, unitCost, now);
+        } else if (origMovement.movementType === "adjustment") {
+          // Reverse adjustment
+          const direction = origMovement.adjustmentDirection === "increase" ? -1 : 1;
+          await adjustStoreStock(clientId, origMovement.fromSrdId!, line.itemId, qty * direction, unitCost, now);
+        } else if (origMovement.movementType === "write_off" || origMovement.movementType === "waste") {
+          // Restore stock
+          await adjustStoreStock(clientId, origMovement.fromSrdId!, line.itemId, qty, unitCost, now);
+        }
+      }
+      
+      // Mark the original as reversed
+      await storage.updateStockMovement(movementId, {
+        notes: `${origMovement.notes || ""}\n[REVERSED on ${now.toISOString()} - Reversal ID: ${reversalMovement.id.slice(0, 8)}]`,
+      });
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: `Reversed Stock Movement`,
+        entity: "StockMovement",
+        entityId: movementId,
+        details: `Reversed ${origMovement.movementType} movement. Reversal ID: ${reversalMovement.id}. Reason: ${reason}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json({ 
+        success: true, 
+        reversalMovement,
+        message: `Movement reversed successfully. Reversal ID: ${reversalMovement.id.slice(0, 8)}` 
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== RECONCILIATIONS ==============
   app.get("/api/reconciliations", requireAuth, async (req, res) => {
     try {

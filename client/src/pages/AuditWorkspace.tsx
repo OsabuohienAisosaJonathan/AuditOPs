@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Clock, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store } from "lucide-react";
+import { CheckCircle2, Circle, Clock, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store, Eye, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1504,6 +1504,10 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   totalMovements: number;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [reverseOpen, setReverseOpen] = useState(false);
+  const [selectedMovementId, setSelectedMovementId] = useState<string | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
   const [movementType, setMovementType] = useState("transfer");
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
@@ -1617,6 +1621,58 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
     onError: (error: any) => toast.error(error.message || "Failed to create movement"),
   });
 
+  const { data: movementDetails } = useQuery({
+    queryKey: ["movement-details", selectedMovementId],
+    queryFn: async () => {
+      const res = await fetch(`/api/stock-movements/${selectedMovementId}/with-lines`);
+      if (!res.ok) throw new Error("Failed to fetch movement details");
+      return res.json();
+    },
+    enabled: !!selectedMovementId && (viewOpen || reverseOpen),
+  });
+
+  const reverseMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const res = await fetch(`/api/stock-movements/${id}/reverse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to reverse movement");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      setReverseOpen(false);
+      setSelectedMovementId(null);
+      setReverseReason("");
+      toast.success(data.message || "Movement reversed successfully");
+    },
+    onError: (error: any) => toast.error(error.message || "Failed to reverse movement"),
+  });
+
+  const handleViewClick = (movementId: string) => {
+    setSelectedMovementId(movementId);
+    setViewOpen(true);
+  };
+
+  const handleReverseClick = (movementId: string) => {
+    setSelectedMovementId(movementId);
+    setReverseOpen(true);
+  };
+
+  const handleReverseSubmit = () => {
+    if (!selectedMovementId || !reverseReason.trim()) {
+      toast.error("Please provide a reason for the reversal");
+      return;
+    }
+    reverseMutation.mutate({ id: selectedMovementId, reason: reverseReason });
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
@@ -1691,30 +1747,66 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                 <TableHead>To</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Value (₦)</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stockMovements.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No stock movements recorded. Click "Record Movement" to add.
                   </TableCell>
                 </TableRow>
               ) : (
-                stockMovements.map((movement) => (
-                  <TableRow key={movement.id} data-testid={`row-movement-${movement.id}`}>
-                    <TableCell>{format(new Date(movement.createdAt), "MMM d, HH:mm")}</TableCell>
-                    <TableCell>
-                      <Badge variant={movement.movementType === "transfer" ? "secondary" : movement.movementType === "adjustment" ? "outline" : "destructive"}>
-                        {movement.movementType}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{movement.sourceLocation || "-"}</TableCell>
-                    <TableCell>{movement.destinationLocation || "-"}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{movement.itemsDescription}</TableCell>
-                    <TableCell className="text-right font-mono">{Number(movement.totalValue || 0).toLocaleString()}</TableCell>
-                  </TableRow>
-                ))
+                stockMovements.map((movement) => {
+                  const movementAny = movement as any;
+                  const isReversed = movementAny.notes?.includes("[REVERSED");
+                  return (
+                    <TableRow key={movement.id} data-testid={`row-movement-${movement.id}`} className={isReversed ? "opacity-60" : ""}>
+                      <TableCell>{format(new Date(movement.createdAt), "MMM d, HH:mm")}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Badge variant={movement.movementType === "transfer" ? "secondary" : movement.movementType === "adjustment" ? "outline" : "destructive"}>
+                            {movement.movementType}
+                          </Badge>
+                          {isReversed && <Badge variant="outline" className="text-xs bg-yellow-50">Reversed</Badge>}
+                          {movement.itemsDescription?.startsWith("[REVERSAL]") && <Badge variant="outline" className="text-xs bg-blue-50">Reversal</Badge>}
+                        </div>
+                      </TableCell>
+                      <TableCell>{movement.sourceLocation || "-"}</TableCell>
+                      <TableCell>{movement.destinationLocation || "-"}</TableCell>
+                      <TableCell className="max-w-[200px] truncate" title={movement.itemsDescription || undefined}>
+                        {movement.itemsDescription || "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">{Number(movement.totalValue || 0).toLocaleString()}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => handleViewClick(movement.id)}
+                            title="View Details"
+                            data-testid={`button-view-movement-${movement.id}`}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {!isReversed && !movement.itemsDescription?.startsWith("[REVERSAL]") && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              className="text-orange-600 hover:text-orange-700"
+                              onClick={() => handleReverseClick(movement.id)}
+                              title="Reverse Movement"
+                              data-testid={`button-reverse-movement-${movement.id}`}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -1898,6 +1990,131 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Movement Details Dialog */}
+      <Dialog open={viewOpen} onOpenChange={(open) => { setViewOpen(open); if (!open) setSelectedMovementId(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Movement Details</DialogTitle>
+            <DialogDescription>
+              {movementDetails?.movement && (
+                <span>
+                  {movementDetails.movement.movementType.replace("_", " ").toUpperCase()} 
+                  {" "}• {format(new Date(movementDetails.movement.createdAt), "MMMM d, yyyy HH:mm")}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {movementDetails?.movement && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">From:</span>
+                  <span className="ml-2 font-medium">{movementDetails.movement.sourceLocation || "-"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">To:</span>
+                  <span className="ml-2 font-medium">{movementDetails.movement.destinationLocation || "-"}</span>
+                </div>
+                {movementDetails.movement.adjustmentDirection && (
+                  <div>
+                    <span className="text-muted-foreground">Direction:</span>
+                    <span className="ml-2 font-medium capitalize">{movementDetails.movement.adjustmentDirection}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-muted-foreground">Total Value:</span>
+                  <span className="ml-2 font-mono font-medium">₦{Number(movementDetails.movement.totalValue || 0).toLocaleString()}</span>
+                </div>
+              </div>
+              
+              {movementDetails.movement.notes && (
+                <div className="p-3 bg-muted/50 rounded text-sm">
+                  <span className="text-muted-foreground">Notes:</span>
+                  <p className="mt-1 whitespace-pre-wrap">{movementDetails.movement.notes}</p>
+                </div>
+              )}
+              
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Unit Cost</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {movementDetails.lines?.map((line: any, idx: number) => {
+                      const item = items.find(i => i.id === line.itemId);
+                      return (
+                        <TableRow key={idx}>
+                          <TableCell>{item?.name || "Unknown"}</TableCell>
+                          <TableCell className="text-right">{Number(line.qty).toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono">₦{Number(line.unitCost).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono">₦{Number(line.lineValue).toLocaleString()}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setViewOpen(false); setSelectedMovementId(null); }}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reverse Movement Dialog */}
+      <Dialog open={reverseOpen} onOpenChange={(open) => { setReverseOpen(open); if (!open) { setSelectedMovementId(null); setReverseReason(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <RotateCcw className="h-5 w-5" />
+              Reverse Movement
+            </DialogTitle>
+            <DialogDescription>
+              This will create a compensating movement to undo the stock changes. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {movementDetails?.movement && (
+            <div className="space-y-4">
+              <div className="p-3 bg-muted/50 rounded text-sm">
+                <div className="font-medium">{movementDetails.movement.movementType.replace("_", " ").toUpperCase()}</div>
+                <div className="text-muted-foreground mt-1">{movementDetails.movement.itemsDescription}</div>
+                <div className="mt-2 font-mono">Value: ₦{Number(movementDetails.movement.totalValue || 0).toLocaleString()}</div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="reverseReason">Reason for Reversal *</Label>
+                <Textarea 
+                  id="reverseReason"
+                  value={reverseReason}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  placeholder="Explain why this movement needs to be reversed..."
+                  className="min-h-[100px]"
+                  data-testid="input-reverse-reason"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setReverseOpen(false); setSelectedMovementId(null); setReverseReason(""); }}>Cancel</Button>
+            <Button 
+              variant="destructive"
+              onClick={handleReverseSubmit}
+              disabled={reverseMutation.isPending || !reverseReason.trim()}
+              data-testid="button-confirm-reverse"
+            >
+              {reverseMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
+              Reverse Movement
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>

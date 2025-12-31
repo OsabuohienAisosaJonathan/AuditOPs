@@ -792,6 +792,7 @@ export const stockMovementsApi = {
     return fetchApi<StockMovement[]>(`/stock-movements${params.toString() ? `?${params}` : ""}`);
   },
   get: (id: string) => fetchApi<StockMovement>(`/stock-movements/${id}`),
+  getWithLines: (id: string) => fetchApi<{ movement: StockMovement; lines: any[] }>(`/stock-movements/${id}/with-lines`),
   create: (data: any) =>
     fetchApi<StockMovement>("/stock-movements", {
       method: "POST",
@@ -805,6 +806,11 @@ export const stockMovementsApi = {
   delete: (id: string) =>
     fetchApi<void>(`/stock-movements/${id}`, {
       method: "DELETE",
+    }),
+  reverse: (id: string, reason: string) =>
+    fetchApi<{ success: boolean; reversalMovement: StockMovement; message: string }>(`/stock-movements/${id}/reverse`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
     }),
 };
 
