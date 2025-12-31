@@ -1,0 +1,204 @@
+ONE-PIECE PROMPT: DAILY + WEEKLY + MONTHLY AUDIT REPORT UPGRADE (UI + PDF + DATA SOURCES)
+A) GOAL
+
+Upgrade the existing Reports page and generated PDFs so the beneficiary immediately sees a professional, detailed audit was done.
+
+Do NOT rebuild what already exists. This is an enhancement to current Report Builder + templates.
+
+Reports must pull from the correct saved sources (Sales Capture, Declared Payments, Stock Movements, SRD Ledgers, Stock Counts, Exceptions). Do NOT rely on screenshots as the primary report method.
+
+Optional: Add an “Evidence Appendix” section that may include selective screenshots for trust, but all totals must be data-driven.
+
+B) REPORT BUILDER UI (EXISTING PAGE) – ADD SECTIONS + TEMPLATES
+
+On the existing Reports page, extend “Included Sections” to include:
+a. Sales by Department (Summary)
+b. Payment Methods Breakdown (Overall)
+c. Payment Methods by Department (Matrix)
+d. Declared vs System Variance (Clear Table + Statement)
+e. Department Comparison (2nd Hit)
+f. Stock Report & Variance (Main Store SRD + Department SRDs)
+g. Stock Movements Summary (Transfers/Adjustments/Waste/Write-off)
+h. Exceptions Log (with Outcome)
+i. Metrics Dashboard (KPIs)
+
+Quick Templates must generate:
+a. Daily Flash (1–2 pages, top KPIs + key tables)
+b. Weekly Pack (daily breakdown inside week + weekly totals)
+c. Month End Pack (weekly rollups + daily rollup + deepest tables)
+
+C) COMMON REPORT DESIGN STANDARD (DAILY/WEEKLY/MONTHLY)
+
+Layout must be clean, boardroom-ready, and consistent with the app theme:
+a. Cover header: Client name, outlet, report type, date range, generated timestamp, prepared by “Miemploya AuditOps”
+b. Use clear section headings, spacing, and readable tables
+c. Use subtle color accents consistent with the current dark-blue UI, but PDF background should be white or light for print clarity
+d. Every table must have totals and must align to the daily source data
+
+Every report must include a “Metric Strip” (top KPIs) including:
+a. Total System Sales (₦)
+b. Total Declared (₦)
+c. Variance (₦) and Variance (%)
+d. Payment Totals: POS, Transfer, Cash
+e. Stock Variance Value (₦) (sum across SRDs)
+f. Exceptions Count (Open, Investigating, Resolved, Closed)
+g. Compliance Score (computed)
+
+Compliance Score (simple, transparent):
+a. Score starts at 100
+b. Subtract points for: high variance %, unresolved exceptions, missing counts, missing recon
+c. Display score band: Excellent / Good / Needs Review / Critical
+
+Ensure all monetary values are ₦ formatted and all tables show date/time where relevant.
+
+D) DAILY AUDIT REPORT (MUST INCLUDE THESE SECTIONS)
+
+Daily Executive Summary (Top)
+a. KPI strip (as in Section C)
+b. Short statement: “System vs Declared variance is ₦X (Y%). Primary drivers: [top 3]”
+
+Sales by Department (DAILY)
+a. Table: Department | System Sales (₦) | % of Total | Transactions Count (if available)
+
+Payment Methods (DAILY – OVERALL)
+a. Table: POS | Transfer | Cash | Total
+
+Payment Methods by Department (DAILY – MATRIX)
+a. Table: Department | POS | Transfer | Cash | Total Declared
+
+System vs Declared Variance (DAILY – CLEAR STATEMENT TABLE)
+a. Table: System Total | Declared Total | Variance (₦) | Variance (%)
+b. Add clear interpretation row: “Variance indicates Over/Short”
+
+Department Comparison (2nd Hit) (DAILY – DETAILED TABLE)
+a. Include the same “2nd hit” detailed layout you referenced (department-to-department comparison)
+b. Must be present in Daily report selection and PDF output
+
+Stock Report & Variance (DAILY)
+a. Main Store SRD Summary:
+i. Expected Closing vs Awaiting Count vs Variance Qty vs Variance Value
+b. Department SRDs Summary:
+i. Each SRD: Expected Closing vs Awaiting Count vs Variance Qty vs Variance Value
+c. Show Top Variance Items (Top 10): Item | SRD | Variance Qty | Cost | Variance Value
+
+Stock Movements Summary (DAILY)
+a. Table: Type | Count of Movements | Qty Total | Value Total
+b. Types: Transfer, Adjustment, Waste, Write-off
+c. Include “From SRD → To SRD” totals for transfers
+
+Exceptions Log (DAILY) with improved Outcome
+a. Table: Case # | Department | Summary | Severity | Status | Outcome | Owner/Assignee (optional) | Created | Last Updated
+b. Outcome must be one of: TRUE / FALSE / MISMATCHED / PENDING
+
+Appendix (Optional)
+a. Key notes entered by auditor
+b. Evidence snapshots (optional only)
+
+E) WEEKLY REPORT (MUST INCLUDE DAILY BREAKDOWN INSIDE THE WEEK)
+
+Weekly Executive Summary (Top KPI strip aggregated for range)
+
+Weekly Totals – Daily Breakdown (MANDATORY)
+a. This must list EACH date in the weekly range (Mon–Sun or selected range)
+b. Daily breakdown table columns:
+i. Date
+ii. System Sales (₦)
+iii. Declared Total (₦)
+iv. Variance (₦)
+v. Variance (%)
+vi. POS (₦)
+vii. Transfer (₦)
+viii. Cash (₦)
+ix. Stock Variance Value (₦) (sum of SRDs for that date)
+x. Exceptions Raised (count)
+xi. Outcomes Mix (TRUE/FALSE/MISMATCHED/PENDING counts)
+c. Add final row “WEEKLY TOTAL” summing all numeric columns.
+
+Weekly Sales by Department (Totals)
+
+Weekly Payment Methods (Totals) + Payment Methods by Department (Totals)
+
+Weekly System vs Declared Variance table + statement
+
+Department Comparison (2nd Hit) (Weekly)
+a. Provide weekly aggregate version, and optionally reference daily “2nd hit” in appendix
+
+Weekly Stock Pack
+a. Main SRD variance total + Department SRD variance totals
+b. Top 20 variance items for the week
+
+Weekly Stock Movements summary
+
+Weekly Exceptions summary + full log optional
+
+F) MONTHLY REPORT (MONTH END PACK – BEST QUALITY)
+
+Monthly Executive Summary (Top KPI strip for full month)
+
+Monthly Rollup – Daily Breakdown (MANDATORY)
+a. Same daily breakdown structure as weekly, for all days in the month
+b. Add final row “MONTHLY TOTAL”
+
+Monthly Sales by Department (Totals)
+
+Monthly Payment Methods (Totals) + Payment Methods by Department (Totals)
+
+Monthly System vs Declared variance table + interpretation statement
+
+Monthly Department Comparison (2nd Hit)
+a. Monthly aggregate “2nd hit” comparison table must be included
+
+Monthly Stock Report & Variance (Deepest)
+a. Main Store SRD: monthly variance totals + worst days
+b. Department SRDs: totals and rankings
+c. Top 50 variance items (or top 20 if too heavy)
+
+Monthly Stock Movements Pack
+a. Totals by type + top moved items + main transfer routes
+
+Monthly Exceptions Pack
+a. Outcomes distribution chart/table
+b. Severity distribution
+c. Time-to-close summary (if timestamps exist)
+
+Final Auditor Remarks + Recommendations
+a. Auto-generate “Key Findings” based on variance + exceptions + stock losses
+b. Add “Action Plan” table: Issue | Recommendation | Owner | Due Date (blank)
+
+G) DATA SOURCES (MUST PULL FROM RIGHT PLACES)
+
+Sales must pull from “Sales Capture” records (system sales).
+
+Declared totals must pull from “Declared Payments” (POS/Transfer/Cash).
+
+Department mapping must come from the transaction department or configured department mapping.
+
+Stock variance must pull from SRD Ledgers + Stock Counts:
+a. Expected closing computed from ledger
+b. Awaiting Count from stock count records
+c. Variance Qty and Variance Value computed consistently
+
+Stock movements must pull from Stock Movements table/records (transfer/adjustment/waste/write-off).
+
+Exceptions must pull from Exceptions Register and include Outcome.
+
+H) OUTPUT REQUIRED (AI BUILDER)
+
+Update the existing report templates (daily/weekly/monthly) and report builder section toggles.
+
+Show exact file paths edited.
+
+For each edited file, print the first 10–15 lines to confirm it is the correct file.
+
+Provide code patches with clear start/end markers for replacement.
+
+Provide a test checklist:
+a. Daily report includes department sales + payment matrix + system vs declared variance
+b. Weekly report shows daily breakdown rows correctly
+c. Monthly report shows daily breakdown rows correctly
+d. Stock variance tables include Main SRD + Department SRDs
+e. Department Comparison (2nd hit) appears in all templates when selected
+f. Exceptions log includes Outcome values TRUE/FALSE/MISMATCHED/PENDING
+g. Stock movements summary appears and totals match records
+
+END PROMPT.
