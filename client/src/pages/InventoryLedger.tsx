@@ -311,6 +311,36 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId && !!selectedInvDept,
   });
 
+  // Fetch movement breakdown (waste, write-off, returns, adjustments) for ledger display
+  interface MovementBreakdown {
+    waste: number;
+    writeOff: number;
+    adjustmentIn: number;
+    adjustmentOut: number;
+    returnIn: Record<string, number>;
+    returnOut: Record<string, number>;
+    received: Record<string, number>;
+    issuedTo: Record<string, number>;
+  }
+  
+  const { data: movementBreakdownData } = useQuery<{ breakdown: Record<string, MovementBreakdown>; srdNames: Record<string, string> }>({
+    queryKey: ["movement-breakdown", selectedClientId, selectedInvDept, selectedDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${selectedClientId}/movement-breakdown?srdId=${selectedInvDept}&date=${selectedDate}`);
+      if (!res.ok) throw new Error("Failed to fetch movement breakdown");
+      return res.json();
+    },
+    enabled: !!selectedClientId && !!selectedInvDept,
+  });
+  
+  const movementBreakdown = movementBreakdownData?.breakdown || {};
+  const srdNameMap = movementBreakdownData?.srdNames || {};
+  
+  // Collapse/expand state for column groups
+  const [returnInwardCollapsed, setReturnInwardCollapsed] = useState(true);
+  const [lossesCollapsed, setLossesCollapsed] = useState(true);
+  const [receivedCollapsed, setReceivedCollapsed] = useState(true);
+
   // Legacy store issues (for backward compatibility) - TODO: migrate to srdTransfers
   const { data: storeIssues } = useQuery<StoreIssue[]>({
     queryKey: ["store-issues", selectedClientId, selectedDate],
@@ -837,7 +867,26 @@ export default function InventoryLedger() {
       const stock = storeStockData?.find(s => s.itemId === item.id);
       const opening = getOpeningQty(item.id, stock);
       const purchase = parseFloat(stock?.addedQty || "0");
-      const total = opening + purchase;
+      
+      // Get movement breakdown for this item
+      const itemBreakdown = movementBreakdown[item.id] || {
+        waste: 0, writeOff: 0, adjustmentIn: 0, adjustmentOut: 0,
+        returnIn: {}, returnOut: {}, received: {}, issuedTo: {}
+      };
+      
+      // Calculate return inward totals per department
+      const returnInward: Record<string, number> = itemBreakdown.returnIn;
+      const totalReturnIn = Object.values(returnInward).reduce((sum, val) => sum + val, 0);
+      
+      // Adjustments (net)
+      const adjustmentNet = itemBreakdown.adjustmentIn - itemBreakdown.adjustmentOut;
+      
+      // Waste and Write-off
+      const waste = itemBreakdown.waste;
+      const writeOff = itemBreakdown.writeOff;
+      
+      // Total = Opening + Purchase + Returns In + Adjustments (net) - Waste - Write-off
+      const total = opening + purchase + totalReturnIn + adjustmentNet - waste - writeOff;
       
       const depIssues: Record<string, number> = {};
       let totalIssued = 0;
@@ -848,12 +897,7 @@ export default function InventoryLedger() {
         totalIssued += qty;
       });
       
-      // Also include issuedQty from store_stock (covers stock movements: adjustments, waste, write-offs, transfers)
-      const stockIssuedQty = parseFloat(stock?.issuedQty || "0");
-      // Use the greater of the two (store_stock issuedQty includes all movements)
-      const effectiveIssued = Math.max(totalIssued, stockIssuedQty);
-      
-      const closing = total - effectiveIssued;
+      const closing = total - totalIssued;
       const cost = parseFloat(item.costPrice || "0");
       const value = closing * cost;
       
@@ -865,16 +909,23 @@ export default function InventoryLedger() {
         unit: item.unit,
         opening,
         purchase,
+        returnInward,
+        totalReturnIn,
+        adjustmentIn: itemBreakdown.adjustmentIn,
+        adjustmentOut: itemBreakdown.adjustmentOut,
+        adjustmentNet,
+        waste,
+        writeOff,
         total,
         depIssues,
-        totalIssued: effectiveIssued,
+        totalIssued,
         closing,
         cost,
         value,
         stockId: stock?.id,
       };
     });
-  }, [items, selectedDept, storeStockData, prevDayStock, departmentStores, issueBreakdown]);
+  }, [items, selectedDept, storeStockData, prevDayStock, departmentStores, issueBreakdown, movementBreakdown]);
 
   // Group main store ledger by category
   const mainStoreLedgerByCategory = useMemo(() => {
@@ -902,10 +953,33 @@ export default function InventoryLedger() {
       const opening = getOpeningQty(item.id, stock);
       const added = parseFloat(stock?.addedQty || "0");
       const issued = parseFloat(stock?.issuedQty || "0");
-      const total = opening + added;
       
-      // Adjusted total accounts for issued (transfers out, adjustments, waste, write-offs)
-      const adjustedTotal = total - issued;
+      // Get movement breakdown for this item
+      const itemBreakdown = movementBreakdown[item.id] || {
+        waste: 0, writeOff: 0, adjustmentIn: 0, adjustmentOut: 0,
+        returnIn: {}, returnOut: {}, received: {}, issuedTo: {}
+      };
+      
+      // Received from other SRDs (Main Store + other departments)
+      const receivedFrom: Record<string, number> = itemBreakdown.received;
+      const totalReceived = Object.values(receivedFrom).reduce((sum, val) => sum + val, 0);
+      
+      // Returned out to Main Store
+      const returnedOut = Object.values(itemBreakdown.returnOut).reduce((sum, val) => sum + val, 0);
+      
+      // Adjustments (net)
+      const adjustmentNet = itemBreakdown.adjustmentIn - itemBreakdown.adjustmentOut;
+      
+      // Waste and Write-off
+      const waste = itemBreakdown.waste;
+      const writeOff = itemBreakdown.writeOff;
+      
+      // Total = Opening + Added/Received + Adjustments (net)
+      // Note: "added" in store_stock already includes received from transfers
+      const total = opening + added + adjustmentNet;
+      
+      // Adjusted total accounts for issued, waste, write-off, and returns out
+      const adjustedTotal = total - issued - waste - writeOff - returnedOut;
       
       // Physical count determines closing; issued movements are shown separately
       const hasPhysicalCount = stock?.physicalClosingQty !== null && stock?.physicalClosingQty !== undefined;
@@ -925,6 +999,14 @@ export default function InventoryLedger() {
         unit: item.unit,
         opening,
         added,
+        receivedFrom,
+        totalReceived,
+        adjustmentIn: itemBreakdown.adjustmentIn,
+        adjustmentOut: itemBreakdown.adjustmentOut,
+        adjustmentNet,
+        waste,
+        writeOff,
+        returnedOut,
         issued,
         total: adjustedTotal,
         sold,
@@ -935,7 +1017,7 @@ export default function InventoryLedger() {
         stockId: stock?.id,
       };
     });
-  }, [items, selectedDept, storeStockData, prevDayStock]);
+  }, [items, selectedDept, storeStockData, prevDayStock, movementBreakdown]);
 
   // Group dept store ledger by category
   const deptStoreLedgerByCategory = useMemo(() => {
@@ -1236,10 +1318,43 @@ export default function InventoryLedger() {
                     <TableHead className="w-[60px]">Unit</TableHead>
                     <TableHead className="w-[80px] text-right">Opening</TableHead>
                     <TableHead className="w-[80px] text-right">Purchase</TableHead>
+                    {/* Return Inward - Collapsible Group */}
+                    <TableHead 
+                      className="w-[100px] text-right bg-green-50 cursor-pointer hover:bg-green-100"
+                      onClick={() => setReturnInwardCollapsed(!returnInwardCollapsed)}
+                      title="Click to expand/collapse Return Inward columns"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        {returnInwardCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        <span className="text-xs">Ret In</span>
+                      </div>
+                    </TableHead>
+                    {!returnInwardCollapsed && departmentStores.map((dept, idx) => (
+                      <TableHead key={`ret-${dept.id}`} className="w-[70px] text-right text-xs bg-green-50" title={`Return from ${getStoreNameById(dept.storeNameId)?.name}`}>
+                        {getStoreNameById(dept.storeNameId)?.name?.slice(0, 8) || `D${idx + 1}`}
+                      </TableHead>
+                    ))}
+                    {/* Losses (Waste/Write-Off) - Collapsible Group */}
+                    <TableHead 
+                      className="w-[80px] text-right bg-red-50 cursor-pointer hover:bg-red-100"
+                      onClick={() => setLossesCollapsed(!lossesCollapsed)}
+                      title="Click to expand/collapse Losses columns"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        {lossesCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        <span className="text-xs">Losses</span>
+                      </div>
+                    </TableHead>
+                    {!lossesCollapsed && (
+                      <>
+                        <TableHead className="w-[70px] text-right text-xs bg-red-50">Waste</TableHead>
+                        <TableHead className="w-[70px] text-right text-xs bg-red-50">Write-Off</TableHead>
+                      </>
+                    )}
                     <TableHead className="w-[80px] text-right bg-muted/30">Total</TableHead>
                     {visibleDeptList.map((dept, idx) => (
-                      <TableHead key={dept.id} className="w-[80px] text-right text-xs" title={getStoreNameById(dept.storeNameId)?.name}>
-                        Dep{idx + 1}
+                      <TableHead key={dept.id} className="w-[80px] text-right text-xs bg-orange-50" title={getStoreNameById(dept.storeNameId)?.name}>
+                        {getStoreNameById(dept.storeNameId)?.name?.slice(0, 8) || `Dep${idx + 1}`}
                       </TableHead>
                     ))}
                     <TableHead className="w-[80px] text-right bg-muted/30">Closing</TableHead>
@@ -1347,13 +1462,36 @@ export default function InventoryLedger() {
                                   data-testid={`input-purchase-${row.itemId}`}
                                 />
                               </TableCell>
-                              <TableCell className="text-right bg-muted/30 font-medium">{displayTotal.toFixed(2)}</TableCell>
-                              {visibleDeptList.map(dept => (
-                                <TableCell key={dept.id} className="text-right text-orange-600">
-                                  {(row.depIssues[dept.id] || 0).toFixed(2)}
+                              {/* Return Inward Summary/Detail */}
+                              <TableCell className="text-right text-green-600 bg-green-50">
+                                {row.totalReturnIn > 0 ? row.totalReturnIn.toFixed(2) : "-"}
+                              </TableCell>
+                              {!returnInwardCollapsed && departmentStores.map(dept => (
+                                <TableCell key={`ret-${dept.id}`} className="text-right text-green-600 bg-green-50 text-xs">
+                                  {(row.returnInward[dept.id] || 0) > 0 ? (row.returnInward[dept.id] || 0).toFixed(2) : "-"}
                                 </TableCell>
                               ))}
-                              <TableCell className="text-right bg-muted/30 font-medium">{displayClosing.toFixed(2)}</TableCell>
+                              {/* Losses Summary/Detail */}
+                              <TableCell className="text-right text-red-600 bg-red-50">
+                                {(row.waste + row.writeOff) > 0 ? (row.waste + row.writeOff).toFixed(2) : "-"}
+                              </TableCell>
+                              {!lossesCollapsed && (
+                                <>
+                                  <TableCell className="text-right text-red-600 bg-red-50 text-xs">
+                                    {row.waste > 0 ? row.waste.toFixed(2) : "-"}
+                                  </TableCell>
+                                  <TableCell className="text-right text-red-600 bg-red-50 text-xs">
+                                    {row.writeOff > 0 ? row.writeOff.toFixed(2) : "-"}
+                                  </TableCell>
+                                </>
+                              )}
+                              <TableCell className="text-right bg-muted/30 font-medium">{row.total.toFixed(2)}</TableCell>
+                              {visibleDeptList.map(dept => (
+                                <TableCell key={dept.id} className="text-right text-orange-600 bg-orange-50">
+                                  {(row.depIssues[dept.id] || 0) > 0 ? (row.depIssues[dept.id] || 0).toFixed(2) : "-"}
+                                </TableCell>
+                              ))}
+                              <TableCell className="text-right bg-muted/30 font-medium">{row.closing.toFixed(2)}</TableCell>
                               <TableCell className="text-right text-muted-foreground">{row.cost.toFixed(2)}</TableCell>
                               <TableCell className="text-right font-medium">{displayValue.toFixed(2)}</TableCell>
                               <TableCell>
@@ -1377,9 +1515,22 @@ export default function InventoryLedger() {
                               <TableCell className="bg-gray-100">—</TableCell>
                               <TableCell className="text-right bg-gray-100">{catTotals.opening.toFixed(2)}</TableCell>
                               <TableCell className="text-right bg-gray-100">{catTotals.purchase.toFixed(2)}</TableCell>
+                              {/* Return Inward Summary for totals */}
+                              <TableCell className="text-right bg-green-50">—</TableCell>
+                              {!returnInwardCollapsed && departmentStores.map(dept => (
+                                <TableCell key={`tot-ret-${dept.id}`} className="text-right bg-green-50">—</TableCell>
+                              ))}
+                              {/* Losses Summary for totals */}
+                              <TableCell className="text-right bg-red-50">—</TableCell>
+                              {!lossesCollapsed && (
+                                <>
+                                  <TableCell className="text-right bg-red-50">—</TableCell>
+                                  <TableCell className="text-right bg-red-50">—</TableCell>
+                                </>
+                              )}
                               <TableCell className="text-right bg-muted/30 font-bold">{catTotals.total.toFixed(2)}</TableCell>
                               {visibleDeptList.map(dept => (
-                                <TableCell key={`total-${dept.id}`} className="text-right text-orange-600 font-bold">
+                                <TableCell key={`total-${dept.id}`} className="text-right text-orange-600 font-bold bg-orange-50">
                                   {(catTotals.depIssues[dept.id] || 0).toFixed(2)}
                                 </TableCell>
                               ))}
@@ -1478,7 +1629,24 @@ export default function InventoryLedger() {
                     <TableHead className="w-[80px]">Unit</TableHead>
                     <TableHead className="w-[100px] text-right">Opening</TableHead>
                     <TableHead className="w-[100px] text-right">Added</TableHead>
-                    <TableHead className="w-[80px] text-right text-red-600">Issued</TableHead>
+                    {/* Losses (Waste/Write-Off) - Collapsible Group */}
+                    <TableHead 
+                      className="w-[80px] text-right bg-red-50 cursor-pointer hover:bg-red-100"
+                      onClick={() => setLossesCollapsed(!lossesCollapsed)}
+                      title="Click to expand/collapse Losses columns"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        {lossesCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        <span className="text-xs">Losses</span>
+                      </div>
+                    </TableHead>
+                    {!lossesCollapsed && (
+                      <>
+                        <TableHead className="w-[70px] text-right text-xs bg-red-50">Waste</TableHead>
+                        <TableHead className="w-[70px] text-right text-xs bg-red-50">Write-Off</TableHead>
+                      </>
+                    )}
+                    <TableHead className="w-[80px] text-right text-orange-600">Issued</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Total</TableHead>
                     <TableHead className="w-[100px] text-right">Sold</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
@@ -1570,7 +1738,21 @@ export default function InventoryLedger() {
                                     />
                                   </TableCell>
                                   <TableCell className="text-right text-green-600">{row.added.toFixed(2)}</TableCell>
-                                  <TableCell className="text-right text-red-600">{row.issued > 0 ? row.issued.toFixed(2) : "—"}</TableCell>
+                                  {/* Losses Summary/Detail */}
+                                  <TableCell className="text-right text-red-600 bg-red-50">
+                                    {(row.waste + row.writeOff) > 0 ? (row.waste + row.writeOff).toFixed(2) : "-"}
+                                  </TableCell>
+                                  {!lossesCollapsed && (
+                                    <>
+                                      <TableCell className="text-right text-red-600 bg-red-50 text-xs">
+                                        {row.waste > 0 ? row.waste.toFixed(2) : "-"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-red-600 bg-red-50 text-xs">
+                                        {row.writeOff > 0 ? row.writeOff.toFixed(2) : "-"}
+                                      </TableCell>
+                                    </>
+                                  )}
+                                  <TableCell className="text-right text-orange-600">{row.issued > 0 ? row.issued.toFixed(2) : "—"}</TableCell>
                                   <TableCell className="text-right bg-muted/30 font-medium">{displayTotal.toFixed(2)}</TableCell>
                                   <TableCell className="text-right">
                                     {displaySold !== null ? displaySold.toFixed(2) : <span className="text-muted-foreground">—</span>}

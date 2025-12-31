@@ -3086,6 +3086,164 @@ export async function registerRoutes(
     }
   });
 
+  // ============== MOVEMENT BREAKDOWNS (Computed summaries for ledger) ==============
+  // Returns waste, write-off, returns, adjustments per item for a given SRD and date
+  app.get("/api/clients/:clientId/movement-breakdown", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { srdId, date } = req.query;
+      
+      if (!srdId || !date) {
+        return res.status(400).json({ error: "srdId and date are required" });
+      }
+      
+      const targetDate = new Date(date as string);
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      // Get all inventory departments for this client (to map SRD IDs to names)
+      const allInvDepts = await storage.getInventoryDepartments(clientId);
+      const storeNamesList = await storage.getStoreNamesByClient(clientId);
+      const getSrdName = (srdId: string) => {
+        const dept = allInvDepts.find((d: any) => d.id === srdId);
+        if (!dept) return "Unknown";
+        const storeName = storeNamesList.find((s: any) => s.id === dept.storeNameId);
+        return storeName?.name || "Unknown";
+      };
+      
+      // Get stock movements affecting this SRD (where fromSrdId matches)
+      const movements = await storage.getStockMovementsBySrd(srdId as string);
+      const dayMovements = movements.filter(m => {
+        const mDate = new Date(m.date);
+        return mDate >= startOfDay && mDate <= endOfDay;
+      });
+      
+      // Get SRD transfers affecting this SRD
+      const srdTransfers = await storage.getSrdTransfersBySrd(srdId as string, targetDate);
+      
+      // Build breakdown per item
+      // Structure: { [itemId]: { waste, writeOff, adjustmentIn, adjustmentOut, returnIn: {[fromSrdId]: qty}, returnOut: {[toSrdId]: qty}, received: {[fromSrdId]: qty}, issuedTo: {[toSrdId]: qty} } }
+      const breakdown: Record<string, {
+        waste: number;
+        writeOff: number;
+        adjustmentIn: number;
+        adjustmentOut: number;
+        returnIn: Record<string, number>;
+        returnOut: Record<string, number>;
+        received: Record<string, number>;
+        issuedTo: Record<string, number>;
+      }> = {};
+      
+      const initItem = (itemId: string) => {
+        if (!breakdown[itemId]) {
+          breakdown[itemId] = {
+            waste: 0,
+            writeOff: 0,
+            adjustmentIn: 0,
+            adjustmentOut: 0,
+            returnIn: {},
+            returnOut: {},
+            received: {},
+            issuedTo: {},
+          };
+        }
+      };
+      
+      // Process stock movements
+      for (const movement of dayMovements) {
+        if (movement.movementType === "waste" && movement.fromSrdId === srdId) {
+          const lines = await storage.getStockMovementLines(movement.id);
+          for (const line of lines) {
+            initItem(line.itemId);
+            breakdown[line.itemId].waste += parseFloat(line.qty);
+          }
+        } else if (movement.movementType === "write_off" && movement.fromSrdId === srdId) {
+          const lines = await storage.getStockMovementLines(movement.id);
+          for (const line of lines) {
+            initItem(line.itemId);
+            breakdown[line.itemId].writeOff += parseFloat(line.qty);
+          }
+        } else if (movement.movementType === "adjustment") {
+          const lines = await storage.getStockMovementLines(movement.id);
+          for (const line of lines) {
+            if (movement.fromSrdId === srdId) {
+              initItem(line.itemId);
+              if (movement.adjustmentDirection === "increase") {
+                breakdown[line.itemId].adjustmentIn += parseFloat(line.qty);
+              } else {
+                breakdown[line.itemId].adjustmentOut += parseFloat(line.qty);
+              }
+            }
+          }
+        } else if (movement.movementType === "transfer") {
+          const lines = await storage.getStockMovementLines(movement.id);
+          for (const line of lines) {
+            initItem(line.itemId);
+            if (movement.fromSrdId === srdId && movement.toSrdId) {
+              // Outgoing transfer
+              breakdown[line.itemId].issuedTo[movement.toSrdId] = 
+                (breakdown[line.itemId].issuedTo[movement.toSrdId] || 0) + parseFloat(line.qty);
+            } else if (movement.toSrdId === srdId && movement.fromSrdId) {
+              // Incoming transfer (received)
+              breakdown[line.itemId].received[movement.fromSrdId] = 
+                (breakdown[line.itemId].received[movement.fromSrdId] || 0) + parseFloat(line.qty);
+            }
+          }
+        }
+      }
+      
+      // Process SRD transfers (new transfer engine)
+      for (const transfer of srdTransfers) {
+        if (transfer.status === "recalled") continue;
+        
+        initItem(transfer.itemId);
+        const qty = parseFloat(transfer.qty);
+        
+        if (transfer.transferType === "issue") {
+          if (transfer.fromSrdId === srdId) {
+            // Issued out from this SRD
+            breakdown[transfer.itemId].issuedTo[transfer.toSrdId] = 
+              (breakdown[transfer.itemId].issuedTo[transfer.toSrdId] || 0) + qty;
+          } else if (transfer.toSrdId === srdId) {
+            // Received into this SRD
+            breakdown[transfer.itemId].received[transfer.fromSrdId] = 
+              (breakdown[transfer.itemId].received[transfer.fromSrdId] || 0) + qty;
+          }
+        } else if (transfer.transferType === "return") {
+          if (transfer.fromSrdId === srdId) {
+            // Returned out from this SRD (to Main Store usually)
+            breakdown[transfer.itemId].returnOut[transfer.toSrdId] = 
+              (breakdown[transfer.itemId].returnOut[transfer.toSrdId] || 0) + qty;
+          } else if (transfer.toSrdId === srdId) {
+            // Return inward to this SRD (from department)
+            breakdown[transfer.itemId].returnIn[transfer.fromSrdId] = 
+              (breakdown[transfer.itemId].returnIn[transfer.fromSrdId] || 0) + qty;
+          }
+        } else if (transfer.transferType === "transfer") {
+          if (transfer.fromSrdId === srdId) {
+            breakdown[transfer.itemId].issuedTo[transfer.toSrdId] = 
+              (breakdown[transfer.itemId].issuedTo[transfer.toSrdId] || 0) + qty;
+          } else if (transfer.toSrdId === srdId) {
+            breakdown[transfer.itemId].received[transfer.fromSrdId] = 
+              (breakdown[transfer.itemId].received[transfer.fromSrdId] || 0) + qty;
+          }
+        }
+      }
+      
+      // Include SRD name mapping
+      const srdNames: Record<string, string> = {};
+      allInvDepts.forEach(d => {
+        srdNames[d.id] = getSrdName(d.id);
+      });
+      
+      res.json({ breakdown, srdNames });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============== CLIENT-SCOPED STORE ISSUES (LEGACY) ==============
   app.get("/api/clients/:clientId/store-issues", requireAuth, async (req, res) => {
     try {
