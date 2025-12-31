@@ -135,8 +135,8 @@ export default function Exceptions() {
   const filteredExceptions = exceptions?.filter(ex => {
     const matchesSearch = ex.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ex.caseNumber.toLowerCase().includes(searchTerm.toLowerCase());
-    const notDeleted = showDeleted || !ex.deletedAt;
-    return matchesSearch && notDeleted;
+    const includeByDeleteStatus = showDeleted ? true : !ex.deletedAt;
+    return matchesSearch && includeByDeleteStatus;
   });
 
   const openCaseDetails = (ex: Exception) => {
@@ -462,7 +462,7 @@ export default function Exceptions() {
                   <Clock className="h-4 w-4" /> Investigation Timeline
                 </h4>
                 <ScrollArea className="h-[200px] pr-4">
-                  {caseDetails.activity.length === 0 ? (
+                  {!caseDetails.activity || caseDetails.activity.length === 0 ? (
                     <p className="text-muted-foreground text-sm">No activity yet.</p>
                   ) : (
                     <div className="space-y-3">
