@@ -1,0 +1,157 @@
+PROJECT: Miemploya AuditOps – Reports & Analytics page already exists at /reports.
+DO NOT create a new report center page. DO NOT redesign the entire Reports UI. ONLY EXTEND the EXISTING Report Builder and the report generation output.
+CRITICAL: Do NOT remove or rename existing API routes, DB tables, or columns. Additive changes only.
+
+============================================================
+1) UPDATE THE EXISTING REPORTS & ANALYTICS UI (KEEP CURRENT LAYOUT)
+
+On the existing /reports page:
+A) Extend “Report Type” dropdown options:
+1. Daily Audit Report (existing)
+2. Weekly Audit Report (new)
+3. Monthly Audit Report (new)
+4. Department Comparison Report (new standalone)
+5. Stock Variance Report (new standalone)
+6. Exceptions Report (new standalone)
+
+B) Extend “Included Sections” checkboxes (ADD NEW ONES, DO NOT REMOVE EXISTING):
+Existing:
+- Sales & Revenue
+- Purchases & GRN
+- Stock & Variance
+- Exception Log
+
+Add NEW checkboxes:
+1. Sales Details
+2. Payment Methods Breakdown
+3. Total Sales Summary (System)
+4. Total Declared Summary
+5. Declared vs System Variance (System vs Declared)
+6. Department Comparison (2nd Hit)
+7. Stock Movements Summary (Transfers/Adjustments/Waste/Write-off)
+8. Reconciliation Summary (only if recon data exists; otherwise hide/disable)
+9. Audit Trail Evidence (optional; only if module exists)
+
+C) Quick Templates MUST auto-select sections:
+- Daily Flash: Metrics + Total Sales + Declared + Variance + Payment Methods + Exceptions Summary
+- Weekly Variance: Weekly totals + Department Comparison (2nd hit) + Payment Variance + Stock Variance
+- Month End Pack: All sections
+
+D) “Generate PDF Report” MUST show a preview modal first:
+Buttons inside modal:
+1. Print
+2. Download PDF
+3. Close
+If PDF export already exists, reuse it. If not, implement minimal safe export (print-to-pdf compatible).
+
+E) “Download Excel” should export the same selected sections into separate sheets.
+
+============================================================
+2) IMPORTANT: DEPARTMENT COMPARISON (2ND HIT) MUST BE ADDED
+
+A) Add “Department Comparison (2nd Hit)” as a selectable section in the Report Builder.
+B) This section must appear inside the generated report output when selected.
+C) If the Department Comparison table already exists elsewhere in the app, REUSE the SAME computation + structure.
+D) If it does not exist yet, implement it as a detailed comparison table that convinces management:
+Minimum columns:
+1. Department
+2. System Sales (₦)
+3. Declared Sales (₦)
+4. Variance (₦)
+5. Variance (%)
+6. Payment split (Cash/POS/Transfer) if available
+7. Status flag (OK/Review/Critical)
+Include totals row.
+
+============================================================
+3) REPORT OUTPUT STRUCTURE (DAILY / WEEKLY / MONTHLY)
+
+A) ALL REPORT TYPES MUST HAVE:
+1. Report header (Client, Outlet/SRD, Period, Prepared by, timestamp)
+2. Executive Summary metrics cards
+3. Evidence tables (Sales, Stock, Exceptions)
+4. Recommendations
+5. Sign-off lines
+
+B) DAILY REPORT (when “Daily Audit Report” selected):
+Must include these sections when toggled on:
+1. Sales by Department
+2. Total sales (System)
+3. Payment methods breakdown
+4. Total declared
+5. System vs declared variance (clear statement)
+6. Department Comparison (2nd hit) table (very detailed)
+7. Stock report + variance (Main SRD + Department SRD)
+8. Stock movements summary
+9. Exceptions log with Outcome column (True/False/Mismatched)
+
+C) WEEKLY REPORT:
+Aggregate daily saved records across selected week range:
+1. Weekly totals: system sales, declared, variance
+2. Weekly payment method totals
+3. Weekly department comparison
+4. Weekly stock variance summary
+5. Weekly exceptions summary
+
+D) MONTHLY REPORT:
+Aggregate daily saved records across selected month:
+1. Monthly totals: system sales, declared, variance
+2. Monthly payment method totals
+3. Department ranking by variance
+4. Stock variance + waste/write-off summary
+5. Exceptions outcomes distribution
+
+============================================================
+4) DATA SOURCES – MUST PULL FROM RIGHT SAVED RECORDS (NO WRONG CALCULATIONS)
+
+RULE: Reports must pull from SAVED audit data (not temporary UI state). Use the same sources used by Audit Workspace, Sales Capture, SRD Ledgers, Stock Movements, Stock Counts, Exceptions.
+
+A) Sales & Revenue:
+- Pull from Sales Capture saved records for the selected client/outlet/date range.
+
+B) Declared totals:
+- Pull from the “declared” inputs already captured in the workflow (if declared is in a daily draft or recon step, use saved version only).
+
+C) Payment Methods:
+- Pull payment breakdown from saved sales records or reconciliation records (cash/pos/transfer).
+
+D) Stock & Variance:
+- Pull from SRD ledger expected closing + stock counts/awaiting count for actual closing.
+- If awaiting count exists only for Dept SRD, do not invent. Use what is saved.
+
+E) Stock Movements:
+- Pull from stock movements table and show grouped totals by type.
+
+F) Exceptions:
+- Pull from exceptions table (case#, summary, severity, status).
+- Add “Outcome” field to exception record if it exists; if not, add minimal additive column outcome ENUM: true|false|mismatched|pending.
+
+============================================================
+5) METRICS (MUST SHOW IN REPORT)
+
+Add metrics cards in report preview/PDF:
+1. Total Sales (System)
+2. Total Declared
+3. Variance (₦)
+4. Variance (%)
+5. Payment variance total (₦)
+6. Stock variance total (₦)
+7. Waste + Write-off total (₦)
+8. Exceptions raised count
+9. Exceptions resolved count
+
+============================================================
+6) OUTPUT REQUIRED FROM YOU (AI BUILDER) – STRICT
+
+1. Show exact file paths edited.
+2. For each edited file, print first 10–15 lines to confirm correct file.
+3. Provide code patches with clear start/end markers.
+4. If DB schema changed, provide safe migration steps (additive only).
+5. Provide test checklist:
+   a) Daily report includes Sales by Department, Payment Methods, Declared vs System variance, Department Comparison (2nd hit)
+   b) Weekly aggregates correctly
+   c) Monthly aggregates correctly
+   d) PDF preview looks clean (white print theme)
+   e) Excel export contains correct sheets
+
+END PROMPT
