@@ -1,0 +1,153 @@
+PROMPT: HOME + SIGNUP + ABOUT + CONTACT PAGES (UI/UX POLISH + HOVERS + EFFECTS)
+(Keep existing Sign In page unchanged.)
+
+STRICT RULES
+1) Do NOT modify the existing Sign In page.
+2) Do NOT remove existing routes—only add/extend pages.
+3) All pages must be mobile responsive and consistent with the app’s theme.
+4) Use best-practice CSS: clean spacing, strong typography, smooth transitions, subtle shadows.
+5) Add tasteful hover effects and button animations—NO flashy or distracting motion.
+6) Home page must include About and Contact sections, and also create dedicated About + Contact pages.
+
+========================================================
+A) HOME PAGE — REQUIRED SECTIONS (WITH ABOUT + CONTACT)
+Update the Home page to include these sections in order:
+
+1) HERO SECTION
+- Headline: “Daily Audit. Stock Control. Evidence-Ready Reports.”
+- Subtext: “MiAuditOps helps auditors and hospitality businesses capture sales, reconcile stock, raise exceptions, and produce clean reports—daily, weekly, and monthly.”
+- Primary CTA button: “Get Started”
+- Secondary CTA button: “Watch How It Works”
+- Trust line: “Built for lounges, restaurants, bars, and audit teams.”
+
+2) INTRO VIDEO SECTION (“How to use MiAuditOps”)
+- Title: “How MiAuditOps Works (2 minutes)”
+- Subtitle: “See the audit workflow from Sales → Stock → Reconciliation → Reports.”
+- Video embed placeholder with play overlay.
+- Side list:
+  - “Capture sales by department”
+  - “Declare payments (cash/POS/transfer)”
+  - “Track SRD ledgers + stock movements”
+  - “Run reconciliation + export reports”
+
+3) FEATURES / MODULES SECTION (cards grid)
+- Audit Workspace
+- Inventory & Purchases (GRN)
+- SRD Ledgers (Main + Department Stores)
+- Reconciliation (1st Hit + 2nd Hit)
+- Exceptions + Receivables/Surplus registers
+- Reports (Daily/Weekly/Monthly)
+
+4) PRICING SECTION (use the exact plan cards copy + toggle + slot selector already provided earlier)
+
+5) ABOUT SECTION (on Home)
+Title: “About MiAuditOps”
+Copy:
+“MiAuditOps is a purpose-built audit operations platform for hospitality businesses and auditors. It structures daily audit work—from sales capture and payment declaration to SRD stock reconciliation and exceptions—then produces clear executive reports that build trust with owners and stakeholders.”
+Include 3 highlight cards:
+- “Audit Evidence & Accountability”
+- “Stock + Sales Reconciliation Workflow”
+- “Executive-Ready Reporting”
+
+Add a button: “Learn More” → routes to /about
+
+6) CONTACT SECTION (on Home)
+Title: “Contact”
+Include:
+- Support Email (placeholder)
+- Phone Number (placeholder)
+- Office location (placeholder)
+Add a simple contact form (Name, Email, Message, Submit) that shows “Message sent (demo)” unless backend exists.
+Add button: “Contact Support” → routes to /contact
+
+7) FAQ SECTION (short)
+Include 6 FAQs:
+- What is a Client/Company slot?
+- Company vs Auditor: what changes?
+- Can I upgrade anytime?
+- What does “Preview Mode” mean?
+- What is SRD Main Store vs SRD Department Store?
+- Do you support PDF/Excel exports?
+
+8) FOOTER
+- Brand + short line
+- Links: Home, About, Contact, Privacy Policy, Terms
+- Social placeholders (optional)
+
+========================================================
+B) ABOUT PAGE (/about) — DEDICATED PAGE
+Create an About page with:
+1) Intro section (headline + description)
+2) “Who it’s for” section (Auditors, Lounges, Restaurants, Hotel Bars)
+3) “What makes it different” section:
+- SRD-led inventory flow
+- 1st hit vs 2nd hit reconciliation logic
+- Exceptions + Receivables/Surplus registers
+- Evidence-ready reports
+4) CTA strip:
+- “Start Free” button → /signup
+- “View Pricing” anchor → /#pricing
+
+========================================================
+C) CONTACT PAGE (/contact) — DEDICATED PAGE
+Create a Contact page with:
+1) Support contact details (email/phone/address placeholders)
+2) Contact form:
+- Name, Email, Subject, Message, Submit
+3) Optional “Business inquiries” line for Enterprise.
+
+========================================================
+D) SIGN UP PAGE — UI POLISH + HOVERS + EFFECTS
+Keep the functional requirements already defined, plus:
+1) Clean card container centered
+2) Strong focus states
+3) Password show/hide toggle
+4) Button hover:
+- subtle lift + shadow
+- smooth transition
+5) Field validation feedback:
+- red border + helper text
+6) “Already have an account? Sign In” link
+
+Signup must include:
+- “Sign up as: Company / Auditor”
+- Company Name or Audit Firm Name (conditional)
+- Full name, email, password, confirm password
+- Terms checkbox
+- Email verification gating before full access
+
+========================================================
+E) “BEST CSS / EFFECTS / HOVERS” REQUIREMENTS (APPLY TO HOME, SIGNUP, ABOUT, CONTACT)
+1) Buttons:
+- hover: slight scale (1.02), shadow increase, smooth transition 200–250ms
+- active: slight press-down effect
+2) Cards:
+- hover: border highlight + subtle lift
+3) Section reveals:
+- optional: very light fade-in on scroll (only if you already have animation utilities; do not add heavy libraries)
+4) Typography:
+- consistent headings
+- readable line-height
+5) Spacing:
+- generous padding, avoid clutter
+6) Mobile:
+- stack sections properly
+- pricing cards become vertical
+- navbar remains clean
+
+========================================================
+F) OUTPUT REQUIRED (AI BUILDER)
+1) Show exact file paths edited/created.
+2) For each file, print first 10–15 lines to confirm correct file.
+3) Confirm routes:
+- /
+- /signup
+- /about
+- /contact
+4) Provide a quick UI checklist:
+- hover effects working
+- mobile responsive
+- pricing toggle works
+- slot selector updates displayed price
+
+END PROMPT

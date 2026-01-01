@@ -9,7 +9,11 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { CurrencyProvider } from "@/lib/currency-context";
 import { LayoutProvider } from "@/lib/layout-context";
 import NotFound from "@/pages/not-found";
+import Home from "@/pages/Home";
 import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import About from "@/pages/About";
+import Contact from "@/pages/Contact";
 import Setup from "@/pages/Setup";
 import Dashboard from "@/pages/Dashboard";
 import AuditWorkspace from "@/pages/AuditWorkspace";
@@ -35,7 +39,7 @@ function ProtectedRoute({ component: Component, requiredRole }: { component: Rea
 
   useEffect(() => {
     if (!isLoading && !user) {
-      setLocation("/");
+      setLocation("/login");
     }
   }, [user, isLoading, setLocation]);
 
@@ -65,7 +69,11 @@ function Router() {
   return (
     <AppLayout>
       <Switch>
-        <Route path="/" component={Login} />
+        <Route path="/" component={Home} />
+        <Route path="/login" component={Login} />
+        <Route path="/signup" component={Signup} />
+        <Route path="/about" component={About} />
+        <Route path="/contact" component={Contact} />
         <Route path="/setup" component={Setup} />
         <Route path="/dashboard">
           <ProtectedRoute component={Dashboard} />
