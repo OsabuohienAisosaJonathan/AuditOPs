@@ -25,6 +25,7 @@ import AuditTrail from "@/pages/AuditTrail";
 import UserManagement from "@/pages/UserManagement";
 import AdminActivityLog from "@/pages/AdminActivityLog";
 import ClientAccess from "@/pages/ClientAccess";
+import ItemPurchases from "@/pages/ItemPurchases";
 import AppLayout from "@/components/layout/AppLayout";
 import { useEffect } from "react";
 
@@ -83,6 +84,9 @@ function Router() {
         </Route>
         <Route path="/inventory-ledger">
           <ProtectedRoute component={InventoryLedger} />
+        </Route>
+        <Route path="/item-purchases">
+          <ProtectedRoute component={ItemPurchases} />
         </Route>
         <Route path="/reconciliation">
           <ProtectedRoute component={Reconciliation} />

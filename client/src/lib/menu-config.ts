@@ -1,4 +1,4 @@
-import { Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, History, Users, ShieldCheck, Settings, UserCog, BookOpen } from "lucide-react";
+import { Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, History, Users, ShieldCheck, Settings, UserCog, BookOpen, Receipt } from "lucide-react";
 
 export interface NavItem {
   icon: any;
@@ -15,6 +15,7 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
   { icon: ShoppingBag, label: "Sales Capture", shortLabel: "Sales", href: "/sales-capture" },
   { icon: PackageSearch, label: "Inventory & Purchases", shortLabel: "Inventory", href: "/inventory" },
   { icon: BookOpen, label: "Inventory Ledger", shortLabel: "Ledger", href: "/inventory-ledger" },
+  { icon: Receipt, label: "Item Purchases", shortLabel: "Purchases", href: "/item-purchases" },
   { icon: FileCheck, label: "Reconciliation", shortLabel: "Recon", href: "/reconciliation" },
   { icon: AlertOctagon, label: "Exceptions", shortLabel: "Except", href: "/exceptions" },
   { icon: FileText, label: "Reports", href: "/reports" },

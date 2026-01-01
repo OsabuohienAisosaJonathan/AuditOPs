@@ -1413,3 +1413,41 @@ export const surplusesApi = {
     }),
   getHistory: (id: string) => fetchApi<SurplusHistory[]>(`/surpluses/${id}/history`),
 };
+
+// Purchase Item Events (purchase register)
+export interface PurchaseItemEvent {
+  id: string;
+  clientId: string;
+  srdId: string | null;
+  itemId: string;
+  date: string;
+  qty: string;
+  unitCostAtPurchase: string;
+  totalCost: string;
+  supplierName: string | null;
+  invoiceNo: string | null;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const purchaseItemEventsApi = {
+  getByClient: (clientId: string, filters?: { srdId?: string; itemId?: string; dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.srdId) params.append("srdId", filters.srdId);
+    if (filters?.itemId) params.append("itemId", filters.itemId);
+    if (filters?.dateFrom) params.append("dateFrom", filters.dateFrom);
+    if (filters?.dateTo) params.append("dateTo", filters.dateTo);
+    return fetchApi<PurchaseItemEvent[]>(`/clients/${clientId}/purchase-item-events?${params}`);
+  },
+  create: (clientId: string, data: { srdId?: string; itemId: string; date: string; qty: string; unitCostAtPurchase: string; totalCost: string; supplierName?: string; invoiceNo?: string; notes?: string }) =>
+    fetchApi<PurchaseItemEvent>(`/clients/${clientId}/purchase-item-events`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ success: boolean }>(`/purchase-item-events/${id}`, {
+      method: "DELETE",
+    }),
+};
