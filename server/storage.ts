@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, purchaseItemEvents,
+  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, purchaseItemEvents, subscriptions,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -35,7 +35,8 @@ import {
   type SurplusHistory, type InsertSurplusHistory,
   type SrdTransfer, type InsertSrdTransfer,
   type OrganizationSettings, type InsertOrganizationSettings,
-  type PurchaseItemEvent, type InsertPurchaseItemEvent
+  type PurchaseItemEvent, type InsertPurchaseItemEvent,
+  type Subscription, type InsertSubscription
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -331,6 +332,12 @@ export interface IStorage {
   getPurchaseItemEvents(filters: { clientId: string; srdId?: string; itemId?: string; dateFrom?: Date; dateTo?: Date }): Promise<PurchaseItemEvent[]>;
   createPurchaseItemEvent(event: InsertPurchaseItemEvent): Promise<PurchaseItemEvent>;
   deletePurchaseItemEvent(id: string): Promise<boolean>;
+
+  // Subscriptions
+  getSubscription(tenantId: string): Promise<Subscription | undefined>;
+  getSubscriptions(): Promise<Subscription[]>;
+  createSubscription(subscription: InsertSubscription): Promise<Subscription>;
+  updateSubscription(id: string, subscription: Partial<InsertSubscription>): Promise<Subscription | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -2420,6 +2427,29 @@ export class DbStorage implements IStorage {
   async deletePurchaseItemEvent(id: string): Promise<boolean> {
     const result = await db.delete(purchaseItemEvents).where(eq(purchaseItemEvents.id, id)).returning();
     return result.length > 0;
+  }
+
+  // Subscriptions
+  async getSubscription(tenantId: string): Promise<Subscription | undefined> {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.tenantId, tenantId));
+    return sub;
+  }
+
+  async getSubscriptions(): Promise<Subscription[]> {
+    return db.select().from(subscriptions).orderBy(desc(subscriptions.createdAt));
+  }
+
+  async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
+    const [created] = await db.insert(subscriptions).values(subscription).returning();
+    return created;
+  }
+
+  async updateSubscription(id: string, updateData: Partial<InsertSubscription>): Promise<Subscription | undefined> {
+    const [updated] = await db.update(subscriptions)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(subscriptions.id, id))
+      .returning();
+    return updated;
   }
 }
 

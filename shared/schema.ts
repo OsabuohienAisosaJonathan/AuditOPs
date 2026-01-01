@@ -715,6 +715,113 @@ export const purchaseItemEvents = pgTable("purchase_item_events", {
 
 export const insertPurchaseItemEventSchema = createInsertSchema(purchaseItemEvents).omit({ id: true, createdAt: true, updatedAt: true });
 
+// Subscription Plans enum
+export const SUBSCRIPTION_PLANS = ["starter", "growth", "business", "enterprise"] as const;
+export type SubscriptionPlan = typeof SUBSCRIPTION_PLANS[number];
+
+export const BILLING_PERIODS = ["monthly", "quarterly", "yearly"] as const;
+export type BillingPeriod = typeof BILLING_PERIODS[number];
+
+export const SUBSCRIPTION_STATUSES = ["trial", "active", "past_due", "suspended", "cancelled"] as const;
+export type SubscriptionStatus = typeof SUBSCRIPTION_STATUSES[number];
+
+// Subscriptions table for tenant billing and feature access
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull(),
+  planName: text("plan_name").notNull().default("starter"),
+  billingPeriod: text("billing_period").notNull().default("monthly"),
+  slotsPurchased: integer("slots_purchased").notNull().default(1),
+  status: text("status").notNull().default("trial"),
+  startDate: timestamp("start_date").defaultNow().notNull(),
+  endDate: timestamp("end_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Entitlements computed per subscription plan
+export interface Entitlements {
+  maxClients: number;
+  maxSrdDepartmentsPerClient: number;
+  maxMainStorePerClient: number;
+  maxSeats: number;
+  retentionDays: number;
+  canViewReports: boolean;
+  canDownloadReports: boolean;
+  canPrintReports: boolean;
+  canAccessPurchasesRegisterPage: boolean;
+  canAccessSecondHitPage: boolean;
+  canDownloadSecondHitFullTable: boolean;
+  canDownloadMainStoreLedgerSummary: boolean;
+  canUseBetaFeatures: boolean;
+}
+
+// Plan limits configuration
+export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
+  starter: {
+    maxClients: 1,
+    maxSrdDepartmentsPerClient: 4,
+    maxMainStorePerClient: 1,
+    maxSeats: 2,
+    retentionDays: 30,
+    canViewReports: true,
+    canDownloadReports: false,
+    canPrintReports: false,
+    canAccessPurchasesRegisterPage: false,
+    canAccessSecondHitPage: false,
+    canDownloadSecondHitFullTable: false,
+    canDownloadMainStoreLedgerSummary: false,
+    canUseBetaFeatures: false,
+  },
+  growth: {
+    maxClients: 1,
+    maxSrdDepartmentsPerClient: 7,
+    maxMainStorePerClient: 1,
+    maxSeats: 5,
+    retentionDays: 90,
+    canViewReports: true,
+    canDownloadReports: true,
+    canPrintReports: true,
+    canAccessPurchasesRegisterPage: true,
+    canAccessSecondHitPage: true,
+    canDownloadSecondHitFullTable: false,
+    canDownloadMainStoreLedgerSummary: false,
+    canUseBetaFeatures: false,
+  },
+  business: {
+    maxClients: 1,
+    maxSrdDepartmentsPerClient: 12,
+    maxMainStorePerClient: 1,
+    maxSeats: 12,
+    retentionDays: 365,
+    canViewReports: true,
+    canDownloadReports: true,
+    canPrintReports: true,
+    canAccessPurchasesRegisterPage: true,
+    canAccessSecondHitPage: true,
+    canDownloadSecondHitFullTable: true,
+    canDownloadMainStoreLedgerSummary: true,
+    canUseBetaFeatures: false,
+  },
+  enterprise: {
+    maxClients: 999,
+    maxSrdDepartmentsPerClient: 999,
+    maxMainStorePerClient: 1,
+    maxSeats: 999,
+    retentionDays: 9999,
+    canViewReports: true,
+    canDownloadReports: true,
+    canPrintReports: true,
+    canAccessPurchasesRegisterPage: true,
+    canAccessSecondHitPage: true,
+    canDownloadSecondHitFullTable: true,
+    canDownloadMainStoreLedgerSummary: true,
+    canUseBetaFeatures: true,
+  },
+};
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -794,3 +901,5 @@ export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettin
 export type OrganizationSettings = typeof organizationSettings.$inferSelect;
 export type InsertPurchaseItemEvent = z.infer<typeof insertPurchaseItemEventSchema>;
 export type PurchaseItemEvent = typeof purchaseItemEvents.$inferSelect;
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+export type Subscription = typeof subscriptions.$inferSelect;

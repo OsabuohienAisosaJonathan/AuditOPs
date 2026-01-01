@@ -23,16 +23,46 @@ import {
   ChevronRight,
   Shield,
   BarChart3,
-  FileBarChart
+  FileBarChart,
+  Lock
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import logoImage from "@/assets/miauditops-logo.jpeg";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [isAnnual, setIsAnnual] = useState(true);
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "quarterly" | "yearly">("yearly");
+  const [selectedSlots, setSelectedSlots] = useState<1 | 3 | 5 | 10>(1);
   const [contactForm, setContactForm] = useState({ name: "", email: "", message: "" });
+
+  const formatPrice = (amount: number) => {
+    return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(amount);
+  };
+
+  const calculatePrice = (baseMonthly: number) => {
+    let multiplier = 1;
+    let periods = 1;
+    
+    if (billingPeriod === "monthly") {
+      periods = 1;
+      multiplier = 1;
+    } else if (billingPeriod === "quarterly") {
+      periods = 3;
+      multiplier = 0.95;
+    } else {
+      periods = 12;
+      multiplier = 0.85;
+    }
+
+    let slotMultiplier = selectedSlots;
+    if (selectedSlots === 3) slotMultiplier = 3 * 0.90;
+    else if (selectedSlots === 5) slotMultiplier = 5 * 0.85;
+    else if (selectedSlots === 10) slotMultiplier = 10 * 0.75;
+
+    return Math.round(baseMonthly * periods * multiplier * slotMultiplier);
+  };
 
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,27 +85,90 @@ export default function Home() {
   const pricingPlans = [
     {
       name: "Starter",
-      description: "For small businesses getting started with audits",
-      monthlyPrice: 29,
-      annualPrice: 24,
-      features: ["1 Company Slot", "Up to 3 Users", "Basic Reports", "Email Support"],
+      headline: "Daily audit essentials for small operations",
+      subtext: "Capture sales, reconcile stock, and run daily workflow—without heavy exports.",
+      bestFor: "Single outlet lounges/restaurants and early-stage audit routines.",
+      limits: "Up to 4 SRD Department Stores + 1 Main Store per workspace · 2 users · 30 days history",
+      baseMonthly: 49999,
+      features: [
+        "Audit Workspace (Sales → Purchases → Stock → Reconciliation)",
+        "SRD Ledgers (Main Store + Department Stores)",
+        "Exceptions logging + audit notes",
+        "Report preview (Daily/Weekly/Monthly) with watermark",
+        "Standard dashboards + performance metrics"
+      ],
+      locked: [
+        "Purchases Register page",
+        "Report downloads (PDF/Excel/Print)",
+        "Department Comparison (2nd Hit) full table page + download",
+        "SRD Main Store Ledger Summary download"
+      ],
+      cta: "Start with Starter",
+      secondaryLink: "Preview reports (Upgrade to download)",
       popular: false,
     },
     {
-      name: "Professional",
-      description: "For growing businesses with multiple outlets",
-      monthlyPrice: 79,
-      annualPrice: 65,
-      features: ["3 Company Slots", "Up to 10 Users", "Advanced Reports", "Priority Support", "API Access"],
+      name: "Growth",
+      headline: "Strong controls for growing audit teams",
+      subtext: "Expand departments, add more users, and unlock most report downloads.",
+      bestFor: "Busy lounges/restaurants and audit teams handling multiple departments daily.",
+      limits: "Up to 7 SRD Department Stores + 1 Main Store per workspace · 5 users · 90 days history",
+      baseMonthly: 79999,
+      features: [
+        "Everything in Starter",
+        "More SRD Department Stores for broader coverage",
+        "Report downloads enabled (PDF/Excel/Print) for standard reports",
+        "Better audit visibility across departments and dates",
+        "Stronger record retention for investigations"
+      ],
+      locked: [
+        "Department Comparison (2nd Hit) full table page + download",
+        "SRD Main Store Ledger Summary download"
+      ],
+      cta: "Upgrade to Growth",
+      secondaryLink: "Compare plans",
       popular: true,
     },
     {
-      name: "Enterprise",
-      description: "For audit firms and large operations",
-      monthlyPrice: 199,
-      annualPrice: 165,
-      features: ["Unlimited Slots", "Unlimited Users", "Custom Reports", "Dedicated Support", "White-label Options"],
+      name: "Business",
+      headline: "Full reporting power for audit firms and multi-outlet operations",
+      subtext: "Unlock full reconciliation intelligence, full exports, and advanced stock variance reporting.",
+      bestFor: "Professional audit firms, serious internal audit teams, and multi-branch hospitality groups.",
+      limits: "Up to 12 SRD Department Stores + 1 Main Store per workspace · 12 users · 1 year history",
+      baseMonthly: 129999,
+      features: [
+        "Everything in Growth",
+        "Full Department Comparison (2nd Hit) table (page + export)",
+        "Full report downloads across all sections (PDF/Excel/Print)",
+        "SRD Main Store Ledger Summary report download",
+        "Purchases Register access + reporting",
+        "Better monthly/weekly breakdown reporting for executives"
+      ],
+      locked: [],
+      cta: "Go Business",
+      secondaryLink: "Book a quick demo",
       popular: false,
+    },
+    {
+      name: "Enterprise",
+      headline: "Unlimited scale + priority support + early access",
+      subtext: "Designed for large audit teams, groups, franchises, and heavy reporting needs.",
+      bestFor: "Large audit firms, hotel groups, franchises, and multi-location hospitality chains.",
+      limits: "Unlimited SRD Department Stores + 1 Main Store per workspace · Unlimited users · Unlimited history",
+      baseMonthly: 199999,
+      features: [
+        "Everything in Business",
+        "Unlimited SRD Department Stores per workspace",
+        "Unlimited user seats for large teams",
+        "Unlimited retention for long-term investigations",
+        "Early access to new features (beta toggles)",
+        "Dedicated support line + SLA response time"
+      ],
+      locked: [],
+      cta: "Contact Sales",
+      secondaryLink: "Request Enterprise onboarding",
+      popular: false,
+      isEnterprise: true,
     },
   ];
 
@@ -227,56 +320,146 @@ export default function Home() {
           <div className="text-center mb-12">
             <Badge variant="outline" className="mb-4">Pricing</Badge>
             <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">
-              Simple, Transparent Pricing
+              Choose a plan that matches your audit workload
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto mb-8">
-              Choose the plan that fits your business. All plans include a 14-day free trial.
+              Monthly, Quarterly, and Yearly billing. Upgrade anytime as your clients, departments, and reporting needs grow.
             </p>
-            <div className="flex items-center justify-center gap-3">
-              <Label htmlFor="billing-toggle" className={!isAnnual ? "font-medium" : "text-muted-foreground"}>Monthly</Label>
-              <Switch id="billing-toggle" checked={isAnnual} onCheckedChange={setIsAnnual} />
-              <Label htmlFor="billing-toggle" className={isAnnual ? "font-medium" : "text-muted-foreground"}>
-                Annual <Badge variant="secondary" className="ml-1">Save 20%</Badge>
-              </Label>
+            
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-6">
+              <div className="flex items-center gap-2 bg-card border rounded-lg p-1">
+                {(["monthly", "quarterly", "yearly"] as const).map((period) => (
+                  <button
+                    key={period}
+                    onClick={() => setBillingPeriod(period)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                      billingPeriod === period 
+                        ? "bg-primary text-primary-foreground" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    data-testid={`billing-${period}`}
+                  >
+                    {period.charAt(0).toUpperCase() + period.slice(1)}
+                    {period === "quarterly" && <Badge variant="secondary" className="ml-2 text-xs">Save 5%</Badge>}
+                    {period === "yearly" && <Badge variant="secondary" className="ml-2 text-xs">Save 15%</Badge>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center gap-2 mb-8">
+              <Label className="text-sm font-medium">Client/Company Slots</Label>
+              <div className="flex items-center gap-2 bg-card border rounded-lg p-1">
+                {([1, 3, 5, 10] as const).map((slots) => (
+                  <button
+                    key={slots}
+                    onClick={() => setSelectedSlots(slots)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                      selectedSlots === slots 
+                        ? "bg-primary text-primary-foreground" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    data-testid={`slots-${slots}`}
+                  >
+                    {slots}
+                    {slots >= 3 && (
+                      <span className="ml-1 text-xs opacity-75">
+                        ({slots === 3 ? "-10%" : slots === 5 ? "-15%" : "-25%"})
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">A slot is one Client workspace (for Auditors) or one Company workspace (for Companies).</p>
             </div>
           </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {pricingPlans.map((plan, i) => (
-              <Card key={i} className={`relative transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${plan.popular ? "border-primary shadow-lg" : ""}`}>
-                {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-primary">Most Popular</Badge>
-                  </div>
-                )}
-                <CardHeader className="text-center pb-2">
-                  <CardTitle className="text-xl">{plan.name}</CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="text-center">
-                  <div className="mb-6">
-                    <span className="text-4xl font-bold">${isAnnual ? plan.annualPrice : plan.monthlyPrice}</span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                  <ul className="space-y-3 text-sm mb-6">
-                    {plan.features.map((feature, j) => (
-                      <li key={j} className="flex items-center gap-2">
-                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button 
-                    className={`w-full transition-all duration-200 hover:scale-[1.02] ${plan.popular ? "" : "variant-outline"}`}
-                    variant={plan.popular ? "default" : "outline"}
-                    onClick={() => setLocation("/signup")}
-                    data-testid={`button-pricing-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
-                  >
-                    Start Free Trial
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+
+          <TooltipProvider>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {pricingPlans.map((plan, i) => (
+                <Card key={i} className={`relative flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${plan.popular ? "border-primary shadow-lg ring-2 ring-primary/20" : ""}`}>
+                  {plan.popular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <Badge className="bg-primary">Most Popular</Badge>
+                    </div>
+                  )}
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xl">{plan.name}</CardTitle>
+                    <p className="text-sm font-medium text-foreground">{plan.headline}</p>
+                    <CardDescription className="text-xs">{plan.subtext}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col">
+                    <div className="mb-4">
+                      {'isEnterprise' in plan && plan.isEnterprise ? (
+                        <div className="text-2xl font-bold">Contact Sales</div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-bold">₦{formatPrice(calculatePrice(plan.baseMonthly))}</span>
+                            <span className="text-sm text-muted-foreground">/{billingPeriod}</span>
+                          </div>
+                          {selectedSlots > 1 && (
+                            <Badge variant="secondary" className="mt-1 text-xs">
+                              Save up to {selectedSlots === 3 ? "10%" : selectedSlots === 5 ? "15%" : "25%"} with {selectedSlots} slots
+                            </Badge>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    
+                    <p className="text-xs text-muted-foreground mb-3 italic">Best for: {plan.bestFor}</p>
+                    <p className="text-xs text-muted-foreground mb-4 border-t pt-2">{plan.limits}</p>
+                    
+                    <div className="space-y-2 mb-4 flex-1">
+                      <p className="text-xs font-semibold text-foreground">What you get:</p>
+                      {plan.features.map((feature, j) => (
+                        <div key={j} className="flex items-start gap-2">
+                          <Check className="h-3.5 w-3.5 text-primary flex-shrink-0 mt-0.5" />
+                          <span className="text-xs">{feature}</span>
+                        </div>
+                      ))}
+                      
+                      {plan.locked.length > 0 && (
+                        <>
+                          <p className="text-xs font-semibold text-muted-foreground mt-3">Locked in {plan.name}:</p>
+                          {plan.locked.map((item, j) => (
+                            <Tooltip key={j}>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-start gap-2 opacity-50 cursor-help">
+                                  <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                                  <span className="text-xs text-muted-foreground">{item}</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Preview Mode – Upgrade to Download</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                    
+                    <div className="mt-auto space-y-2">
+                      <Button 
+                        className="w-full transition-all duration-200 hover:scale-[1.02]"
+                        variant={plan.popular ? "default" : "outline"}
+                        onClick={() => setLocation("/signup")}
+                        data-testid={`button-pricing-${plan.name.toLowerCase()}`}
+                      >
+                        {plan.cta}
+                      </Button>
+                      <button 
+                        className="w-full text-xs text-primary hover:underline"
+                        data-testid={`link-pricing-${plan.name.toLowerCase()}-secondary`}
+                      >
+                        {plan.secondaryLink}
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TooltipProvider>
         </div>
       </section>
 

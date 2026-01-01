@@ -14,6 +14,7 @@ import {
   insertStoreNameSchema, insertInventoryDepartmentSchema, insertGoodsReceivedNoteSchema, INVENTORY_TYPES,
   insertReceivableSchema, insertReceivableHistorySchema, insertSurplusSchema, insertSurplusHistorySchema,
   RECEIVABLE_STATUSES, SURPLUS_STATUSES, STOCK_MOVEMENT_TYPES,
+  PLAN_LIMITS, type SubscriptionPlan,
   type UserRole 
 } from "@shared/schema";
 import multer from "multer";
@@ -440,6 +441,65 @@ export async function registerRoutes(
         mustChangePassword: user.mustChangePassword,
         accessScope: user.accessScope,
       });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== SUBSCRIPTION & ENTITLEMENTS ==============
+  app.get("/api/subscription/entitlements", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantId = user.id;
+      let subscription = await storage.getSubscription(tenantId);
+      
+      if (!subscription) {
+        subscription = await storage.createSubscription({
+          tenantId,
+          planName: "starter",
+          billingPeriod: "monthly",
+          slotsPurchased: 1,
+          status: "trial",
+          startDate: new Date(),
+        });
+      }
+
+      const planName = (subscription.planName || "starter") as SubscriptionPlan;
+      const baseLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.starter;
+      
+      const entitlements = {
+        ...baseLimits,
+        maxClients: baseLimits.maxClients * (subscription.slotsPurchased || 1),
+        subscription: {
+          id: subscription.id,
+          planName: subscription.planName,
+          billingPeriod: subscription.billingPeriod,
+          slotsPurchased: subscription.slotsPurchased,
+          status: subscription.status,
+          startDate: subscription.startDate,
+          endDate: subscription.endDate,
+        }
+      };
+
+      res.json(entitlements);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/subscription", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const subscription = await storage.getSubscription(user.id);
+      res.json(subscription || null);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

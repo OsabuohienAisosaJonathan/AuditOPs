@@ -1,0 +1,340 @@
+GOAL
+Implement a professional subscription system with:
+1) Monthly / Quarterly / Yearly billing views
+2) Plan-based feature gating (VIEW vs DOWNLOAD)
+3) Hard limits per plan: Client/Company slots, SRD Department Store count, user seats, data retention
+4) Admin controls: platform admin can manage plans, subscriptions, upgrades/downgrades, suspend accounts
+
+STRICT RULES
+1) Do NOT break existing AuditOps functionality.
+2) Do NOT rename or delete existing routes/tables.
+3) Add new schema/tables only when necessary.
+4) Locked features must be visible but restricted using “Preview Mode – Upgrade to Download” (watermark).
+5) SRD Ledger logic must NOT be altered or distorted.
+
+========================================================
+B) PLANS (FEATURES + LIMITS)
+Adjust, update and Create plans: Starter, Growth, Business, Enterprise.
+Total plans must be 4.
+Currency in Naira. 
+Billing periods: Monthly, Quarterly, Yearly (display toggle on pricing UI).
+
+Base monthly pricing per 1 client/company slot:
+- Starter: ₦49,999 / month
+- Growth: ₦79,999 / month
+- Business: ₦129,999 / month
+- Enterprise: ₦199,999 / month (or “Contact Sales” for custom)
+
+Billing discounts:
+- Quarterly: 5% off (monthly × 3)
+- Yearly: 15% off (monthly × 12)
+
+Multi-slot packs:
+- 1 slot, 3 slots (10% off), 5 slots (15% off), 10 slots (25% off)
+NOTE: “Slot” means:
+- Auditor: Client workspace slots
+- Company: Company workspace slots (or branches/companies if multi-company)
+
+PLAN LIMITS (PER CLIENT/COMPANY WORKSPACE)
+1) Starter:
+   - maxSrdDepartmentsPerClient = 4
+   - maxMainStorePerClient = 1
+   - maxSeats = 2 users
+   - retentionDays = 30
+   - Purchases Register page: locked
+   - Reports: view allowed, download/print locked
+   - 1st Hit report download: locked
+   - 2nd Hit page + full table download: locked (preview only)
+   - SRD Main Store Ledger Summary download: locked
+
+2) Growth:
+   - maxSrdDepartmentsPerClient = 7
+   - maxMainStorePerClient = 1
+   - maxSeats = 5 users
+   - retentionDays = 90
+   - Reports: download/print allowed EXCEPT:
+     * 2nd Hit page + full table download: locked (preview only)
+     * SRD Main Store Ledger Summary download: locked
+   - Purchases Register page: allowed only if you decide; default: allowed in Growth ONLY IF desired.
+     (If not, keep Purchases Register Business+ only.)
+
+3) Business:
+   - maxSrdDepartmentsPerClient = 12
+   - maxMainStorePerClient = 1
+   - maxSeats = 12 users
+   - retentionDays = 365
+   - Full access to all features + all downloads.
+
+4) Enterprise:
+   - maxSrdDepartmentsPerClient = unlimited
+   - maxMainStorePerClient = 1
+   - maxSeats = unlimited
+   - retentionDays = unlimited
+   - Full access + beta features toggle + dedicated support + SLA.
+
+========================================================
+C) SUBSCRIPTION DATA MODEL + ENFORCEMENT
+Add a subscription table (additive only) e.g. subscriptions:
+- id
+- tenantId
+- planName (starter|growth|business|enterprise)
+- billingPeriod (monthly|quarterly|yearly)
+- slotsPurchased (1|3|5|10|custom)
+- status (trial|active|past_due|suspended|cancelled)
+- startDate, endDate
+- createdAt
+
+Also create a derived “entitlements” object computed on login:
+- maxClients
+- maxSrdDepartmentsPerClient
+- maxMainStorePerClient
+- maxSeats
+- retentionDays
+- canViewReports
+- canDownloadReports
+- canPrintReports
+- canAccessPurchasesRegisterPage
+- canAccessSecondHitPage
+- canDownloadSecondHitFullTable
+- canDownloadMainStoreLedgerSummary
+- canUseBetaFeatures
+
+Store entitlements on server (computed) and also expose via:
+GET /api/subscription/entitlements
+
+========================================================
+D) ENFORCEMENT POINTS (MUST IMPLEMENT)
+1) Client/Company creation:
+   - Block creating more than allowed slots.
+   - Show modal: “Limit reached. Upgrade to add more clients/companies.”
+
+2) SRD Department Store creation:
+   - Block creating more than plan limit per client.
+   - Main store fixed to max 1.
+
+3) User seats:
+   - Block inviting/creating more users than allowed.
+   - Provide upgrade CTA.
+
+4) Data retention:
+   - On reports/audit trail queries, enforce date range:
+     * Starter cannot pull older than 30 days, Growth 90 days, etc.
+   - UI should show: “Your plan retains data for X days.”
+
+5) Report downloads/prints:
+   - All plans can VIEW reports.
+   - When user tries to DOWNLOAD/PRINT a locked report:
+     * Show upgrade modal
+     * Do NOT generate PDF/Excel
+     * Add watermark on preview: “Preview Mode – Upgrade to Download”
+   - If allowed, generate PDF/Excel normally.
+
+6) Department Comparison (2nd Hit) gating:
+   - If plan cannot access 2nd hit page:
+     * show a preview card/summary, but block full page route.
+   - If plan can view but cannot download:
+     * allow full page, block export.
+
+========================================================
+E) PLATFORM ADMIN (MIEMPLOYA CONTROL PANEL)
+Create a separate Platform Admin area (protected role) for Miemploya:
+1) Manage Tenants:
+   - view tenant list, accountType, organizationName, plan, status
+   - suspend/activate accounts
+2) Manage Subscriptions:
+   - upgrade/downgrade plan
+   - change slot count
+   - set status (active, suspended)
+3) Audit log of admin actions.
+
+Bootstrap:
+- Create initial Platform Super Admin via one-time /setup-platform-admin
+- Disable the setup route after creation.
+
+========================================================
+F) PRICING PAGE UI (HOME PAGE)
+1) Add pricing section with a toggle:
+   - Monthly | Quarterly | Yearly
+2) Cards: Starter, Growth, Business, Enterprise
+3) Show:
+   - price per period
+   - slots selector: 1, 3, 5, 10 (updates price)
+   - highlight “Most Popular” (Growth or Business)
+4) CTA:
+   - Start Trial / Subscribe / Upgrade
+5) Add “How to use MiAuditOps” intro video section on home page.
+
+========================================================
+G) OUTPUT REQUIRED (AI BUILDER)
+1) Show exact file paths edited/created.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide schema migration steps for new subscription tables.
+4) Provide test checklist:
+   - signup company vs auditor changes sidebar label
+   - SRD dept creation blocked after limit
+   - user invite blocked after seat limit
+   - retention restriction enforced
+   - report preview works for all plans
+   - report download blocked/allowed correctly
+   - admin can suspend tenant and tenant loses access
+PROMPT TO AI BUILDER: HOMEPAGE PRICING PLAN CARDS COPY (REAL SaaS STYLE) + TOGGLE + SLOT SELECTOR + LOCKED FEATURES UI
+
+GOAL
+Update the Home page Pricing section so it reads like a premium SaaS product.
+You must implement:
+1) Pricing section header copy
+2) Billing toggle: Monthly / Quarterly / Yearly (with discount badges)
+3) Slot selector: 1, 3, 5, 10 (with volume discount note)
+4) Four plan cards (Starter, Growth, Business, Enterprise) using the exact copy below
+5) Locked-feature UI: show locked items muted with a lock icon and tooltip “Preview Mode – Upgrade to Download”
+6) “Most Popular” badge on Growth
+7) CTA buttons and secondary links per plan
+
+STRICT RULES
+1) Do NOT change existing site layout outside the pricing section.
+2) Do NOT remove existing CSS/components—only extend or replace the pricing section component.
+3) Keep design professional and modern: clean spacing, clear typography, consistent card height.
+4) Do NOT hardcode currencies into random places; use the app’s currency formatter (₦ for NGN default).
+
+========================================================
+A) PRICING SECTION HEADER (COPY)
+Title: “Choose a plan that matches your audit workload”
+Subtext: “Monthly, Quarterly, and Yearly billing. Upgrade anytime as your clients, departments, and reporting needs grow.”
+
+Billing Toggle Labels:
+- Monthly
+- Quarterly (Save 5%)
+- Yearly (Save 15%)
+
+Slot selector label:
+“Client/Company Slots: 1 | 3 | 5 | 10”
+Helper note under selector:
+“A slot is one Client workspace (for Auditors) or one Company workspace (for Companies).”
+
+========================================================
+B) PLAN CARDS COPY (USE EXACT TEXT)
+
+CARD 1: STARTER
+Plan Name: Starter
+Headline: “Daily audit essentials for small operations”
+Subtext: “Capture sales, reconcile stock, and run daily workflow—without heavy exports.”
+Best for: “Single outlet lounges/restaurants and early-stage audit routines.”
+Limits line (small text):
+“Up to 4 SRD Department Stores + 1 Main Store per workspace · 2 users · 30 days history”
+
+What you get (bullets):
+- “Audit Workspace (Sales → Purchases → Stock → Reconciliation)”
+- “SRD Ledgers (Main Store + Department Stores)”
+- “Exceptions logging + audit notes”
+- “Report preview (Daily/Weekly/Monthly) with watermark”
+- “Standard dashboards + performance metrics”
+
+Locked in Starter (muted + lock icon):
+- “Purchases Register page”
+- “Report downloads (PDF/Excel/Print)”
+- “Department Comparison (2nd Hit) full table page + download”
+- “SRD Main Store Ledger Summary download”
+
+CTA Button: “Start with Starter”
+Secondary link: “Preview reports (Upgrade to download)”
+
+--------------------------------------------------------
+CARD 2: GROWTH (MOST POPULAR)
+Plan Name: Growth
+Badge: “Most Popular”
+Headline: “Strong controls for growing audit teams”
+Subtext: “Expand departments, add more users, and unlock most report downloads.”
+Best for: “Busy lounges/restaurants and audit teams handling multiple departments daily.”
+Limits line:
+“Up to 7 SRD Department Stores + 1 Main Store per workspace · 5 users · 90 days history”
+
+What you get:
+- “Everything in Starter”
+- “More SRD Department Stores for broader coverage”
+- “Report downloads enabled (PDF/Excel/Print) for standard reports”
+- “Better audit visibility across departments and dates”
+- “Stronger record retention for investigations”
+
+Still locked in Growth:
+- “Department Comparison (2nd Hit) full table page + download”
+- “SRD Main Store Ledger Summary download”
+
+CTA Button: “Upgrade to Growth”
+Secondary link: “Compare plans”
+
+--------------------------------------------------------
+CARD 3: BUSINESS
+Plan Name: Business
+Headline: “Full reporting power for audit firms and multi-outlet operations”
+Subtext: “Unlock full reconciliation intelligence, full exports, and advanced stock variance reporting.”
+Best for: “Professional audit firms, serious internal audit teams, and multi-branch hospitality groups.”
+Limits line:
+“Up to 12 SRD Department Stores + 1 Main Store per workspace · 12 users · 1 year history”
+
+What you get:
+- “Everything in Growth”
+- “Full Department Comparison (2nd Hit) table (page + export)”
+- “Full report downloads across all sections (PDF/Excel/Print)”
+- “SRD Main Store Ledger Summary report download”
+- “Purchases Register access + reporting”
+- “Better monthly/weekly breakdown reporting for executives”
+
+CTA Button: “Go Business”
+Secondary link: “Book a quick demo”
+
+--------------------------------------------------------
+CARD 4: ENTERPRISE
+Plan Name: Enterprise
+Headline: “Unlimited scale + priority support + early access”
+Subtext: “Designed for large audit teams, groups, franchises, and heavy reporting needs.”
+Best for: “Large audit firms, hotel groups, franchises, and multi-location hospitality chains.”
+Limits line:
+“Unlimited SRD Department Stores + 1 Main Store per workspace · Unlimited users · Unlimited history”
+
+What you get:
+- “Everything in Business”
+- “Unlimited SRD Department Stores per workspace”
+- “Unlimited user seats for large teams”
+- “Unlimited retention for long-term investigations”
+- “Early access to new features (beta toggles)”
+- “Dedicated support line + SLA response time”
+
+CTA Button: “Contact Sales”
+Secondary link: “Request Enterprise onboarding”
+
+========================================================
+C) PRICING LOGIC (DISPLAY)
+1) Base monthly price per 1 slot:
+- Starter: ₦49,999
+- Growth: ₦79,999
+- Business: ₦129,999
+- Enterprise: ₦199,999 (or replace with “Contact Sales” if needed)
+
+2) Quarterly price = (monthly * 3) less 5%
+3) Yearly price = (monthly * 12) less 15%
+
+4) Slot volume discounts:
+- 3 slots: 10% off total
+- 5 slots: 15% off total
+- 10 slots: 25% off total
+
+Show a small badge under price:
+- “Save 5%” for quarterly
+- “Save 15%” for yearly
+- “Save up to 25% with 10 slots”
+
+========================================================
+D) LOCKED FEATURES UI BEHAVIOR
+1) Locked items appear muted with a lock icon.
+2) On hover show tooltip:
+“Preview Mode – Upgrade to Download”
+3) Where a plan does not allow download:
+- Add a tiny caption on card bottom:
+“Downloads locked on this plan.”
+
+========================================================
+E) OUTPUT REQUIRED
+1) Show exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide a quick screenshot or description of the resulting layout.
+4) Ensure mobile responsive: cards stack, toggle stays visible, slot selector collapses neatly.
