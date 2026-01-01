@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const FROM_EMAIL = process.env.FROM_EMAIL || 'MiAuditOps <noreply@miauditops.com>';
 
 export function getBaseUrl(req?: { headers?: { host?: string } }): string {
   if (process.env.APP_URL) {
@@ -31,7 +32,7 @@ export async function sendVerificationEmail(
 
   try {
     const { error } = await resend.emails.send({
-      from: 'MiAuditOps <noreply@miauditops.com>',
+      from: FROM_EMAIL,
       to: email,
       subject: 'Verify your MiAuditOps account',
       html: `
@@ -98,7 +99,7 @@ export async function sendPasswordResetEmail(
 
   try {
     const { error } = await resend.emails.send({
-      from: 'MiAuditOps <noreply@miauditops.com>',
+      from: FROM_EMAIL,
       to: email,
       subject: 'Reset your MiAuditOps password',
       html: `
@@ -154,6 +155,12 @@ export function logEmailConfigStatus(): void {
     console.warn('[Email] WARNING: RESEND_API_KEY is not set. Email verification will not work.');
   } else {
     console.log('[Email] Resend email service configured');
+  }
+  
+  if (!process.env.FROM_EMAIL) {
+    console.warn('[Email] WARNING: FROM_EMAIL is not set. Using default sender address.');
+  } else {
+    console.log(`[Email] FROM_EMAIL configured: ${process.env.FROM_EMAIL}`);
   }
   
   if (!process.env.APP_URL) {
