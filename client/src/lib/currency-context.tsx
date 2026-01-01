@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { organizationSettingsApi, OrganizationSettings } from "./api";
+import { toast } from "sonner";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   NGN: "₦",
@@ -43,6 +44,10 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     mutationFn: (currency: string) => organizationSettingsApi.update({ currency }),
     onSuccess: (data) => {
       queryClient.setQueryData(["organization-settings"], data);
+      toast.success("Currency saved");
+    },
+    onError: () => {
+      toast.error("Failed to save currency");
     },
   });
 
