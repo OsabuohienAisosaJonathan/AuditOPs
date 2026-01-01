@@ -40,3 +40,8 @@ waitForPort = 5000
 
 [agent]
 mockupState = "FULLSTACK"
+
+[userenv]
+
+[userenv.shared]
+APP_URL = "https://3ba354c3-d3cf-40c4-a3de-029b589b6700-00-1ons62u8ax8px.worf.replit.dev"
