@@ -7,8 +7,35 @@ import { z } from "zod";
 export const USER_ROLES = ["super_admin", "supervisor", "auditor"] as const;
 export type UserRole = typeof USER_ROLES[number];
 
+// Organization roles for multi-user tenant support
+export const ORG_ROLES = ["owner", "admin", "member"] as const;
+export type OrgRole = typeof ORG_ROLES[number];
+
+// Organization types
+export const ORG_TYPES = ["company", "auditor"] as const;
+export type OrgType = typeof ORG_TYPES[number];
+
+// Organizations table (tenants)
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("company"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  currencyCode: text("currency_code").notNull().default("NGN"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type Organization = typeof organizations.$inferSelect;
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id),
+  organizationRole: text("organization_role").default("member"),
   username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
@@ -29,6 +56,7 @@ export const users = pgTable("users", {
 
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
   riskScore: integer("risk_score").default(0),
@@ -728,7 +756,7 @@ export type SubscriptionStatus = typeof SUBSCRIPTION_STATUSES[number];
 // Subscriptions table for tenant billing and feature access
 export const subscriptions = pgTable("subscriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").notNull(),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   planName: text("plan_name").notNull().default("starter"),
   billingPeriod: text("billing_period").notNull().default("monthly"),
   slotsPurchased: integer("slots_purchased").notNull().default(1),

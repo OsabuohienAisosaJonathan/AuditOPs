@@ -1,0 +1,106 @@
+NEXT TASK: SUBSCRIPTION ENFORCEMENT (TENANT-BASED) + UI FEATURE GATING + USAGE METERS
+
+CONSTRAINTS:
+1) Do NOT remove or rename existing API routes.
+2) Do NOT delete existing DB columns/tables.
+3) Add only what is necessary. Prefer additive migrations.
+4) MUST enforce limits on backend (not only UI).
+5) Keep SRD ledger logic unchanged.
+
+PART A — TENANT/ORG MODEL (MVP)
+A1) Add an organizations (tenants) table (if not existing):
+- id
+- name
+- type: "company" | "auditor"
+- email, phone, address
+- currency_code (default "NGN")
+- createdAt
+
+A2) Link users to organization:
+- add organizationId to auth_users (or equivalent)
+- when a new user signs up, create an organization and assign user as OWNER role
+
+A3) Move subscription to organization:
+- subscription_plan: starter|growth|business|enterprise
+- subscription_period: monthly|quarterly|yearly
+- subscription_status: trialing|active|past_due|canceled
+- subscription_startedAt, endsAt
+- client_limit (computed by plan), etc. (or compute in code, but store current plan)
+
+PART B — ENTITLEMENTS (SOURCE OF TRUTH)
+B1) Create a single function: getEntitlements(organizationId)
+Returns:
+- planName
+- canDownloadReports (bool)
+- canAccessPurchasesRegister (bool)
+- canAccessDeptComparison2 (bool)
+- canDownloadDeptComparison1Report (bool)
+- canDownloadDeptComparison2Report (bool)
+- canDownloadSRDMainSummaryReport (bool)
+- maxClients
+- maxDeptSRDPerClient (starter 4, growth 7, business 12, enterprise unlimited)
+- maxMainStorePerClient (always 1)
+- currencyCode
+
+B2) Add API endpoint (non-breaking) e.g. GET /api/entitlements
+Returns entitlements + usage counts:
+- clientsUsed
+- deptSRDUsedByClient (for selected client) if needed
+
+PART C — BACKEND ENFORCEMENT (MANDATORY)
+C1) On “create client/company” endpoint:
+- Block if clientsUsed >= maxClients
+
+C2) On “create SRD department store” endpoint:
+- For the selected client, block if deptCount >= maxDeptSRDPerClient
+
+C3) On pages/data endpoints for gated features:
+- Purchases Register endpoints: Starter blocked (403)
+- Department Comparison (2nd Hit) endpoints: Starter+Growth blocked (403)
+- Report download endpoints: apply plan rules:
+  - Starter: no downloads at all (PDF/Excel)
+  - Growth: downloads allowed except Dept Comparison 2 and SRD Main Summary
+  - Business/Enterprise: all allowed
+
+Return structured error:
+{ code: "PLAN_RESTRICTED", message: "Upgrade to access this feature." }
+
+PART D — FRONTEND GATING (GOOD UX)
+D1) Sidebar/menu:
+- Hide or disable menu items user cannot access.
+- If disabled, show lock icon + tooltip “Upgrade to unlock”.
+
+D2) Reports page:
+- Disable checkboxes for restricted sections
+- Disable Download buttons if canDownloadReports=false
+- Show Upgrade modal when clicked
+
+D3) Usage meters:
+- Show “Clients used X/Y” and “SRD departments used X/Y for this client”
+- Place meters in Settings > Subscription and optionally on Clients page
+
+PART E — ORG SETTINGS + CURRENCY (YOU ALREADY REQUESTED)
+E1) Settings page order:
+- Company Name
+- Address
+- Email
+- Phone
+- Currency
+
+E2) Currency selector in header:
+- persists to organization.currency_code
+- instantly reflects across app formatting
+
+OUTPUT REQUIRED:
+1) Exact file paths edited.
+2) First 10–15 lines of each edited file to confirm.
+3) Code patches with clear START/END markers.
+4) DB migration steps.
+5) Test checklist:
+- starter user cannot create >1 client
+- starter user cannot create >4 dept SRDs per client
+- starter user cannot download reports
+- growth user cannot access Dept Comparison 2
+- business user can access all
+- currency changes reflect everywhere
+END TASK

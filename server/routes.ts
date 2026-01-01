@@ -248,7 +248,7 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Invalid bootstrap secret" });
       }
 
-      const { fullName, email, password, username } = req.body;
+      const { fullName, email, password, username, companyName } = req.body;
 
       if (!fullName || !email || !password || !username) {
         return res.status(400).json({ error: "Full name, email, username, and password are required" });
@@ -260,22 +260,31 @@ export async function registerRoutes(
 
       const hashedPassword = await hash(password, 12);
       
-      const user = await storage.createUser({
-        username,
-        email,
-        password: hashedPassword,
-        fullName,
-        role: "super_admin",
-        status: "active",
-        mustChangePassword: true,
-        accessScope: { global: true },
-      });
+      // Create organization, user, and subscription atomically in a transaction
+      const { organization, user } = await storage.bootstrapOrganizationWithOwner(
+        {
+          name: companyName || `${fullName}'s Organization`,
+          type: "auditor",
+          email,
+          currencyCode: "NGN",
+        },
+        {
+          username,
+          email,
+          password: hashedPassword,
+          fullName,
+          role: "super_admin",
+          status: "active",
+          mustChangePassword: true,
+          accessScope: { global: true },
+        }
+      );
 
       await storage.createAdminActivityLog({
         actorId: user.id,
         targetUserId: user.id,
         actionType: "bootstrap_admin_created",
-        afterState: { fullName, email, role: "super_admin" },
+        afterState: { fullName, email, role: "super_admin", organizationId: organization.id },
         ipAddress: req.ip || "Unknown",
       });
 
@@ -454,12 +463,16 @@ export async function registerRoutes(
         return res.status(404).json({ error: "User not found" });
       }
 
-      const tenantId = user.id;
-      let subscription = await storage.getSubscription(tenantId);
+      if (!user.organizationId) {
+        return res.status(400).json({ error: "User not associated with an organization" });
+      }
+
+      const organizationId = user.organizationId;
+      let subscription = await storage.getSubscription(organizationId);
       
       if (!subscription) {
         subscription = await storage.createSubscription({
-          tenantId,
+          organizationId,
           planName: "starter",
           billingPeriod: "monthly",
           slotsPurchased: 1,
@@ -468,12 +481,18 @@ export async function registerRoutes(
         });
       }
 
+      const organization = await storage.getOrganization(organizationId);
       const planName = (subscription.planName || "starter") as SubscriptionPlan;
       const baseLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.starter;
+      
+      // Get usage counts
+      const clientsUsed = await storage.getClientCountByOrganization(organizationId);
       
       const entitlements = {
         ...baseLimits,
         maxClients: baseLimits.maxClients * (subscription.slotsPurchased || 1),
+        clientsUsed,
+        currencyCode: organization?.currencyCode || "NGN",
         subscription: {
           id: subscription.id,
           planName: subscription.planName,
@@ -494,12 +513,51 @@ export async function registerRoutes(
   app.get("/api/subscription", requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
+      if (!user || !user.organizationId) {
+        return res.status(404).json({ error: "User not found or not in organization" });
       }
       
-      const subscription = await storage.getSubscription(user.id);
+      const subscription = await storage.getSubscription(user.organizationId);
       res.json(subscription || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get organization details
+  app.get("/api/organization", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user || !user.organizationId) {
+        return res.status(404).json({ error: "User not found or not in organization" });
+      }
+      
+      const organization = await storage.getOrganization(user.organizationId);
+      res.json(organization || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update organization details
+  app.patch("/api/organization", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user || !user.organizationId) {
+        return res.status(404).json({ error: "User not found or not in organization" });
+      }
+      
+      // Only org owners can update
+      if (user.organizationRole !== "owner" && user.role !== "super_admin") {
+        return res.status(403).json({ error: "Only organization owners can update settings" });
+      }
+      
+      const { name, email, phone, address, currencyCode } = req.body;
+      const updated = await storage.updateOrganization(user.organizationId, {
+        name, email, phone, address, currencyCode
+      });
+      
+      res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -796,6 +854,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Role must be supervisor or auditor" });
       }
 
+      // Get current user's organization
+      const currentUser = await storage.getUser(req.session.userId!);
+      if (!currentUser?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+
       const existingEmail = await storage.getUserByEmail(email);
       if (existingEmail) {
         return res.status(400).json({ error: "Email already in use" });
@@ -810,6 +874,8 @@ export async function registerRoutes(
       const hashedPassword = await hash(tempPassword, 12);
 
       const user = await storage.createUser({
+        organizationId: currentUser.organizationId,
+        organizationRole: "member",
         username,
         email,
         password: hashedPassword,
@@ -1463,9 +1529,33 @@ export async function registerRoutes(
       if (!req.body.name || !validateNameLength(req.body.name)) {
         return res.status(400).json({ error: "Client name must be at least 2 characters" });
       }
+
+      // Get user's organization and check entitlements
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+
+      const subscription = await storage.getSubscription(user.organizationId);
+      const planName = (subscription?.planName || "starter") as SubscriptionPlan;
+      const baseLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.starter;
+      const maxClients = baseLimits.maxClients * (subscription?.slotsPurchased || 1);
+      
+      const clientsUsed = await storage.getClientCountByOrganization(user.organizationId);
+      if (clientsUsed >= maxClients) {
+        return res.status(403).json({ 
+          code: "PLAN_RESTRICTED", 
+          error: `Client limit reached (${clientsUsed}/${maxClients}). Upgrade your plan to add more clients.` 
+        });
+      }
+
       const normalizedName = req.body.name.trim().toUpperCase().replace(/\s+/g, ' ');
       
-      const data = insertClientSchema.parse({ ...req.body, name: normalizedName });
+      const data = insertClientSchema.parse({ 
+        ...req.body, 
+        name: normalizedName,
+        organizationId: user.organizationId  // Link client to organization
+      });
       const client = await storage.createClient(data);
       
       await storage.createAuditLog({
@@ -1801,6 +1891,30 @@ export async function registerRoutes(
 
   app.post("/api/departments", requireSupervisorOrAbove, async (req, res) => {
     try {
+      const { clientId } = req.body;
+      if (!clientId) {
+        return res.status(400).json({ error: "Client ID is required" });
+      }
+
+      // Get user's organization and check entitlements for SRD department limit
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+
+      const subscription = await storage.getSubscription(user.organizationId);
+      const planName = (subscription?.planName || "starter") as SubscriptionPlan;
+      const baseLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.starter;
+      const maxDepts = baseLimits.maxSrdDepartmentsPerClient;
+      
+      const deptsUsed = await storage.getDepartmentCountByClientAndOrganization(clientId, user.organizationId);
+      if (deptsUsed >= maxDepts) {
+        return res.status(403).json({ 
+          code: "PLAN_RESTRICTED", 
+          error: `Department limit reached for this client (${deptsUsed}/${maxDepts}). Upgrade your plan to add more SRD departments.` 
+        });
+      }
+
       const data = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment(data);
       

@@ -16,7 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS } from "@/lib/menu-config";
+import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS, isFeatureEnabled } from "@/lib/menu-config";
+import { useEntitlements } from "@/lib/entitlements-context";
+import { Lock } from "lucide-react";
 import { HorizontalNav } from "./HorizontalNav";
 import { useLayout } from "@/lib/layout-context";
 
@@ -314,6 +316,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
 function AppSidebar({ location, user, onLogout }: { location: string; user: any; onLogout: () => void }) {
   const isAdmin = user?.role === "super_admin";
+  const { entitlements } = useEntitlements();
   
   return (
     <Sidebar className="border-r border-border/40">
@@ -335,20 +338,47 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
             Main Menu
           </SidebarGroupLabel>
           <SidebarMenu>
-            {MAIN_NAV_ITEMS.map((item) => (
-              <SidebarMenuItem key={item.href}>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={location === item.href}
-                  className="transition-colors"
-                >
-                  <Link href={item.href}>
-                    <item.icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            {MAIN_NAV_ITEMS.map((item) => {
+              // Only gate features after entitlements are loaded
+              const enabled = !entitlements || isFeatureEnabled(item, entitlements);
+              
+              if (!enabled) {
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <SidebarMenuButton 
+                          className="opacity-50 cursor-not-allowed transition-colors"
+                          disabled
+                        >
+                          <item.icon className="h-4 w-4" />
+                          <span className="flex-1">{item.label}</span>
+                          <Lock className="h-3 w-3 text-muted-foreground" />
+                        </SidebarMenuButton>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        <p>Upgrade to unlock this feature</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </SidebarMenuItem>
+                );
+              }
+              
+              return (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={location === item.href}
+                    className="transition-colors"
+                  >
+                    <Link href={item.href}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
           </SidebarMenu>
         </SidebarGroup>
         

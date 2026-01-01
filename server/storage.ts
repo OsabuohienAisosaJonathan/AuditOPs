@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, purchaseItemEvents, subscriptions,
+  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, purchaseItemEvents, subscriptions, organizations,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -36,7 +36,8 @@ import {
   type SrdTransfer, type InsertSrdTransfer,
   type OrganizationSettings, type InsertOrganizationSettings,
   type PurchaseItemEvent, type InsertPurchaseItemEvent,
-  type Subscription, type InsertSubscription
+  type Subscription, type InsertSubscription,
+  type Organization, type InsertOrganization
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -334,10 +335,20 @@ export interface IStorage {
   deletePurchaseItemEvent(id: string): Promise<boolean>;
 
   // Subscriptions
-  getSubscription(tenantId: string): Promise<Subscription | undefined>;
+  getSubscription(organizationId: string): Promise<Subscription | undefined>;
   getSubscriptions(): Promise<Subscription[]>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, subscription: Partial<InsertSubscription>): Promise<Subscription | undefined>;
+
+  // Organizations
+  getOrganization(id: string): Promise<Organization | undefined>;
+  createOrganization(org: InsertOrganization): Promise<Organization>;
+  updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined>;
+  getClientCountByOrganization(organizationId: string): Promise<number>;
+  getDepartmentCountByClientAndOrganization(clientId: string, organizationId: string): Promise<number>;
+  
+  // Bootstrap (transactional)
+  bootstrapOrganizationWithOwner(orgData: InsertOrganization, userData: InsertUser): Promise<{ organization: Organization; user: User; subscription: Subscription }>;
 }
 
 export class DbStorage implements IStorage {
@@ -2430,8 +2441,8 @@ export class DbStorage implements IStorage {
   }
 
   // Subscriptions
-  async getSubscription(tenantId: string): Promise<Subscription | undefined> {
-    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.tenantId, tenantId));
+  async getSubscription(organizationId: string): Promise<Subscription | undefined> {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.organizationId, organizationId));
     return sub;
   }
 
@@ -2450,6 +2461,71 @@ export class DbStorage implements IStorage {
       .where(eq(subscriptions.id, id))
       .returning();
     return updated;
+  }
+
+  // Organizations
+  async getOrganization(id: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org;
+  }
+
+  async createOrganization(org: InsertOrganization): Promise<Organization> {
+    const [created] = await db.insert(organizations).values(org).returning();
+    return created;
+  }
+
+  async updateOrganization(id: string, updateData: Partial<InsertOrganization>): Promise<Organization | undefined> {
+    const [updated] = await db.update(organizations)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getClientCountByOrganization(organizationId: string): Promise<number> {
+    const result = await db.select({ count: count() })
+      .from(clients)
+      .where(eq(clients.organizationId, organizationId));
+    return result[0]?.count ?? 0;
+  }
+
+  async getDepartmentCountByClientAndOrganization(clientId: string, organizationId: string): Promise<number> {
+    const result = await db.select({ count: count() })
+      .from(departments)
+      .where(and(
+        eq(departments.clientId, clientId),
+        eq(departments.status, 'active')
+      ));
+    return result[0]?.count ?? 0;
+  }
+
+  async bootstrapOrganizationWithOwner(
+    orgData: InsertOrganization, 
+    userData: InsertUser
+  ): Promise<{ organization: Organization; user: User; subscription: Subscription }> {
+    return await db.transaction(async (tx) => {
+      // Create organization
+      const [organization] = await tx.insert(organizations).values(orgData).returning();
+      
+      // Create user linked to organization
+      const [user] = await tx.insert(users).values({
+        ...userData,
+        organizationId: organization.id,
+        organizationRole: "owner",
+      }).returning();
+      
+      // Create starter subscription for the organization
+      const [subscription] = await tx.insert(subscriptions).values({
+        organizationId: organization.id,
+        planName: "starter",
+        billingPeriod: "monthly",
+        slotsPurchased: 1,
+        status: "trial",
+        startDate: new Date(),
+      }).returning();
+      
+      return { organization, user, subscription };
+    });
   }
 }
 
