@@ -93,9 +93,8 @@ export default function Home() {
       <nav className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <img src={logoImage} alt="MiAuditOps" className="h-10 object-contain" />
-              <span className="font-display font-bold text-xl hidden sm:block">MiAuditOps</span>
+            <div className="flex items-center">
+              <img src={logoImage} alt="MiAuditOps" className="h-[4rem] object-contain" />
             </div>
             <div className="hidden md:flex items-center gap-6">
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-features">Features</a>
