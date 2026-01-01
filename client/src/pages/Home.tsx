@@ -25,7 +25,7 @@ import {
   BarChart3,
   FileBarChart
 } from "lucide-react";
-import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
+import logoImage from "@/assets/miauditops-logo.jpeg";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {

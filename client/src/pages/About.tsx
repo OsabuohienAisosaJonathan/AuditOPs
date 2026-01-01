@@ -17,7 +17,7 @@ import {
   Wine,
   Hotel
 } from "lucide-react";
-import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
+import logoImage from "@/assets/miauditops-logo.jpeg";
 
 export default function About() {
   const [, setLocation] = useLocation();

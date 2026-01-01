@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Bell, Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
-import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
+import logoImage from "@/assets/miauditops-logo.jpeg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { useState, useEffect } from "react";
@@ -302,7 +302,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return stored !== "true";
   });
   
-  if (location === "/" || location === "/setup") return <>{children}</>;
+  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup"];
+  if (publicRoutes.includes(location)) return <>{children}</>;
   
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -317,17 +318,15 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
   return (
     <Sidebar className="border-r border-border/40">
       <SidebarHeader className="border-b border-border/40 px-4 py-4">
-        <div className="flex items-center gap-3">
-          <img 
-            src={logoImage}
-            alt="Miemploya Logo" 
-            className="h-10 w-10 rounded-lg object-cover"
-          />
-          <div>
-            <h1 className="font-bold text-lg tracking-tight text-primary">Miemploya</h1>
-            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">AuditOps</p>
+        <Link href="/dashboard">
+          <div className="bg-white rounded-xl p-2 shadow-sm">
+            <img 
+              src={logoImage}
+              alt="MiAuditOps Logo" 
+              className="h-10 object-contain"
+            />
           </div>
-        </div>
+        </Link>
       </SidebarHeader>
       
       <SidebarContent className="px-2">

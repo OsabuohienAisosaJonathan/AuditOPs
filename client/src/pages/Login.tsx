@@ -6,7 +6,7 @@ import { useLocation } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
+import logoImage from "@/assets/miauditops-logo.jpeg";
 
 export default function Login() {
   const [, setLocation] = useLocation();
