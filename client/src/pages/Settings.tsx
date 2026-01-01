@@ -20,7 +20,6 @@ export default function Settings() {
   const { currency, setCurrency, options } = useCurrency();
   const queryClient = useQueryClient();
   
-  const [companyName, setCompanyName] = useState("");
   const [address, setAddress] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -33,7 +32,6 @@ export default function Settings() {
   
   useEffect(() => {
     if (orgSettings) {
-      setCompanyName(orgSettings.companyName || "");
       setAddress(orgSettings.address || "");
       setEmail(orgSettings.email || "");
       setPhone(orgSettings.phone || "");
@@ -54,7 +52,7 @@ export default function Settings() {
   });
   
   const handleSave = () => {
-    updateMutation.mutate({ companyName, address, email, phone });
+    updateMutation.mutate({ address, email, phone });
   };
   
   const handleFieldChange = (setter: (val: string) => void) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -106,16 +104,6 @@ export default function Settings() {
               ) : (
                 <>
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="company-name">Company Name</Label>
-                      <Input 
-                        id="company-name"
-                        value={companyName}
-                        onChange={handleFieldChange(setCompanyName)}
-                        placeholder="Enter company name"
-                        data-testid="input-company-name"
-                      />
-                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="company-email">Email</Label>
                       <Input 

@@ -18,6 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, eachDayOfInterval, isWithinInterval, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/lib/client-context";
+import { useCurrency } from "@/lib/currency-context";
+import { organizationSettingsApi } from "@/lib/api";
 
 const REPORT_TYPES = [
   { value: "daily", label: "Daily Audit Report" },
@@ -124,6 +126,12 @@ export default function Reports() {
     queryKey: ["stock-movements-report", clientId],
     queryFn: () => stockMovementsApi.getAll({ clientId }),
     enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: orgSettings } = useQuery({
+    queryKey: ["organization-settings"],
+    queryFn: organizationSettingsApi.get,
+    staleTime: 1000 * 60 * 5,
   });
 
   const dataLoaded = !salesLoading && !exceptionsLoading && !stockLoading && allSalesData !== undefined;
@@ -439,7 +447,7 @@ export default function Reports() {
     const sortedDepts = [...deptComparison].sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance));
     sortedDepts.slice(0, 3).forEach(d => {
       if (Math.abs(d.variance) > 0) {
-        topVarianceDrivers.push(`${d.departmentName} (${formatCurrency(d.variance)})`);
+        topVarianceDrivers.push(`${d.departmentName} (${formatMoney(d.variance)})`);
       }
     });
     
@@ -498,15 +506,15 @@ export default function Reports() {
     
     csvContent += "=== SUMMARY METRICS ===\n";
     csvContent += "Metric,Value\n";
-    csvContent += `Total Sales (System),${formatCurrency(metrics.totalSystemSales)}\n`;
-    csvContent += `Total Declared,${formatCurrency(metrics.totalDeclared)}\n`;
-    csvContent += `Variance,${formatCurrency(metrics.variance)}\n`;
+    csvContent += `Total Sales (System),${formatMoney(metrics.totalSystemSales)}\n`;
+    csvContent += `Total Declared,${formatMoney(metrics.totalDeclared)}\n`;
+    csvContent += `Variance,${formatMoney(metrics.variance)}\n`;
     csvContent += `Variance %,${metrics.variancePercent.toFixed(2)}%\n`;
-    csvContent += `Cash,${formatCurrency(metrics.totalCash)}\n`;
-    csvContent += `POS,${formatCurrency(metrics.totalPos)}\n`;
-    csvContent += `Transfer,${formatCurrency(metrics.totalTransfer)}\n`;
-    csvContent += `Stock Variance,${formatCurrency(metrics.stockVariance)}\n`;
-    csvContent += `Waste + Write-off,${formatCurrency(metrics.wasteTotal + metrics.writeOffTotal)}\n`;
+    csvContent += `Cash,${formatMoney(metrics.totalCash)}\n`;
+    csvContent += `POS,${formatMoney(metrics.totalPos)}\n`;
+    csvContent += `Transfer,${formatMoney(metrics.totalTransfer)}\n`;
+    csvContent += `Stock Variance,${formatMoney(metrics.stockVariance)}\n`;
+    csvContent += `Waste + Write-off,${formatMoney(metrics.wasteTotal + metrics.writeOffTotal)}\n`;
     csvContent += `Compliance Score,${metrics.complianceScore.toFixed(0)} (${metrics.complianceBand})\n`;
     csvContent += `Exceptions (Open/Investigating/Resolved/Closed),${metrics.exceptionsOpen}/${metrics.exceptionsInvestigating}/${metrics.exceptionsResolved}/${metrics.exceptionsClosed}\n\n`;
     
@@ -547,9 +555,7 @@ export default function Reports() {
     toast.success("Excel/CSV exported");
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(value);
-  };
+  const { formatMoney } = useCurrency();
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -780,8 +786,13 @@ export default function Reports() {
                       <div className="text-right text-sm">
                         <div className="font-semibold text-blue-900">Miemploya AuditOps</div>
                         <div className="text-gray-500">Audit Excellence Platform</div>
+                        {orgSettings?.email && <div className="text-gray-500 mt-1">{orgSettings.email}</div>}
+                        {orgSettings?.phone && <div className="text-gray-500">{orgSettings.phone}</div>}
                       </div>
                     </div>
+                    {orgSettings?.address && (
+                      <div className="text-sm text-gray-500 mt-2">{orgSettings.address}</div>
+                    )}
                     <div className="grid grid-cols-3 gap-4 mt-6 text-sm bg-gray-50 p-4 rounded">
                       <div><span className="text-gray-500">Period:</span> <span className="font-medium">{reportData.period.label}</span></div>
                       <div><span className="text-gray-500">Date Range:</span> <span className="font-medium">{reportData.period.start} to {reportData.period.end}</span></div>
@@ -794,7 +805,7 @@ export default function Reports() {
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
                       <h3 className="font-bold text-lg text-blue-900 mb-3">Executive Summary</h3>
                       <p className="text-gray-700">
-                        System vs Declared variance is <span className="font-bold">{formatCurrency(reportData.metrics.variance)}</span> ({reportData.metrics.variancePercent.toFixed(2)}%).
+                        System vs Declared variance is <span className="font-bold">{formatMoney(reportData.metrics.variance)}</span> ({reportData.metrics.variancePercent.toFixed(2)}%).
                         {reportData.topVarianceDrivers.length > 0 && (
                           <> Primary drivers: {reportData.topVarianceDrivers.join(", ")}.</>
                         )}
@@ -828,17 +839,17 @@ export default function Reports() {
                       <div className="grid grid-cols-4 gap-4">
                         <MetricCard 
                           label="Total Sales (System)" 
-                          value={formatCurrency(reportData.metrics.totalSystemSales)} 
+                          value={formatMoney(reportData.metrics.totalSystemSales)} 
                           icon={<DollarSign className="h-4 w-4" />}
                         />
                         <MetricCard 
                           label="Total Declared" 
-                          value={formatCurrency(reportData.metrics.totalDeclared)} 
+                          value={formatMoney(reportData.metrics.totalDeclared)} 
                           icon={<DollarSign className="h-4 w-4" />}
                         />
                         <MetricCard 
                           label="Variance" 
-                          value={formatCurrency(reportData.metrics.variance)} 
+                          value={formatMoney(reportData.metrics.variance)} 
                           subValue={`${reportData.metrics.variancePercent.toFixed(2)}%`}
                           icon={reportData.metrics.variance >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
                           variant={Math.abs(reportData.metrics.variancePercent) > 5 ? "critical" : Math.abs(reportData.metrics.variancePercent) > 2 ? "warning" : "success"}
@@ -854,29 +865,29 @@ export default function Reports() {
                       <div className="grid grid-cols-4 gap-4 mt-4">
                         <MetricCard 
                           label="POS" 
-                          value={formatCurrency(reportData.metrics.totalPos)} 
+                          value={formatMoney(reportData.metrics.totalPos)} 
                           icon={<DollarSign className="h-4 w-4" />}
                         />
                         <MetricCard 
                           label="Transfer" 
-                          value={formatCurrency(reportData.metrics.totalTransfer)} 
+                          value={formatMoney(reportData.metrics.totalTransfer)} 
                           icon={<DollarSign className="h-4 w-4" />}
                         />
                         <MetricCard 
                           label="Cash" 
-                          value={formatCurrency(reportData.metrics.totalCash)} 
+                          value={formatMoney(reportData.metrics.totalCash)} 
                           icon={<DollarSign className="h-4 w-4" />}
                         />
                         <MetricCard 
                           label="Stock Variance" 
-                          value={formatCurrency(reportData.metrics.stockVariance)} 
+                          value={formatMoney(reportData.metrics.stockVariance)} 
                           icon={<Package className="h-4 w-4" />}
                         />
                       </div>
                       <div className="grid grid-cols-4 gap-4 mt-4">
                         <MetricCard 
                           label="Waste + Write-off" 
-                          value={formatCurrency(reportData.metrics.wasteTotal + reportData.metrics.writeOffTotal)} 
+                          value={formatMoney(reportData.metrics.wasteTotal + reportData.metrics.writeOffTotal)} 
                           icon={<AlertTriangle className="h-4 w-4" />}
                         />
                         <MetricCard 
@@ -915,14 +926,14 @@ export default function Reports() {
                           {reportData.salesByDepartment.map((d: any) => (
                             <TableRow key={d.departmentId}>
                               <TableCell className="font-medium">{d.departmentName}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.systemSales)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.systemSales)}</TableCell>
                               <TableCell className="text-right">{d.percentOfTotal.toFixed(1)}%</TableCell>
                               <TableCell className="text-right">{d.transactions}</TableCell>
                             </TableRow>
                           ))}
                           <TableRow className="font-bold bg-gray-50">
                             <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.salesByDepartment.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.salesByDepartment.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
                             <TableCell className="text-right">100%</TableCell>
                             <TableCell className="text-right">{reportData.salesByDepartment.reduce((s: number, d: any) => s + d.transactions, 0)}</TableCell>
                           </TableRow>
@@ -946,10 +957,10 @@ export default function Reports() {
                         </TableHeader>
                         <TableBody>
                           <TableRow>
-                            <TableCell>{formatCurrency(reportData.metrics.totalPos)}</TableCell>
-                            <TableCell>{formatCurrency(reportData.metrics.totalTransfer)}</TableCell>
-                            <TableCell>{formatCurrency(reportData.metrics.totalCash)}</TableCell>
-                            <TableCell className="font-bold">{formatCurrency(reportData.metrics.totalDeclared)}</TableCell>
+                            <TableCell>{formatMoney(reportData.metrics.totalPos)}</TableCell>
+                            <TableCell>{formatMoney(reportData.metrics.totalTransfer)}</TableCell>
+                            <TableCell>{formatMoney(reportData.metrics.totalCash)}</TableCell>
+                            <TableCell className="font-bold">{formatMoney(reportData.metrics.totalDeclared)}</TableCell>
                           </TableRow>
                         </TableBody>
                       </Table>
@@ -974,18 +985,18 @@ export default function Reports() {
                           {reportData.paymentMatrix.map((d: any) => (
                             <TableRow key={d.departmentId}>
                               <TableCell className="font-medium">{d.departmentName}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.pos)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.transfer)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.cash)}</TableCell>
-                              <TableCell className="text-right font-bold">{formatCurrency(d.total)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.pos)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.transfer)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.cash)}</TableCell>
+                              <TableCell className="text-right font-bold">{formatMoney(d.total)}</TableCell>
                             </TableRow>
                           ))}
                           <TableRow className="font-bold bg-gray-50">
                             <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.pos, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.transfer, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.cash, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.total, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.pos, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.transfer, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.cash, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.paymentMatrix.reduce((s: number, d: any) => s + d.total, 0))}</TableCell>
                           </TableRow>
                         </TableBody>
                       </Table>
@@ -1008,10 +1019,10 @@ export default function Reports() {
                         </TableHeader>
                         <TableBody>
                           <TableRow>
-                            <TableCell className="font-medium">{formatCurrency(reportData.metrics.totalSystemSales)}</TableCell>
-                            <TableCell>{formatCurrency(reportData.metrics.totalDeclared)}</TableCell>
+                            <TableCell className="font-medium">{formatMoney(reportData.metrics.totalSystemSales)}</TableCell>
+                            <TableCell>{formatMoney(reportData.metrics.totalDeclared)}</TableCell>
                             <TableCell className={cn("font-bold", reportData.metrics.variance < 0 ? "text-red-600" : "text-green-600")}>
-                              {formatCurrency(reportData.metrics.variance)}
+                              {formatMoney(reportData.metrics.variance)}
                             </TableCell>
                             <TableCell className={cn("font-bold", reportData.metrics.variance < 0 ? "text-red-600" : "text-green-600")}>
                               {reportData.metrics.variancePercent.toFixed(2)}%
@@ -1049,17 +1060,17 @@ export default function Reports() {
                           {reportData.departmentComparison.map((d: any) => (
                             <TableRow key={d.departmentId}>
                               <TableCell className="font-medium">{d.departmentName}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.systemSales)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.declaredSales)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.systemSales)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.declaredSales)}</TableCell>
                               <TableCell className={cn("text-right font-medium", d.variance < 0 ? "text-red-600" : "text-green-600")}>
-                                {formatCurrency(d.variance)}
+                                {formatMoney(d.variance)}
                               </TableCell>
                               <TableCell className={cn("text-right", d.variance < 0 ? "text-red-600" : "text-green-600")}>
                                 {d.variancePercent.toFixed(2)}%
                               </TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.cash)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.pos)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.transfer)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.cash)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.pos)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.transfer)}</TableCell>
                               <TableCell>
                                 <Badge variant={d.status === "OK" ? "default" : d.status === "Review" ? "secondary" : "destructive"}>
                                   {d.status}
@@ -1069,13 +1080,13 @@ export default function Reports() {
                           ))}
                           <TableRow className="font-bold bg-gray-50">
                             <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.departmentComparison.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.departmentComparison.reduce((s: number, d: any) => s + d.declaredSales, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.departmentComparison.reduce((s: number, d: any) => s + d.variance, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.declaredSales, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.variance, 0))}</TableCell>
                             <TableCell></TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.departmentComparison.reduce((s: number, d: any) => s + d.cash, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.departmentComparison.reduce((s: number, d: any) => s + d.pos, 0))}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.departmentComparison.reduce((s: number, d: any) => s + d.transfer, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.cash, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.pos, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.transfer, 0))}</TableCell>
                             <TableCell></TableCell>
                           </TableRow>
                         </TableBody>
@@ -1108,18 +1119,18 @@ export default function Reports() {
                             {reportData.dailyBreakdown.map((d: any) => (
                               <TableRow key={d.date}>
                                 <TableCell className="font-medium whitespace-nowrap">{d.displayDate}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.systemSales)}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.declared)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.systemSales)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.declared)}</TableCell>
                                 <TableCell className={cn("text-right", d.variance < 0 ? "text-red-600" : "text-green-600")}>
-                                  {formatCurrency(d.variance)}
+                                  {formatMoney(d.variance)}
                                 </TableCell>
                                 <TableCell className={cn("text-right", d.variance < 0 ? "text-red-600" : "text-green-600")}>
                                   {d.variancePercent.toFixed(1)}%
                                 </TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.pos)}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.transfer)}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.cash)}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.stockVariance)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.pos)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.transfer)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.cash)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.stockVariance)}</TableCell>
                                 <TableCell className="text-right">{d.exceptionsRaised}</TableCell>
                                 <TableCell className="text-center text-xs">
                                   {d.outcomeTrue}/{d.outcomeFalse}/{d.outcomeMismatched}/{d.outcomePending}
@@ -1128,14 +1139,14 @@ export default function Reports() {
                             ))}
                             <TableRow className="font-bold bg-blue-50">
                               <TableCell>{reportType === "weekly" ? "WEEKLY" : "MONTHLY"} TOTAL</TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.declared, 0))}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.variance, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.declared, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.variance, 0))}</TableCell>
                               <TableCell></TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.pos, 0))}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.transfer, 0))}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.cash, 0))}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.stockVariance, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.pos, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.transfer, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.cash, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.stockVariance, 0))}</TableCell>
                               <TableCell className="text-right">{reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.exceptionsRaised, 0)}</TableCell>
                               <TableCell className="text-center text-xs">
                                 {reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.outcomeTrue, 0)}/
@@ -1169,14 +1180,14 @@ export default function Reports() {
                               <TableCell className="font-medium">{m.label}</TableCell>
                               <TableCell className="text-right">{m.count}</TableCell>
                               <TableCell className="text-right">{m.qtyTotal.toFixed(2)}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(m.valueTotal)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(m.valueTotal)}</TableCell>
                             </TableRow>
                           ))}
                           <TableRow className="font-bold bg-gray-50">
                             <TableCell>TOTAL</TableCell>
                             <TableCell className="text-right">{reportData.stockMovementsSummary.reduce((s: number, m: any) => s + m.count, 0)}</TableCell>
                             <TableCell className="text-right">{reportData.stockMovementsSummary.reduce((s: number, m: any) => s + m.qtyTotal, 0).toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(reportData.stockMovementsSummary.reduce((s: number, m: any) => s + m.valueTotal, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.stockMovementsSummary.reduce((s: number, m: any) => s + m.valueTotal, 0))}</TableCell>
                           </TableRow>
                         </TableBody>
                       </Table>
@@ -1247,10 +1258,10 @@ export default function Reports() {
                             <li>{reportData.metrics.exceptionsOpen} open exception(s) pending investigation</li>
                           )}
                           {reportData.metrics.stockVariance < 0 && (
-                            <li>Negative stock variance of {formatCurrency(reportData.metrics.stockVariance)} detected</li>
+                            <li>Negative stock variance of {formatMoney(reportData.metrics.stockVariance)} detected</li>
                           )}
                           {(reportData.metrics.wasteTotal + reportData.metrics.writeOffTotal) > 0 && (
-                            <li>Waste and write-offs total: {formatCurrency(reportData.metrics.wasteTotal + reportData.metrics.writeOffTotal)}</li>
+                            <li>Waste and write-offs total: {formatMoney(reportData.metrics.wasteTotal + reportData.metrics.writeOffTotal)}</li>
                           )}
                         </ul>
                         
