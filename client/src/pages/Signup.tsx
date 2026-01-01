@@ -132,7 +132,7 @@ export default function Signup() {
                 <img 
                   src={logoDarkImage} 
                   alt="MiAuditOps" 
-                  className="h-14 mx-auto object-contain cursor-pointer" 
+                  className="h-24 mx-auto object-contain cursor-pointer" 
                 />
               </Link>
               <h1 className="text-2xl font-display font-bold text-foreground">Create your account</h1>
