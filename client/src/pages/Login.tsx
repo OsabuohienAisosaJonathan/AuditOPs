@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Mail } from "lucide-react";
-import logoImage from "@/assets/miauditops-logo.jpeg";
+import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -85,48 +85,77 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
-      <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-xl border border-border shadow-lg">
+    <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
+      <div 
+        className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
+        style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
+      >
         <div className="text-center space-y-2">
-          <div className="mx-auto mb-4">
-            <img src={logoImage} alt="MiAuditOps" className="h-32 mx-auto object-contain" />
-          </div>
-          <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>
+          <Link href="/" className="block mx-auto mb-4">
+            <img 
+              src={logoDarkImage} 
+              alt="MiAuditOps" 
+              className="h-24 mx-auto object-contain cursor-pointer" 
+              style={{ maxHeight: '100px' }}
+            />
+          </Link>
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>Enter your credentials to access the workspace</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="username">Email or Username</Label>
+            <Label htmlFor="username" style={{ color: 'rgba(255,255,255,0.75)' }}>Email or Username</Label>
             <Input 
               id="username" 
               name="username"
               type="text" 
               placeholder="you@example.com" 
-              className="h-10" 
+              className="h-10 focus:ring-2"
+              style={{ 
+                backgroundColor: '#0F0F14', 
+                borderColor: 'rgba(255,255,255,0.12)', 
+                color: '#FFFFFF',
+              }}
               required
               data-testid="input-username"
             />
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">Forgot password?</Link>
+              <Label htmlFor="password" style={{ color: 'rgba(255,255,255,0.75)' }}>Password</Label>
+              <Link 
+                href="/forgot-password" 
+                className="text-xs font-medium hover:underline"
+                style={{ color: '#F5C542' }}
+              >
+                Forgot password?
+              </Link>
             </div>
             <Input 
               id="password" 
               name="password"
               type="password" 
-              className="h-10" 
+              className="h-10 focus:ring-2"
+              style={{ 
+                backgroundColor: '#0F0F14', 
+                borderColor: 'rgba(255,255,255,0.12)', 
+                color: '#FFFFFF',
+              }}
               required
               data-testid="input-password"
             />
           </div>
           
           <div className="flex items-center space-x-2">
-            <Checkbox id="remember" data-testid="checkbox-remember" />
+            <Checkbox 
+              id="remember" 
+              data-testid="checkbox-remember"
+              className="border-white/25 data-[state=checked]:bg-[#F5C542] data-[state=checked]:border-[#F5C542]"
+            />
             <label
               htmlFor="remember"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              style={{ color: 'rgba(255,255,255,0.55)' }}
             >
               Remember me
             </label>
@@ -134,22 +163,26 @@ export default function Login() {
 
           <Button 
             type="submit" 
-            className="w-full h-10 font-medium" 
+            className="w-full h-10 font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" 
             disabled={isLoading}
+            style={{ backgroundColor: '#F5C542', color: '#000000' }}
             data-testid="button-login"
           >
             {isLoading ? "Signing in..." : "Sign In"}
           </Button>
 
           {unverifiedEmail && (
-            <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div 
+              className="p-4 rounded-lg border"
+              style={{ backgroundColor: 'rgba(245,197,66,0.1)', borderColor: 'rgba(245,197,66,0.3)' }}
+            >
               <div className="flex items-center gap-2 mb-2">
-                <Mail className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                <Mail className="h-4 w-4" style={{ color: '#F5C542' }} />
+                <span className="text-sm font-medium" style={{ color: '#F5C542' }}>
                   Email not verified
                 </span>
               </div>
-              <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+              <p className="text-sm mb-3" style={{ color: 'rgba(255,255,255,0.75)' }}>
                 Please verify your email address to continue.
               </p>
               <Button
@@ -158,7 +191,8 @@ export default function Login() {
                 size="sm"
                 onClick={handleResendVerification}
                 disabled={isResending}
-                className="w-full gap-2"
+                className="w-full gap-2 hover:bg-white/10"
+                style={{ borderColor: 'rgba(255,255,255,0.25)', color: '#FFFFFF' }}
                 data-testid="button-resend-verification"
               >
                 {isResending ? (
@@ -178,13 +212,18 @@ export default function Login() {
         </form>
 
         <div className="text-center space-y-2">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Don't have an account?{" "}
-            <Link href="/signup" className="font-medium text-primary hover:underline" data-testid="link-signup">
+            <Link 
+              href="/signup" 
+              className="font-medium hover:underline" 
+              style={{ color: '#F5C542' }}
+              data-testid="link-signup"
+            >
               Sign up
             </Link>
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
             &copy; 2025 Miemploya Audit Services. All rights reserved.
           </p>
         </div>

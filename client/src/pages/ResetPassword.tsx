@@ -5,7 +5,7 @@ import { useLocation, Link } from "wouter";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, XCircle } from "lucide-react";
-import logoImage from "@/assets/miauditops-logo.jpeg";
+import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
 
 export default function ResetPassword() {
   const [, setLocation] = useLocation();
@@ -83,23 +83,38 @@ export default function ResetPassword() {
 
   if (resetSuccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
-        <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-xl border border-border shadow-lg">
+      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
+        <div 
+          className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
+          style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
+        >
           <div className="text-center space-y-4">
-            <div className="mx-auto mb-4">
-              <img src={logoImage} alt="MiAuditOps" className="h-24 mx-auto object-contain" />
+            <Link href="/" className="block mx-auto mb-4">
+              <img 
+                src={logoDarkImage} 
+                alt="MiAuditOps" 
+                className="h-24 mx-auto object-contain cursor-pointer" 
+                style={{ maxHeight: '100px' }}
+              />
+            </Link>
+            <div 
+              className="mx-auto w-16 h-16 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(74,222,128,0.15)' }}
+            >
+              <CheckCircle2 className="h-8 w-8" style={{ color: '#4ADE80' }} />
             </div>
-            <div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-              <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
-            </div>
-            <h2 className="text-2xl font-bold">Password Reset Complete</h2>
-            <p className="text-muted-foreground">
+            <h2 className="text-2xl font-bold" style={{ color: '#FFFFFF' }}>Password Reset Complete</h2>
+            <p style={{ color: 'rgba(255,255,255,0.75)' }}>
               Your password has been successfully reset. You can now sign in with your new password.
             </p>
           </div>
           <div className="pt-4">
             <Link href="/login">
-              <Button className="w-full" data-testid="button-go-to-login">
+              <Button 
+                className="w-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ backgroundColor: '#F5C542', color: '#000000' }}
+                data-testid="button-go-to-login"
+              >
                 Sign In
               </Button>
             </Link>
@@ -111,23 +126,38 @@ export default function ResetPassword() {
 
   if (!token || error === "Invalid or missing reset token") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
-        <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-xl border border-border shadow-lg">
+      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
+        <div 
+          className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
+          style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
+        >
           <div className="text-center space-y-4">
-            <div className="mx-auto mb-4">
-              <img src={logoImage} alt="MiAuditOps" className="h-24 mx-auto object-contain" />
+            <Link href="/" className="block mx-auto mb-4">
+              <img 
+                src={logoDarkImage} 
+                alt="MiAuditOps" 
+                className="h-24 mx-auto object-contain cursor-pointer" 
+                style={{ maxHeight: '100px' }}
+              />
+            </Link>
+            <div 
+              className="mx-auto w-16 h-16 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}
+            >
+              <XCircle className="h-8 w-8" style={{ color: '#EF4444' }} />
             </div>
-            <div className="mx-auto w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-              <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
-            </div>
-            <h2 className="text-2xl font-bold">Invalid Reset Link</h2>
-            <p className="text-muted-foreground">
+            <h2 className="text-2xl font-bold" style={{ color: '#FFFFFF' }}>Invalid Reset Link</h2>
+            <p style={{ color: 'rgba(255,255,255,0.75)' }}>
               This password reset link is invalid or has expired. Please request a new one.
             </p>
           </div>
           <div className="pt-4">
             <Link href="/forgot-password">
-              <Button className="w-full" data-testid="button-request-new-link">
+              <Button 
+                className="w-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ backgroundColor: '#F5C542', color: '#000000' }}
+                data-testid="button-request-new-link"
+              >
                 Request New Reset Link
               </Button>
             </Link>
@@ -138,40 +168,58 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
-      <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-xl border border-border shadow-lg">
+    <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
+      <div 
+        className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
+        style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
+      >
         <div className="text-center space-y-2">
-          <div className="mx-auto mb-4">
-            <img src={logoImage} alt="MiAuditOps" className="h-24 mx-auto object-contain" />
-          </div>
-          <h2 className="text-2xl font-bold">Reset your password</h2>
-          <p className="text-sm text-muted-foreground">
+          <Link href="/" className="block mx-auto mb-4">
+            <img 
+              src={logoDarkImage} 
+              alt="MiAuditOps" 
+              className="h-24 mx-auto object-contain cursor-pointer" 
+              style={{ maxHeight: '100px' }}
+            />
+          </Link>
+          <h2 className="text-2xl font-bold" style={{ color: '#FFFFFF' }}>Reset your password</h2>
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Enter your new password below.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="password">New Password</Label>
+            <Label htmlFor="password" style={{ color: 'rgba(255,255,255,0.75)' }}>New Password</Label>
             <Input 
               id="password" 
               name="password"
               type="password" 
-              className="h-10" 
+              className="h-10 focus:ring-2"
+              style={{ 
+                backgroundColor: '#0F0F14', 
+                borderColor: 'rgba(255,255,255,0.12)', 
+                color: '#FFFFFF',
+              }}
               required
               minLength={8}
               data-testid="input-password"
             />
-            <p className="text-xs text-muted-foreground">Must be at least 8 characters</p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>Must be at least 8 characters</p>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm New Password</Label>
+            <Label htmlFor="confirmPassword" style={{ color: 'rgba(255,255,255,0.75)' }}>Confirm New Password</Label>
             <Input 
               id="confirmPassword" 
               name="confirmPassword"
               type="password" 
-              className="h-10" 
+              className="h-10 focus:ring-2"
+              style={{ 
+                backgroundColor: '#0F0F14', 
+                borderColor: 'rgba(255,255,255,0.12)', 
+                color: '#FFFFFF',
+              }}
               required
               minLength={8}
               data-testid="input-confirm-password"
@@ -179,15 +227,19 @@ export default function ResetPassword() {
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+            <div 
+              className="p-3 rounded-lg border text-sm"
+              style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444' }}
+            >
               {error}
             </div>
           )}
 
           <Button 
             type="submit" 
-            className="w-full h-10 font-medium" 
+            className="w-full h-10 font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" 
             disabled={isLoading}
+            style={{ backgroundColor: '#F5C542', color: '#000000' }}
             data-testid="button-reset-password"
           >
             {isLoading ? "Resetting..." : "Reset Password"}
@@ -196,7 +248,12 @@ export default function ResetPassword() {
 
         <div className="text-center">
           <Link href="/login">
-            <Button variant="link" className="text-sm text-muted-foreground hover:text-primary" data-testid="link-back-to-login">
+            <Button 
+              variant="link" 
+              className="text-sm"
+              style={{ color: 'rgba(255,255,255,0.55)' }}
+              data-testid="link-back-to-login"
+            >
               Back to Sign In
             </Button>
           </Link>
