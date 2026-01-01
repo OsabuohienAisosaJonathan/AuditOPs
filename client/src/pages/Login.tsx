@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -45,9 +45,8 @@ export default function Login() {
       <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-xl border border-border shadow-lg">
         <div className="text-center space-y-2">
           <div className="mx-auto mb-4">
-            <img src={logoImage} alt="Miemploya" className="h-16 mx-auto object-contain" />
+            <img src={logoImage} alt="MiAuditOps" className="h-32 mx-auto object-contain" />
           </div>
-          <h1 className="text-2xl font-display font-bold text-foreground">Sign in to AuditOps</h1>
           <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>
         </div>
 
@@ -99,8 +98,16 @@ export default function Login() {
           </Button>
         </form>
 
-        <div className="text-center text-xs text-muted-foreground">
-          &copy; 2025 Miemploya Audit Services. All rights reserved.
+        <div className="text-center space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <Link href="/signup" className="font-medium text-primary hover:underline" data-testid="link-signup">
+              Sign up
+            </Link>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            &copy; 2025 Miemploya Audit Services. All rights reserved.
+          </p>
         </div>
       </div>
     </div>
