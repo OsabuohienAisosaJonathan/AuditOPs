@@ -99,7 +99,7 @@ export default function Signup() {
         description: "Please check your email to verify your account.",
       });
       
-      setLocation("/login");
+      setLocation(`/check-email?email=${encodeURIComponent(formData.email)}`);
     } catch (error: any) {
       toast({
         variant: "destructive",

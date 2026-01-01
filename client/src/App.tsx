@@ -13,6 +13,8 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
+import CheckEmail from "@/pages/CheckEmail";
+import VerifyEmail from "@/pages/VerifyEmail";
 import About from "@/pages/About";
 import Contact from "@/pages/Contact";
 import Setup from "@/pages/Setup";
@@ -73,6 +75,8 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/signup" component={Signup} />
+        <Route path="/check-email" component={CheckEmail} />
+        <Route path="/verify-email" component={VerifyEmail} />
         <Route path="/about" component={About} />
         <Route path="/contact" component={Contact} />
         <Route path="/setup" component={Setup} />

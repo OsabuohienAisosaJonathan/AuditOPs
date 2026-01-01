@@ -61,6 +61,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Log email configuration status
+  const { logEmailConfigStatus } = await import('./email');
+  logEmailConfigStatus();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

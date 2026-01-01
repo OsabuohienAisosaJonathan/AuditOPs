@@ -334,6 +334,14 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Your account has been deactivated. Please contact your administrator." });
       }
 
+      if (!user.emailVerified) {
+        return res.status(403).json({ 
+          error: "Please verify your email address before logging in.",
+          code: "EMAIL_NOT_VERIFIED",
+          email: user.email,
+        });
+      }
+
       if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
         return res.status(403).json({ error: "Account is temporarily locked. Please try again later." });
       }
@@ -433,6 +441,171 @@ export async function registerRoutes(
     req.session.destroy(() => {
       res.json({ success: true });
     });
+  });
+
+  // ============== REGISTRATION & EMAIL VERIFICATION ==============
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { username, email, password, fullName, accountType, organizationName } = req.body;
+
+      if (!email || !password || !fullName || !organizationName) {
+        return res.status(400).json({ error: "Email, password, full name, and organization name are required" });
+      }
+
+      if (!isStrongPassword(password)) {
+        return res.status(400).json({ error: "Password must be at least 8 characters with uppercase, lowercase, and numbers" });
+      }
+
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "An account with this email already exists" });
+      }
+
+      const existingUsername = await storage.getUserByUsername(username || email);
+      if (existingUsername) {
+        return res.status(400).json({ error: "An account with this username already exists" });
+      }
+
+      const hashedPassword = await hash(password, 12);
+      const verificationToken = randomBytes(32).toString('hex');
+      const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      const { organization, user } = await storage.bootstrapOrganizationWithOwner(
+        {
+          name: organizationName,
+          type: accountType === "auditor" ? "auditor" : "company",
+          email,
+          currencyCode: "NGN",
+        },
+        {
+          username: username || email,
+          email,
+          password: hashedPassword,
+          fullName,
+          role: "super_admin",
+          status: "active",
+          mustChangePassword: false,
+          accessScope: { global: true },
+          emailVerified: false,
+          verificationToken,
+          verificationExpiry,
+        }
+      );
+
+      // Send verification email
+      const { sendVerificationEmail } = await import('./email');
+      const emailResult = await sendVerificationEmail(email, verificationToken, fullName, req);
+      
+      if (!emailResult.success) {
+        console.warn(`[Auth] Failed to send verification email to ${email}: ${emailResult.error}`);
+      }
+
+      await storage.createAdminActivityLog({
+        actorId: user.id,
+        targetUserId: user.id,
+        actionType: "user_registered",
+        afterState: { fullName, email, role: "super_admin", organizationId: organization.id },
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ 
+        success: true, 
+        message: "Account created. Please check your email to verify your account.",
+        emailSent: emailResult.success,
+      });
+    } catch (error: any) {
+      console.error('[Auth] Registration error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { token } = req.query;
+
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ error: "Verification token is required" });
+      }
+
+      const user = await storage.getUserByVerificationToken(token);
+      
+      if (!user) {
+        return res.status(400).json({ error: "Invalid or expired verification token" });
+      }
+
+      // Already verified - short circuit
+      if (user.emailVerified) {
+        return res.json({ success: true, message: "Email is already verified. You can log in.", alreadyVerified: true });
+      }
+
+      if (user.verificationExpiry && new Date(user.verificationExpiry) < new Date()) {
+        return res.status(400).json({ 
+          error: "Verification token has expired. Please request a new one.",
+          code: "TOKEN_EXPIRED",
+          email: user.email
+        });
+      }
+
+      await storage.updateUser(user.id, {
+        emailVerified: true,
+        verificationToken: null,
+        verificationExpiry: null,
+      });
+
+      await storage.createAuditLog({
+        userId: user.id,
+        action: "Email Verified",
+        entity: "User",
+        entityId: user.id,
+        details: "User verified their email address",
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ success: true, message: "Email verified successfully. You can now log in." });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/resend-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      
+      if (!user) {
+        // Don't reveal if user exists
+        return res.json({ success: true, message: "If an account exists with this email, a verification link will be sent." });
+      }
+
+      if (user.emailVerified) {
+        return res.status(400).json({ error: "Email is already verified" });
+      }
+
+      const verificationToken = randomBytes(32).toString('hex');
+      const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      await storage.updateUser(user.id, {
+        verificationToken,
+        verificationExpiry,
+      });
+
+      const { sendVerificationEmail } = await import('./email');
+      const emailResult = await sendVerificationEmail(email, verificationToken, user.fullName, req);
+
+      if (!emailResult.success) {
+        console.warn(`[Auth] Failed to resend verification email to ${email}: ${emailResult.error}`);
+        return res.status(500).json({ error: "Failed to send verification email. Please try again." });
+      }
+
+      res.json({ success: true, message: "Verification email sent. Please check your inbox." });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
   });
 
   app.get("/api/auth/me", requireAuth, async (req, res) => {

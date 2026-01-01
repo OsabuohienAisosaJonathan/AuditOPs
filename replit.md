@@ -103,6 +103,19 @@ The department system supports flexible inheritance:
 - Password requirements: 8+ characters, mixed case, numbers
 - Bootstrap flow for first super admin creation with optional secret key
 - Scope-based access control (users can be limited to specific clients/outlets)
+- **Email verification** required for new registrations
+
+### Email Configuration
+Email sending is powered by Resend (https://resend.com). Required environment variables:
+- `RESEND_API_KEY` (secret): Your Resend API key for sending transactional emails
+- `APP_URL` (optional): Base URL for email links (e.g., `https://yourdomain.com`). Falls back to request host if not set.
+
+Email features:
+- Verification emails on signup with 24-hour expiry
+- Resend verification option on login page and check-email page
+- Password reset emails (1-hour expiry)
+
+Note: Resend integration is configured manually (not via Replit connector). The API key is stored in Replit Secrets.
 
 ### Build System
 - Development: Vite dev server with HMR

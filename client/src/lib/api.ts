@@ -342,9 +342,14 @@ export interface DashboardSummary {
 const API_BASE = "/api";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  code?: string;
+  email?: string;
+  
+  constructor(public status: number, message: string, options?: { code?: string; email?: string }) {
     super(message);
     this.name = "ApiError";
+    this.code = options?.code;
+    this.email = options?.email;
   }
 }
 
@@ -385,7 +390,10 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
           }
       }
 
-      throw new ApiError(response.status, errorMessage);
+      throw new ApiError(response.status, errorMessage, { 
+        code: error.code, 
+        email: error.email 
+      });
     }
 
     const contentType = response.headers.get("content-type");

@@ -6,6 +6,7 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { RefreshCw, Mail } from "lucide-react";
 import logoImage from "@/assets/miauditops-logo.jpeg";
 
 export default function Login() {
@@ -13,10 +14,50 @@ export default function Login() {
   const { toast } = useToast();
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+
+  const handleResendVerification = async () => {
+    if (!unverifiedEmail) return;
+    
+    setIsResending(true);
+    try {
+      const response = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: unverifiedEmail }),
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: "Email sent!",
+          description: "Please check your inbox for the verification link.",
+        });
+        setUnverifiedEmail(null);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.error || "Failed to send verification email",
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
+    setUnverifiedEmail(null);
     
     const formData = new FormData(e.currentTarget);
     const username = formData.get("username") as string;
@@ -30,6 +71,9 @@ export default function Login() {
       });
       setLocation("/dashboard");
     } catch (error: any) {
+      if (error.code === "EMAIL_NOT_VERIFIED" && error.email) {
+        setUnverifiedEmail(error.email);
+      }
       toast({
         variant: "destructive",
         title: "Login failed",
@@ -96,6 +140,41 @@ export default function Login() {
           >
             {isLoading ? "Signing in..." : "Sign In"}
           </Button>
+
+          {unverifiedEmail && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Mail className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Email not verified
+                </span>
+              </div>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                Please verify your email address to continue.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleResendVerification}
+                disabled={isResending}
+                className="w-full gap-2"
+                data-testid="button-resend-verification"
+              >
+                {isResending ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4" />
+                    Resend Verification Email
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </form>
 
         <div className="text-center space-y-2">
