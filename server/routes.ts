@@ -5130,5 +5130,73 @@ export async function registerRoutes(
     }
   });
 
+  // ============== PURCHASE ITEM EVENTS REGISTER ==============
+  app.get("/api/clients/:clientId/purchase-item-events", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { srdId, itemId, dateFrom, dateTo } = req.query;
+      
+      const events = await storage.getPurchaseItemEvents({
+        clientId,
+        srdId: srdId as string | undefined,
+        itemId: itemId as string | undefined,
+        dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
+        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+      });
+      res.json(events);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/purchase-item-events", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const data = {
+        ...req.body,
+        clientId,
+        date: new Date(req.body.date),
+        createdBy: req.session.userId,
+      };
+      
+      const event = await storage.createPurchaseItemEvent(data);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created Purchase Event",
+        entity: "PurchaseItemEvent",
+        entityId: event.id,
+        details: `Item: ${req.body.itemId}, Qty: ${req.body.qty}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.status(201).json(event);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/purchase-item-events/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
+    try {
+      const deleted = await storage.deletePurchaseItemEvent(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Purchase event not found" });
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted Purchase Event",
+        entity: "PurchaseItemEvent",
+        entityId: req.params.id,
+        details: "",
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
