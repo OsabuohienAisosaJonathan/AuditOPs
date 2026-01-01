@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings,
+  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, purchaseItemEvents,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -34,7 +34,8 @@ import {
   type Surplus, type InsertSurplus,
   type SurplusHistory, type InsertSurplusHistory,
   type SrdTransfer, type InsertSrdTransfer,
-  type OrganizationSettings, type InsertOrganizationSettings
+  type OrganizationSettings, type InsertOrganizationSettings,
+  type PurchaseItemEvent, type InsertPurchaseItemEvent
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -325,6 +326,11 @@ export interface IStorage {
   createSrdTransfer(transfer: InsertSrdTransfer): Promise<SrdTransfer>;
   recallSrdTransfer(refId: string): Promise<boolean>;
   generateTransferRefId(clientId: string, date: Date): Promise<string>;
+
+  // Purchase Item Events (purchase register)
+  getPurchaseItemEvents(filters: { clientId: string; srdId?: string; itemId?: string; dateFrom?: Date; dateTo?: Date }): Promise<PurchaseItemEvent[]>;
+  createPurchaseItemEvent(event: InsertPurchaseItemEvent): Promise<PurchaseItemEvent>;
+  deletePurchaseItemEvent(id: string): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -2380,6 +2386,40 @@ export class DbStorage implements IStorage {
     
     const sequence = (result?.count || 0) + 1;
     return `TRF-${dateStr}-${sequence.toString().padStart(3, '0')}`;
+  }
+
+  // Purchase Item Events
+  async getPurchaseItemEvents(filters: { clientId: string; srdId?: string; itemId?: string; dateFrom?: Date; dateTo?: Date }): Promise<PurchaseItemEvent[]> {
+    let conditions = [eq(purchaseItemEvents.clientId, filters.clientId)];
+    
+    if (filters.srdId) {
+      conditions.push(eq(purchaseItemEvents.srdId, filters.srdId));
+    }
+    if (filters.itemId) {
+      conditions.push(eq(purchaseItemEvents.itemId, filters.itemId));
+    }
+    if (filters.dateFrom) {
+      conditions.push(gte(purchaseItemEvents.date, filters.dateFrom));
+    }
+    if (filters.dateTo) {
+      const endOfDay = new Date(filters.dateTo);
+      endOfDay.setHours(23, 59, 59, 999);
+      conditions.push(lte(purchaseItemEvents.date, endOfDay));
+    }
+    
+    return db.select().from(purchaseItemEvents)
+      .where(and(...conditions))
+      .orderBy(desc(purchaseItemEvents.date));
+  }
+
+  async createPurchaseItemEvent(event: InsertPurchaseItemEvent): Promise<PurchaseItemEvent> {
+    const [created] = await db.insert(purchaseItemEvents).values(event).returning();
+    return created;
+  }
+
+  async deletePurchaseItemEvent(id: string): Promise<boolean> {
+    const result = await db.delete(purchaseItemEvents).where(eq(purchaseItemEvents.id, id)).returning();
+    return result.length > 0;
   }
 }
 

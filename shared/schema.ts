@@ -695,6 +695,26 @@ export const insertSrdTransferSchema = createInsertSchema(srdTransfers).omit({ i
 });
 export const insertOrganizationSettingsSchema = createInsertSchema(organizationSettings).omit({ id: true, updatedAt: true });
 
+// Purchase Item Events - history/audit trail of all item purchases
+export const purchaseItemEvents = pgTable("purchase_item_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  srdId: varchar("srd_id").references(() => inventoryDepartments.id, { onDelete: "set null" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  qty: decimal("qty", { precision: 10, scale: 2 }).notNull(),
+  unitCostAtPurchase: decimal("unit_cost_at_purchase", { precision: 12, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  supplierName: text("supplier_name"),
+  invoiceNo: text("invoice_no"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertPurchaseItemEventSchema = createInsertSchema(purchaseItemEvents).omit({ id: true, createdAt: true, updatedAt: true });
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -772,3 +792,5 @@ export type InsertItemSerialEvent = z.infer<typeof insertItemSerialEventSchema>;
 export type ItemSerialEvent = typeof itemSerialEvents.$inferSelect;
 export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettingsSchema>;
 export type OrganizationSettings = typeof organizationSettings.$inferSelect;
+export type InsertPurchaseItemEvent = z.infer<typeof insertPurchaseItemEventSchema>;
+export type PurchaseItemEvent = typeof purchaseItemEvents.$inferSelect;

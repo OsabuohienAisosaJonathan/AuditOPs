@@ -1,0 +1,228 @@
+PROMPT TO PASTE (Purchases Register + “Record Items Purchases” page)
+
+TITLE: ADD “RECORD ITEMS PURCHASES” PAGE + PURCHASES REGISTER (WITHOUT DISTURBING SRD MAIN STORE LEDGER)
+
+GOAL (STRICT):
+Do NOT redesign, rename, or restructure the SRD Main Store ledger. Purchases already add correctly to SRD ledger — keep that exact behaviour. We are ONLY adding a purchase history/audit-trail feature and a navigation shortcut.
+
+A) NEW PAGE: “Record Items Purchases”
+
+Create a new page in the app for recording purchases called “Record Items Purchases”.
+
+This page must NOT invent a new purchase logic. It should reuse the same purchase flow/form that currently exists inside Inventory Management → Edit toggle → Update → Record purchase.
+
+Add a button on the new page:
+“Record Purchase” → opens the same modal/form (or navigates to the same component) used by inventory management.
+
+Add the same validations and same behaviour as the existing purchase flow.
+
+Suggested file location (follow existing patterns):
+
+If you are using Next.js app router:
+client/src/app/inventory-purchases/page.tsx
+
+If your project stores feature pages elsewhere, follow your current structure, but keep it under a clear route like:
+/inventory-purchases
+
+Navigation:
+
+Add a menu item under Inventory/Purchases section: “Item Purchases” that routes to /inventory-purchases.
+
+B) PURCHASES REGISTER (NEW DATA STORE)
+
+We need a history log of every purchase entry, because users want to see:
+
+Date of purchase
+
+Qty purchased
+
+Unit cost at that time
+
+Current unit cost (from item master)
+
+Who recorded it
+
+SRD affected (Main Store SRD)
+
+Supplier/Invoice reference (optional)
+
+1. Create a NEW table (additive only)
+
+Create a new DB table (name can vary, but recommended):
+purchase_item_events
+
+Columns:
+
+id (primary key)
+
+clientId
+
+date (YYYY-MM-DD or timestamp)
+
+srdId (the SRD receiving the purchase, usually Main Store SRD)
+
+itemId
+
+qty (number)
+
+unitCostAtPurchase (number)
+
+totalCost (computed: qty * unitCostAtPurchase)
+
+supplierName (nullable text)
+
+invoiceNo (nullable text)
+
+notes (nullable text)
+
+createdByUserId (nullable, if auth exists)
+
+createdAt
+
+updatedAt
+
+IMPORTANT:
+Do NOT remove or rename existing tables/columns. This is strictly additive.
+
+C) WRITE LOGIC (CRITICAL)
+
+Whenever a purchase is recorded from ANYWHERE (including Inventory Management existing purchase flow), the system must do two actions:
+
+Keep existing behaviour: update SRD Main Store ledger exactly as it does today (do not change).
+
+Add a new row into purchase_item_events with the purchase details.
+
+Implementation rule:
+
+This must happen in the same endpoint/function that currently processes purchases.
+
+If purchases are handled in a function like recordPurchase() or updateStoreStock():
+
+Leave ledger update logic unchanged.
+
+Add a “side-write” to purchases register.
+
+If a purchase contains multiple items, create one row per item.
+
+D) NEW API ENDPOINTS (READ)
+
+Create endpoints to fetch purchase history for reporting:
+
+GET /api/purchases/items
+Query params:
+
+clientId
+
+srdId (optional)
+
+itemId (optional)
+
+dateFrom (optional)
+
+dateTo (optional)
+
+rangePreset (daily|weekly|monthly|yearly|custom)
+
+Return:
+
+List rows from purchase_item_events
+
+Include itemName, unit, and current unit cost pulled from items master
+
+Include computed fields:
+
+totalCost
+
+costDifference = currentUnitCost - unitCostAtPurchase
+
+GET /api/purchases/summary
+Returns grouped totals:
+
+totalQty
+
+totalValue
+
+group by item OR by date OR by supplier (controlled via query param groupBy)
+
+E) UI TABLE: PURCHASES REGISTER VIEW
+
+On the “Record Items Purchases” page, create a table called “Purchases Register”.
+
+Columns:
+
+Date
+
+Item
+
+Qty
+
+Unit Cost (at purchase)
+
+Total Cost
+
+Current Unit Cost
+
+Cost Change (current - purchase)
+
+Supplier (optional)
+
+Invoice No (optional)
+
+Recorded By (optional)
+
+Actions (View / Delete)
+
+Filters:
+
+Date range (preset: Today, This Week, This Month, This Year, Custom)
+
+Item dropdown (searchable)
+
+Supplier search (optional)
+
+Export buttons:
+
+Export Excel
+
+Download PDF (optional if already supported)
+
+F) DELETE PURCHASE EVENT (SAFE)
+
+Add delete capability for purchase register rows:
+
+It must show a modal confirmation:
+“Deleting this purchase record removes it from the Purchases Register.
+This does NOT automatically change the SRD ledger, unless you explicitly choose ‘Reverse ledger entry’.”
+Buttons:
+
+Cancel
+
+Delete Purchase Log Only
+
+Delete + Reverse Ledger Entry (optional advanced, can be added later)
+
+For now: implement “Delete Purchase Log Only” as default to avoid ledger conflict.
+
+G) OUTPUT REQUIRED FROM YOU (AI BUILDER)
+
+Show exact file paths edited/added.
+
+For every file you edit, print first 10–15 lines to confirm correct file.
+
+Provide code patches with clear start/end markers.
+
+Provide DB migration steps if schema changed.
+
+Provide a test checklist:
+
+Record purchase from Inventory Management → confirm SRD ledger updates unchanged + purchase register logs row
+
+Record purchase from “Record Items Purchases” page → same result
+
+Filter register by date ranges
+
+Confirm totals/summary work
+
+Confirm delete removes only the register row and does not affect SRD ledger
+
+END PROMPT
