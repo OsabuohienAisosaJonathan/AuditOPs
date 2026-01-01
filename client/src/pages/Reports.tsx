@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { FileText, Download, BarChart3, PieChart, Table as TableIcon, AlertCircle, Printer, X, Eye, TrendingUp, TrendingDown, DollarSign, Package, AlertTriangle, CheckCircle2, Award, Calendar } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { reportsApi, salesEntriesApi, departmentsApi, exceptionsApi, stockMovementsApi, SalesEntry, Exception as ExceptionType, StockMovement } from "@/lib/api";
+import { reportsApi, salesEntriesApi, departmentsApi, exceptionsApi, stockMovementsApi, SalesEntry, Exception as ExceptionType, StockMovement, departmentComparisonApi, DepartmentComparison, purchaseItemEventsApi, PurchaseItemEvent, grnApi, GoodsReceivedNote, receivablesApi, Receivable, surplusesApi, Surplus, storeNamesApi, itemsApi } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -42,6 +42,7 @@ const SECTIONS = {
     { id: "payment-methods", label: "Payment Methods Breakdown (Overall)" },
     { id: "payment-matrix", label: "Payment Methods by Department (Matrix)" },
     { id: "declared-vs-system", label: "Declared vs System Variance" },
+    { id: "department-comparison-full", label: "Department Comparison (2nd Hit) - Full Table", helper: "Matches Reconciliation page 2nd Hit Comparison exactly" },
     { id: "department-comparison", label: "Department Comparison (2nd Hit)" },
     { id: "daily-breakdown", label: "Daily Breakdown (Weekly/Monthly)" },
     { id: "stock-report", label: "Stock Report & Variance (SRDs)" },
@@ -49,6 +50,11 @@ const SECTIONS = {
     { id: "reconciliation-summary", label: "Reconciliation Summary" },
     { id: "audit-evidence", label: "Audit Trail Evidence" },
     { id: "auditor-remarks", label: "Auditor Remarks & Recommendations" },
+    { id: "purchases-register", label: "Purchases Register", helper: "All item purchases with supplier and cost details" },
+    { id: "grn-register", label: "GRN Register", helper: "Goods Received Notes with supplier and status" },
+    { id: "receivables-register", label: "Receivables", helper: "Cash shortages from department comparison" },
+    { id: "surplus-register", label: "Surplus", helper: "Excess cash from department comparison" },
+    { id: "srd-main-store", label: "SRD Main Store Ledger Summary", helper: "Main Store inventory with variance tracking" },
   ],
 };
 
@@ -134,7 +140,56 @@ export default function Reports() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const dataLoaded = !salesLoading && !exceptionsLoading && !stockLoading && allSalesData !== undefined;
+  // New data sources for extended report sections
+  const { data: departmentComparisonData, isLoading: deptCompLoading } = useQuery({
+    queryKey: ["dept-comparison-report", clientId, getDateRange().end.toISOString().split('T')[0]],
+    queryFn: () => departmentComparisonApi.get(clientId, format(getDateRange().end, "yyyy-MM-dd")),
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: purchaseEventsData, isLoading: purchasesLoading } = useQuery({
+    queryKey: ["purchase-events-report", clientId],
+    queryFn: () => {
+      const { start, end } = getDateRange();
+      return purchaseItemEventsApi.getByClient(clientId, {
+        dateFrom: format(start, "yyyy-MM-dd"),
+        dateTo: format(end, "yyyy-MM-dd"),
+      });
+    },
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: grnData, isLoading: grnLoading } = useQuery({
+    queryKey: ["grn-report", clientId],
+    queryFn: () => grnApi.getByClient(clientId),
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: receivablesData, isLoading: receivablesLoading } = useQuery({
+    queryKey: ["receivables-report", clientId],
+    queryFn: () => receivablesApi.getByClient(clientId),
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: surplusData, isLoading: surplusLoading } = useQuery({
+    queryKey: ["surplus-report", clientId],
+    queryFn: () => surplusesApi.getByClient(clientId),
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: storeNames } = useQuery({
+    queryKey: ["store-names-report", clientId],
+    queryFn: () => storeNamesApi.getByClient(clientId),
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const { data: itemsData } = useQuery({
+    queryKey: ["items-report", clientId],
+    queryFn: () => itemsApi.getByClient(clientId),
+    enabled: !!clientId && isLoadingData,
+  });
+
+  const dataLoaded = !salesLoading && !exceptionsLoading && !stockLoading && !deptCompLoading && !purchasesLoading && !grnLoading && !receivablesLoading && !surplusLoading && allSalesData !== undefined;
 
   const getFilteredSalesData = () => {
     if (!allSalesData) return [];
@@ -165,13 +220,46 @@ export default function Reports() {
     });
   };
 
+  const getFilteredGRN = () => {
+    if (!grnData) return [];
+    const { start, end } = getDateRange();
+    return grnData.filter((g: GoodsReceivedNote) => {
+      if (!g.date) return false;
+      const grnDate = new Date(g.date);
+      if (isNaN(grnDate.getTime())) return false;
+      return grnDate >= start && grnDate <= end;
+    });
+  };
+
+  const getFilteredReceivables = () => {
+    if (!receivablesData) return [];
+    const { start, end } = getDateRange();
+    return receivablesData.filter((r: Receivable) => {
+      if (!r.auditDate) return false;
+      const recDate = new Date(r.auditDate);
+      if (isNaN(recDate.getTime())) return false;
+      return recDate >= start && recDate <= end;
+    });
+  };
+
+  const getFilteredSurplus = () => {
+    if (!surplusData) return [];
+    const { start, end } = getDateRange();
+    return surplusData.filter((s: Surplus) => {
+      if (!s.auditDate) return false;
+      const surDate = new Date(s.auditDate);
+      if (isNaN(surDate.getTime())) return false;
+      return surDate >= start && surDate <= end;
+    });
+  };
+
   useEffect(() => {
     if (isLoadingData && dataLoaded) {
       buildReportData();
       setIsLoadingData(false);
       setPreviewOpen(true);
     }
-  }, [isLoadingData, dataLoaded, allSalesData, exceptionsData, stockMovementsData]);
+  }, [isLoadingData, dataLoaded, allSalesData, exceptionsData, stockMovementsData, departmentComparisonData, purchaseEventsData, grnData, receivablesData, surplusData]);
 
   const toggleSection = (sectionId: string) => {
     setSelectedSections(prev => 
@@ -450,6 +538,54 @@ export default function Reports() {
         topVarianceDrivers.push(`${d.departmentName} (${formatMoney(d.variance)})`);
       }
     });
+
+    // Process purchase events with item names
+    const purchaseRegister = (purchaseEventsData || []).map((p: PurchaseItemEvent) => {
+      const item = itemsData?.find(i => i.id === p.itemId);
+      const srd = storeNames?.find(s => s.id === p.srdId);
+      return {
+        ...p,
+        itemName: item?.name || "Unknown Item",
+        srdName: srd?.name || "N/A",
+      };
+    });
+
+    // Process GRN register
+    const grnRegister = getFilteredGRN().map((g: GoodsReceivedNote) => ({
+      ...g,
+      itemsCount: 1,
+    }));
+
+    // Process receivables with department names
+    const receivablesRegister = getFilteredReceivables().map((r: Receivable) => {
+      const dept = departments?.find(d => d.id === r.departmentId);
+      return {
+        ...r,
+        departmentName: dept?.name || "Unknown",
+      };
+    });
+
+    // Process surplus with department names
+    const surplusRegister = getFilteredSurplus().map((s: Surplus) => {
+      const dept = departments?.find(d => d.id === s.departmentId);
+      return {
+        ...s,
+        departmentName: dept?.name || "Unknown",
+      };
+    });
+
+    // Full department comparison from API (2nd Hit)
+    const deptComparisonFull = (departmentComparisonData || []).map((d: DepartmentComparison) => ({
+      ...d,
+      grandTotal: {
+        totalCaptured: (departmentComparisonData || []).reduce((s, x) => s + x.totalCaptured, 0),
+        totalDeclared: (departmentComparisonData || []).reduce((s, x) => s + x.totalDeclared, 0),
+        auditTotal: (departmentComparisonData || []).reduce((s, x) => s + x.auditTotal, 0),
+        variance1stHit: (departmentComparisonData || []).reduce((s, x) => s + x.variance1stHit, 0),
+        variance2ndHit: (departmentComparisonData || []).reduce((s, x) => s + x.variance2ndHit, 0),
+        finalVariance: (departmentComparisonData || []).reduce((s, x) => s + x.finalVariance, 0),
+      },
+    }));
     
     setReportData({
       type: reportType,
@@ -464,6 +600,7 @@ export default function Reports() {
       preparedBy: "Miemploya AuditOps",
       metrics,
       departmentComparison: deptComparison,
+      departmentComparisonFull: departmentComparisonData || [],
       salesByDepartment: salesByDept,
       paymentMatrix,
       dailyBreakdown,
@@ -472,7 +609,13 @@ export default function Reports() {
       sales: getFilteredSalesData(),
       exceptions: getFilteredExceptions(),
       stockMovements: getFilteredStockMovements(),
+      purchaseRegister,
+      grnRegister,
+      receivablesRegister,
+      surplusRegister,
       selectedSections,
+      storeNames: storeNames || [],
+      items: itemsData || [],
     });
   };
 
@@ -1241,6 +1384,303 @@ export default function Reports() {
                           })}
                         </TableBody>
                       </Table>
+                    </div>
+                  )}
+
+                  {/* Department Comparison (2nd Hit) - Full Table (Real API Data) */}
+                  {selectedSections.includes("department-comparison-full") && reportData.departmentComparisonFull?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">Department Comparison (2nd Hit) - Full Table</h3>
+                      <p className="text-sm text-gray-500 mb-2">Data source: Reconciliation 2nd Hit Comparison API</p>
+                      <div className="overflow-x-auto">
+                        <Table className="text-sm">
+                          <TableHeader>
+                            <TableRow className="bg-gray-100">
+                              <TableHead>Department</TableHead>
+                              <TableHead className="text-right">Total Captured</TableHead>
+                              <TableHead className="text-right">Total Declared</TableHead>
+                              <TableHead className="text-right">Audit (Dep)</TableHead>
+                              <TableHead className="text-right">Variance 1st Hit</TableHead>
+                              <TableHead className="text-right">Variance 2nd Hit</TableHead>
+                              <TableHead className="text-right">Final Variance</TableHead>
+                              <TableHead>Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {reportData.departmentComparisonFull.map((d: DepartmentComparison) => (
+                              <TableRow key={d.departmentId}>
+                                <TableCell className="font-medium">{d.departmentName}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.totalCaptured)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.totalDeclared)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.auditTotal)}</TableCell>
+                                <TableCell className={cn("text-right", d.variance1stHit < 0 ? "text-red-600" : d.variance1stHit > 0 ? "text-green-600" : "")}>
+                                  {formatMoney(d.variance1stHit)}
+                                </TableCell>
+                                <TableCell className={cn("text-right font-medium", d.variance2ndHit < 0 ? "text-red-600" : d.variance2ndHit > 0 ? "text-green-600" : "")}>
+                                  {formatMoney(d.variance2ndHit)}
+                                </TableCell>
+                                <TableCell className={cn("text-right font-medium", d.finalVariance < 0 ? "text-red-600" : d.finalVariance > 0 ? "text-green-600" : "")}>
+                                  {formatMoney(d.finalVariance)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={d.varianceStatus === "balanced" ? "default" : d.varianceStatus === "surplus" ? "secondary" : "destructive"}>
+                                    {d.varianceStatus.toUpperCase()}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow className="font-bold bg-blue-50">
+                              <TableCell>GRAND TOTAL</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.departmentComparisonFull.reduce((s: number, d: DepartmentComparison) => s + d.totalCaptured, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.departmentComparisonFull.reduce((s: number, d: DepartmentComparison) => s + d.totalDeclared, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.departmentComparisonFull.reduce((s: number, d: DepartmentComparison) => s + d.auditTotal, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.departmentComparisonFull.reduce((s: number, d: DepartmentComparison) => s + d.variance1stHit, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.departmentComparisonFull.reduce((s: number, d: DepartmentComparison) => s + d.variance2ndHit, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.departmentComparisonFull.reduce((s: number, d: DepartmentComparison) => s + d.finalVariance, 0))}</TableCell>
+                              <TableCell></TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Purchases Register */}
+                  {selectedSections.includes("purchases-register") && reportData.purchaseRegister?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">Purchases Register</h3>
+                      <div className="bg-blue-50 p-3 rounded mb-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div><strong>Total Qty:</strong> {reportData.purchaseRegister.reduce((s: number, p: any) => s + parseFloat(p.qty ?? "0"), 0).toFixed(2)}</div>
+                          <div><strong>Total Value:</strong> {formatMoney(reportData.purchaseRegister.reduce((s: number, p: any) => s + parseFloat(p.totalCost ?? "0"), 0))}</div>
+                          <div><strong>Records:</strong> {reportData.purchaseRegister.length}</div>
+                        </div>
+                      </div>
+                      <Table className="text-sm">
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead>Date</TableHead>
+                            <TableHead>Item</TableHead>
+                            <TableHead>SRD</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">Unit Cost</TableHead>
+                            <TableHead className="text-right">Total Cost</TableHead>
+                            <TableHead>Supplier</TableHead>
+                            <TableHead>Invoice No</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportData.purchaseRegister.map((p: any) => (
+                            <TableRow key={p.id}>
+                              <TableCell className="whitespace-nowrap">{p.date ? format(new Date(p.date), "MMM d, yyyy") : "-"}</TableCell>
+                              <TableCell className="font-medium">{p.itemName}</TableCell>
+                              <TableCell>{p.srdName}</TableCell>
+                              <TableCell className="text-right">{parseFloat(p.qty ?? "0").toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(parseFloat(p.unitCostAtPurchase ?? "0"))}</TableCell>
+                              <TableCell className="text-right font-medium">{formatMoney(parseFloat(p.totalCost ?? "0"))}</TableCell>
+                              <TableCell>{p.supplierName || "-"}</TableCell>
+                              <TableCell>{p.invoiceNo || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-bold bg-gray-50">
+                            <TableCell colSpan={3}>TOTAL</TableCell>
+                            <TableCell className="text-right">{reportData.purchaseRegister.reduce((s: number, p: any) => s + parseFloat(p.qty ?? "0"), 0).toFixed(2)}</TableCell>
+                            <TableCell></TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.purchaseRegister.reduce((s: number, p: any) => s + parseFloat(p.totalCost ?? "0"), 0))}</TableCell>
+                            <TableCell colSpan={2}></TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {/* GRN Register */}
+                  {selectedSections.includes("grn-register") && reportData.grnRegister?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">GRN Register (Goods Received Notes)</h3>
+                      <div className="bg-blue-50 p-3 rounded mb-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div><strong>Total GRNs:</strong> {reportData.grnRegister.length}</div>
+                          <div><strong>Total Value:</strong> {formatMoney(reportData.grnRegister.reduce((s: number, g: any) => s + parseFloat(g.amount ?? "0"), 0))}</div>
+                          <div><strong>Period:</strong> {reportData.period.start} to {reportData.period.end}</div>
+                        </div>
+                      </div>
+                      <Table className="text-sm">
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead>GRN No</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Supplier</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead>Invoice No</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Notes</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportData.grnRegister.map((g: any) => (
+                            <TableRow key={g.id}>
+                              <TableCell className="font-mono text-xs">{g.grnNumber || g.id?.slice(0, 8) || "-"}</TableCell>
+                              <TableCell className="whitespace-nowrap">{g.date ? format(new Date(g.date), "MMM d, yyyy") : "-"}</TableCell>
+                              <TableCell className="font-medium">{g.supplier || "-"}</TableCell>
+                              <TableCell className="text-right font-medium">{formatMoney(parseFloat(g.amount ?? "0"))}</TableCell>
+                              <TableCell>{g.invoiceNo || "-"}</TableCell>
+                              <TableCell>
+                                <Badge variant={g.status === "posted" ? "default" : g.status === "approved" ? "secondary" : "outline"}>
+                                  {(g.status || "pending").toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[150px] truncate">{g.notes || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-bold bg-gray-50">
+                            <TableCell colSpan={3}>TOTAL</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.grnRegister.reduce((s: number, g: any) => s + parseFloat(g.amount ?? "0"), 0))}</TableCell>
+                            <TableCell colSpan={3}></TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {/* Receivables Register */}
+                  {selectedSections.includes("receivables-register") && reportData.receivablesRegister?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">Receivables Register</h3>
+                      <div className="bg-red-50 p-3 rounded mb-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div><strong>Total Receivables:</strong> {formatMoney(reportData.receivablesRegister.reduce((s: number, r: any) => s + parseFloat(r.varianceAmount ?? "0"), 0))}</div>
+                          <div><strong>Amount Paid:</strong> {formatMoney(reportData.receivablesRegister.reduce((s: number, r: any) => s + parseFloat(r.amountPaid ?? "0"), 0))}</div>
+                          <div><strong>Balance Remaining:</strong> {formatMoney(reportData.receivablesRegister.reduce((s: number, r: any) => s + parseFloat(r.balanceRemaining ?? "0"), 0))}</div>
+                        </div>
+                      </div>
+                      <Table className="text-sm">
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead>Department</TableHead>
+                            <TableHead>Audit Date</TableHead>
+                            <TableHead className="text-right">Variance Amount</TableHead>
+                            <TableHead className="text-right">Amount Paid</TableHead>
+                            <TableHead className="text-right">Balance</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Comments</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportData.receivablesRegister.map((r: any) => (
+                            <TableRow key={r.id}>
+                              <TableCell className="font-medium">{r.departmentName || "-"}</TableCell>
+                              <TableCell className="whitespace-nowrap">{r.auditDate ? format(new Date(r.auditDate), "MMM d, yyyy") : "-"}</TableCell>
+                              <TableCell className="text-right text-red-600">{formatMoney(parseFloat(r.varianceAmount ?? "0"))}</TableCell>
+                              <TableCell className="text-right text-green-600">{formatMoney(parseFloat(r.amountPaid ?? "0"))}</TableCell>
+                              <TableCell className="text-right font-medium">{formatMoney(parseFloat(r.balanceRemaining ?? "0"))}</TableCell>
+                              <TableCell>
+                                <Badge variant={r.status === "settled" ? "default" : r.status === "part_paid" ? "secondary" : "destructive"}>
+                                  {r.status?.replace("_", " ").toUpperCase() || "OPEN"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[150px] truncate">{r.comments || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-bold bg-gray-50">
+                            <TableCell colSpan={2}>TOTAL</TableCell>
+                            <TableCell className="text-right text-red-600">{formatMoney(reportData.receivablesRegister.reduce((s: number, r: any) => s + parseFloat(r.varianceAmount ?? "0"), 0))}</TableCell>
+                            <TableCell className="text-right text-green-600">{formatMoney(reportData.receivablesRegister.reduce((s: number, r: any) => s + parseFloat(r.amountPaid ?? "0"), 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.receivablesRegister.reduce((s: number, r: any) => s + parseFloat(r.balanceRemaining ?? "0"), 0))}</TableCell>
+                            <TableCell colSpan={2}></TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {/* Surplus Register */}
+                  {selectedSections.includes("surplus-register") && reportData.surplusRegister?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">Surplus Register</h3>
+                      <div className="bg-green-50 p-3 rounded mb-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div><strong>Total Surplus:</strong> {formatMoney(reportData.surplusRegister.reduce((s: number, x: any) => s + parseFloat(x.surplusAmount ?? "0"), 0))}</div>
+                          <div><strong>Records:</strong> {reportData.surplusRegister.length}</div>
+                          <div><strong>Period:</strong> {reportData.period.start} to {reportData.period.end}</div>
+                        </div>
+                      </div>
+                      <Table className="text-sm">
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead>Department</TableHead>
+                            <TableHead>Audit Date</TableHead>
+                            <TableHead className="text-right">Surplus Amount</TableHead>
+                            <TableHead>Classification</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Comments</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportData.surplusRegister.map((s: any) => (
+                            <TableRow key={s.id}>
+                              <TableCell className="font-medium">{s.departmentName || "-"}</TableCell>
+                              <TableCell className="whitespace-nowrap">{s.auditDate ? format(new Date(s.auditDate), "MMM d, yyyy") : "-"}</TableCell>
+                              <TableCell className="text-right text-green-600 font-medium">{formatMoney(parseFloat(s.surplusAmount ?? "0"))}</TableCell>
+                              <TableCell>{s.classification || "-"}</TableCell>
+                              <TableCell>
+                                <Badge variant={s.status === "cleared" ? "default" : s.status === "classified" ? "secondary" : "outline"}>
+                                  {(s.status || "open").toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[150px] truncate">{s.comments || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-bold bg-gray-50">
+                            <TableCell colSpan={2}>TOTAL</TableCell>
+                            <TableCell className="text-right text-green-600">{formatMoney(reportData.surplusRegister.reduce((s: number, x: any) => s + parseFloat(x.surplusAmount ?? "0"), 0))}</TableCell>
+                            <TableCell colSpan={3}></TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {/* SRD Main Store Ledger Summary */}
+                  {selectedSections.includes("srd-main-store") && reportData.storeNames?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">SRD Main Store Ledger Summary</h3>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Summary of Main Store SRDs for period: {reportData.period.start} to {reportData.period.end}
+                      </p>
+                      <Table className="text-sm">
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead>SRD Name</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportData.storeNames
+                            .filter((s: any) => s.storeType === "main_store" || !s.storeType)
+                            .map((srd: any) => (
+                              <TableRow key={srd.id}>
+                                <TableCell className="font-medium">{srd.name}</TableCell>
+                                <TableCell>{srd.description || "-"}</TableCell>
+                                <TableCell>
+                                  <Badge variant={srd.storeType === "main_store" ? "default" : "secondary"}>
+                                    {(srd.storeType || "main_store").replace("_", " ").toUpperCase()}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={srd.isActive !== false ? "default" : "outline"}>
+                                    {srd.isActive !== false ? "ACTIVE" : "INACTIVE"}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Note: Detailed inventory ledger data with opening/closing balances requires individual SRD selection.
+                      </p>
                     </div>
                   )}
 

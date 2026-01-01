@@ -1,0 +1,267 @@
+PROMPT TO PASTE (Report Builder: add new sections + pull REAL tables/data)
+
+TITLE: EXPAND REPORT BUILDER SECTIONS + PULL REAL DATA FOR DEPARTMENT COMPARISON (2ND HIT) + ADD PURCHASES/GRN/RECEIVABLES/SURPLUS/SRD MAIN STORE
+
+STRICT RULES
+
+Do NOT redesign or delete existing report page UI. Only extend it.
+
+Do NOT “mock” tables in PDF. Every report section must pull from the same backend/data source used by its original page.
+
+Department Comparison (2nd Hit) in reports must match the Reconciliation page table exactly (same columns + same calculations + same totals).
+
+When a section is selected in Report Builder, it should render in Preview + PDF.
+
+A) REPORT BUILDER: ADD THESE NEW SELECTABLE SECTIONS
+
+On /reports (Report Builder page), add checkboxes/toggles under “Included Sections” (and ensure they flow into Selected Sections):
+
+Department Comparison (2nd Hit) – Full Table
+
+Purchases Register
+
+GRN Register
+
+Receivables
+
+Surplus
+
+SRD Main Store Ledger Summary (Main Store SR-D)
+
+Each section should have:
+
+a label
+
+a short helper text
+
+a mapping to a renderer component in the Report Preview and PDF output
+
+B) DEPARTMENT COMPARISON (2ND HIT): PULL ACTUAL DATA (NO MISSING COLUMNS)
+Problem
+
+The current report “Department Comparison (2nd Hit)” is incomplete and does not match the real page.
+
+Fix
+
+Identify the real data source used by the Reconciliation page tab “2nd Hit Comparison”.
+
+If that page calls an API like /api/reconciliation/department-comparison or similar, REUSE that endpoint.
+
+If the logic is computed on the server, expose it through a dedicated API endpoint.
+
+Create or reuse an endpoint that returns the exact dataset used by the UI table:
+
+includes all columns displayed on the reconciliation table
+
+includes “GRAND TOTAL” row if the page shows it
+
+include the same number formatting rules and currency formatting
+
+Replace the Report Preview renderer for this section to use the same columns in the same order as the reconciliation page table.
+No column must be missing.
+If the reconciliation table has:
+
+Total Captured
+
+Total Declared
+
+Audit(Dep)
+
+Variance 1st Hit
+
+Variance 2nd Hit
+
+Final Variance
+
+Action/Status
+then the report must include them all.
+
+Ensure the PDF output uses the same column set. If width is too wide:
+
+use landscape orientation for that page OR
+
+reduce font size slightly OR
+
+allow table to wrap with consistent header repeat
+
+But DO NOT drop columns.
+
+C) PURCHASES REGISTER: ADD TO REPORTS
+
+Add the new Purchases Register dataset to report selection.
+
+Source must be the Purchases Register page/table (purchase_item_events).
+
+In report output, include:
+
+Date
+
+Item
+
+Qty
+
+Unit Cost at Purchase
+
+Total Cost
+
+Supplier
+
+Invoice No
+
+Recorded By
+
+Totals summary (Total Qty, Total Value) for the selected range
+
+Add filters from report builder:
+
+Date range applies here.
+
+D) GRN REGISTER: ADD TO REPORTS
+
+Add GRN section (Goods Received Note register) to report selection.
+
+Pull from the existing GRN data source already used in the system.
+
+Output must show:
+
+GRN No / Reference
+
+Date
+
+Supplier
+
+Items count
+
+Total value
+
+Status (Pending/Approved/Posted etc.)
+
+Notes (if any)
+
+If GRN does not yet have a register API, create one but do not break existing purchase logic.
+
+E) RECEIVABLES + SURPLUS: ADD TO REPORTS
+
+Add Receivables section.
+
+Add Surplus section.
+
+Do not create dummy tables. Pull from their real pages / real data store.
+
+For Receivables report:
+
+Department
+
+Amount
+
+Reason / Reference
+
+Date
+
+Status (Open/Resolved)
+
+Total receivables
+
+For Surplus report:
+
+Department
+
+Amount
+
+Reason / Reference
+
+Date
+
+Status
+
+Total surplus
+
+F) SRD MAIN STORE: ADD TO REPORTS (SUMMARY + VARIANCE)
+
+Add a report section called “SRD Main Store Summary” that pulls from SRD Main Store ledger data.
+
+Must include:
+
+A summary header:
+
+SRD Name
+
+Date range
+
+Total Purchases/Added
+
+Total Returns
+
+Total Losses
+
+Total Req Dep (total issued to departments)
+
+Expected Closing
+
+Awaiting Count (if available)
+
+Variance Qty and Variance Value (if Awaiting Count exists)
+
+A table of items (can be top 20 by value, plus option “full list”):
+
+Item
+
+Opening
+
+Purchase/Added
+
+Returns
+
+Losses
+
+ReqDep Total
+
+Expected Closing
+
+Awaiting Count
+
+Variance
+
+Variance Value
+
+Value (AwaitingCount * unit cost)
+
+If report is for weekly/monthly, aggregate by sum across days OR show daily breakdown pages (whichever your report template defines). Do not distort existing SRD logic.
+
+G) REPORT PREVIEW + PDF OUTPUT MUST MATCH
+
+The Report Preview modal must show these sections exactly as PDF will render.
+
+The “Download PDF” must generate a clean layout with:
+
+Cover header (Client, Department, Date range)
+
+Section titles
+
+Page breaks between sections
+
+Repeated table headers for multi-page tables
+
+Currency formatting based on selected currency settings
+
+H) OUTPUT REQUIRED (AI BUILDER)
+
+List exact file paths edited.
+
+Print first 10–15 lines of each edited file to confirm correct file.
+
+Provide code patches with start/end markers.
+
+Provide test checklist:
+
+Department Comparison (2nd Hit) report matches reconciliation page exactly (same columns, totals)
+
+Purchases Register report displays real rows for date range
+
+GRN report shows correct register
+
+Receivables & Surplus show correct rows and totals
+
+SRD Main Store summary pulls correct ledger + variance
+
+PDF matches preview
