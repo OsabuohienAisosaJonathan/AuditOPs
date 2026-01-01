@@ -1,0 +1,103 @@
+PROMPT TO AI BUILDER (COPY + PASTE)
+
+FIX 1: COLLAPSIBLE SIDEBAR → WHEN COLLAPSED, SHOW HORIZONTAL NAV UNDER HEADER (NOT JUST ICONS)
+Right now, when the sidebar collapses, the user loses quick navigation context. I want this behavior:
+
+A) Collapsed Mode (NEW BEHAVIOR)
+1) When user clicks the sidebar collapse toggle:
+   a) The left sidebar should collapse fully (freeing page width).
+   b) The FULL sidebar menu contents (same links/actions) must re-render BELOW the top header as a horizontal navigation bar.
+   c) The horizontal nav must:
+      - show icons + short labels
+      - be scrollable horizontally on small screens
+      - highlight the active route/page
+      - preserve the same menu grouping/order as the sidebar (Main Menu, Administration, etc.)
+      - NOT overlap content; it should push the content down slightly (layout reflow).
+
+2) When user expands sidebar back:
+   a) Restore original left sidebar menu (vertical).
+   b) Remove/hide the horizontal nav under the header.
+
+B) Implementation notes
+1) Do NOT duplicate the menu definition in two places.
+   - Create ONE shared menu config array (routes, labels, icons, permission rules).
+   - Render it in:
+     i) <SidebarNav /> (vertical)
+     ii) <TopHorizontalNav /> (horizontal)
+2) Keep collapsed/expanded state in a global layout state (Context or Zustand) so it persists while navigating pages.
+3) The collapse toggle should be available in the header (or wherever it is currently).
+4) Persist collapsed state in localStorage so refresh retains the user preference.
+
+C) Visual standard
+- Horizontal nav should look clean, modern, and consistent with the app theme.
+- Use compact pill-style buttons or tabs.
+- Keep spacing tight but readable.
+
+=========================================================
+FIX 2: ADD BACK / FORWARD NAV BUTTONS (APP HISTORY) + NO DATA LOSS
+Add navigation controls that allow users to go backward/forward through previously visited pages inside the app.
+
+A) UI placement
+1) Put two buttons in the top header area (near client/department/date selectors):
+   - Back (←)
+   - Forward (→)
+2) Buttons must have tooltips:
+   - “Back”
+   - “Forward”
+3) Disable button when not possible.
+
+B) Navigation logic (MUST WORK RELIABLY)
+Because “forward” is not reliable with only router.back(), implement an INTERNAL app navigation stack:
+
+1) Maintain a session-based navigation history stack:
+   - Store visited paths in sessionStorage (or global store + sessionStorage backup)
+   - Track current index
+2) On route change:
+   - If user navigates normally (menu click/router push), append path to stack and move index forward.
+   - If user goes back/forward using our buttons, just move the index and router.push() that stored path.
+3) Avoid duplicate consecutive paths.
+4) Keep query params (date, SRD, client) in the stored paths.
+
+C) No data loss requirement (CRITICAL)
+When the user navigates back/forward, DO NOT lose unsaved work on pages like:
+- Sales Capture forms
+- Stock Movements modal draft
+- Stock Counts draft
+- Reconciliation drafts
+- Exceptions drafts
+- Report builder selections
+
+Implement “Draft Preservation”:
+1) For pages that contain unsaved user input, auto-save drafts into sessionStorage on every change (debounced).
+2) On page mount, restore draft state automatically if present.
+3) Draft keys must be unique by:
+   - clientId
+   - department/SRD
+   - date
+   - page route
+Example key:
+draft:{clientId}:{departmentId}:{date}:{route}
+
+4) If the page already has “Save Draft” in backend:
+   - Keep it.
+   - Draft Preservation is still needed to protect navigation/back/forward and accidental route changes.
+
+D) Extra safety (optional but recommended)
+- If a user tries to leave a page with unsaved changes, show a non-blocking banner:
+  “Draft saved locally” or “Unsaved changes saved as draft”.
+
+=========================================================
+OUTPUT REQUIRED FROM YOU (STRICT)
+1) Show exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm it’s the right file.
+3) Provide code patches with clear START/END markers.
+4) If new shared menu config is created, show the new file path and how both sidebar + horizontal nav import it.
+5) Provide a test checklist:
+   - Collapse sidebar → horizontal nav appears under header
+   - Expand sidebar → horizontal nav disappears, sidebar restored
+   - Active page highlights correctly in both nav modes
+   - Back/forward works across at least 10 visited pages
+   - Navigating back/forward does NOT wipe any unsaved form inputs (verify sales, stock movement, count)
+   - Refresh keeps collapsed state preference
+
+END PROMPT
