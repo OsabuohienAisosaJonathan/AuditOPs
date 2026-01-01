@@ -18,6 +18,8 @@ import VerifyEmail from "@/pages/VerifyEmail";
 import About from "@/pages/About";
 import Contact from "@/pages/Contact";
 import Setup from "@/pages/Setup";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Dashboard from "@/pages/Dashboard";
 import AuditWorkspace from "@/pages/AuditWorkspace";
 import Clients from "@/pages/Clients";
@@ -77,6 +79,8 @@ function Router() {
         <Route path="/signup" component={Signup} />
         <Route path="/check-email" component={CheckEmail} />
         <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
         <Route path="/about" component={About} />
         <Route path="/contact" component={Contact} />
         <Route path="/setup" component={Setup} />
