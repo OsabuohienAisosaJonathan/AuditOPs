@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { FileText, Download, BarChart3, PieChart, Table as TableIcon, AlertCircle, Printer, X, Eye, TrendingUp, TrendingDown, DollarSign, Package, AlertTriangle, CheckCircle2, Award, Calendar } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { reportsApi, salesEntriesApi, departmentsApi, exceptionsApi, stockMovementsApi, SalesEntry, Exception as ExceptionType, StockMovement, departmentComparisonApi, DepartmentComparison, purchaseItemEventsApi, PurchaseItemEvent, grnApi, GoodsReceivedNote, receivablesApi, Receivable, surplusesApi, Surplus, storeNamesApi, itemsApi } from "@/lib/api";
+import { reportsApi, salesEntriesApi, departmentsApi, exceptionsApi, stockMovementsApi, SalesEntry, Exception as ExceptionType, StockMovement, departmentComparisonApi, DepartmentComparison, purchaseItemEventsApi, PurchaseItemEvent, grnApi, GoodsReceivedNote, receivablesApi, Receivable, surplusesApi, Surplus, storeNamesApi, itemsApi, paymentDeclarationsApi, PaymentDeclaration, auditLogsApi, AuditLog } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -189,7 +189,67 @@ export default function Reports() {
     enabled: !!clientId && isLoadingData,
   });
 
-  const dataLoaded = !salesLoading && !exceptionsLoading && !stockLoading && !deptCompLoading && !purchasesLoading && !grnLoading && !receivablesLoading && !surplusLoading && allSalesData !== undefined;
+  // Payment declarations for Sales & Revenue section (matches Audit Workspace)
+  const { data: paymentDeclarationsData, isLoading: declarationsLoading } = useQuery({
+    queryKey: ["payment-declarations-report", clientId, departments?.map(d => d.id).join(","), getDateRange().start.toISOString().split('T')[0]],
+    queryFn: async () => {
+      if (!departments || departments.length === 0) return [];
+      const declarations: PaymentDeclaration[] = [];
+      const { start, end } = getDateRange();
+      for (const dept of departments) {
+        try {
+          const decl = await paymentDeclarationsApi.get(clientId, dept.id, format(start, "yyyy-MM-dd"));
+          if (decl) declarations.push(decl);
+        } catch {
+          // No declaration for this department/date
+        }
+      }
+      return declarations;
+    },
+    enabled: !!clientId && !!departments && departments.length > 0 && isLoadingData,
+  });
+
+  // Audit logs for Audit Trail Evidence section
+  const { data: auditLogsData, isLoading: auditLogsLoading } = useQuery({
+    queryKey: ["audit-logs-report", getDateRange().start.toISOString(), getDateRange().end.toISOString()],
+    queryFn: () => {
+      const { start, end } = getDateRange();
+      return auditLogsApi.getAll({
+        startDate: format(start, "yyyy-MM-dd"),
+        endDate: format(end, "yyyy-MM-dd"),
+        limit: 500,
+      });
+    },
+    enabled: isLoadingData,
+  });
+
+  // Inventory Departments (SRDs) for ledger reports
+  const { data: inventoryDepts, isLoading: invDeptsLoading } = useQuery<{ id: string; clientId: string; storeNameId: string; inventoryType: string; status: string }[]>({
+    queryKey: ["inventory-departments-report", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/inventory-departments`);
+      if (!res.ok) throw new Error("Failed to fetch inventory departments");
+      return res.json();
+    },
+    enabled: !!clientId && isLoadingData,
+  });
+
+  // Store stock data for all SRDs (bulk fetch)
+  const { data: allSrdStoreStock, isLoading: srdStockLoading } = useQuery<{ storeDepartmentId: string; itemId: string; openingQty: string; addedQty: string; issuedQty: string; closingQty: string; physicalClosingQty: string | null; varianceQty: string; costPriceSnapshot: string }[]>({
+    queryKey: ["store-stock-bulk-report", clientId, inventoryDepts?.map(d => d.id).join(","), getDateRange().end.toISOString().split('T')[0]],
+    queryFn: async () => {
+      if (!inventoryDepts || inventoryDepts.length === 0) return [];
+      const deptIds = inventoryDepts.filter(d => d.status === "active").map(d => d.id).join(",");
+      if (!deptIds) return [];
+      const { end } = getDateRange();
+      const res = await fetch(`/api/clients/${clientId}/store-stock/bulk?departmentIds=${deptIds}&date=${format(end, "yyyy-MM-dd")}`);
+      if (!res.ok) throw new Error("Failed to fetch store stock");
+      return res.json();
+    },
+    enabled: !!clientId && !!inventoryDepts && inventoryDepts.length > 0 && isLoadingData,
+  });
+
+  const dataLoaded = !salesLoading && !exceptionsLoading && !stockLoading && !deptCompLoading && !purchasesLoading && !grnLoading && !receivablesLoading && !surplusLoading && !declarationsLoading && !auditLogsLoading && !invDeptsLoading && !srdStockLoading && allSalesData !== undefined;
 
   const getFilteredSalesData = () => {
     if (!allSalesData) return [];
@@ -259,7 +319,7 @@ export default function Reports() {
       setIsLoadingData(false);
       setPreviewOpen(true);
     }
-  }, [isLoadingData, dataLoaded, allSalesData, exceptionsData, stockMovementsData, departmentComparisonData, purchaseEventsData, grnData, receivablesData, surplusData]);
+  }, [isLoadingData, dataLoaded, allSalesData, exceptionsData, stockMovementsData, departmentComparisonData, purchaseEventsData, grnData, receivablesData, surplusData, paymentDeclarationsData, auditLogsData]);
 
   const toggleSection = (sectionId: string) => {
     setSelectedSections(prev => 
@@ -522,6 +582,232 @@ export default function Reports() {
     }));
   };
 
+  // Sales & Revenue: Daily Summary (matches Audit Workspace exactly)
+  const getDailySummary = () => {
+    const sales: SalesEntry[] = getFilteredSalesData();
+    return {
+      amount: sales.reduce((sum, e) => sum + Number(e.amount || 0), 0),
+      complimentary: sales.reduce((sum, e) => sum + Number(e.complimentaryAmount || 0), 0),
+      vouchers: sales.reduce((sum, e) => sum + Number(e.vouchersAmount || 0), 0),
+      voids: sales.reduce((sum, e) => sum + Number(e.voidsAmount || 0), 0),
+      others: sales.reduce((sum, e) => sum + Number(e.othersAmount || 0), 0),
+      totalCaptured: sales.reduce((sum, e) => sum + Number(e.totalSales || 0), 0),
+      entryCount: sales.length,
+    };
+  };
+
+  // Sales & Revenue: Reported Payments Summary (matches Audit Workspace exactly)
+  const getReportedPaymentsSummary = () => {
+    const sales: SalesEntry[] = getFilteredSalesData();
+    const declarations = paymentDeclarationsData || [];
+    
+    // Group sales by department
+    const entriesByDept: Record<string, SalesEntry[]> = {};
+    sales.forEach(s => {
+      if (!entriesByDept[s.departmentId]) entriesByDept[s.departmentId] = [];
+      entriesByDept[s.departmentId].push(s);
+    });
+
+    const results = (departments || []).map(dept => {
+      const deptSales = entriesByDept[dept.id] || [];
+      const totalCaptured = deptSales.reduce((sum, e) => sum + Number(e.totalSales || 0), 0);
+      
+      const declaration = declarations.find(d => d.departmentId === dept.id);
+      const hasDeclaration = !!declaration;
+      const declaredCash = Number(declaration?.reportedCash || 0);
+      const declaredPos = Number(declaration?.reportedPosSettlement || 0);
+      const declaredTransfer = Number(declaration?.reportedTransfers || 0);
+      const totalDeclared = declaredCash + declaredPos + declaredTransfer;
+      const variance = hasDeclaration ? totalDeclared - totalCaptured : 0;
+
+      return {
+        departmentId: dept.id,
+        departmentName: dept.name,
+        totalCaptured,
+        declaredCash,
+        declaredPos,
+        declaredTransfer,
+        totalDeclared,
+        hasDeclaration,
+        variance,
+      };
+    }).filter(r => r.totalCaptured > 0 || r.hasDeclaration);
+
+    const totals = {
+      totalCaptured: results.reduce((s, r) => s + r.totalCaptured, 0),
+      totalDeclared: results.reduce((s, r) => s + r.totalDeclared, 0),
+      firstHitVariance: results.reduce((sum, r) => {
+        if (!r.hasDeclaration) return sum - r.totalCaptured;
+        return sum + r.variance;
+      }, 0),
+    };
+
+    return { departments: results, totals };
+  };
+
+  // Audit Trail Evidence (from audit logs API)
+  const getAuditTrailEvidence = () => {
+    const logs = auditLogsData?.logs || [];
+    return logs.map(log => ({
+      id: log.id,
+      timestamp: log.createdAt,
+      userId: log.userId,
+      action: log.action,
+      entity: log.entity,
+      entityId: log.entityId,
+      details: log.details,
+      ipAddress: log.ipAddress,
+    }));
+  };
+
+  // Safe number utility - prevents NaN propagation in aggregations
+  const safeNumber = (val: string | number | null | undefined): number => {
+    const n = Number(val ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // SRD Ledger Summary - Main Store and Department Stores (matches Inventory Ledger exactly)
+  const getSrdLedgerSummary = () => {
+    const srds = inventoryDepts || [];
+    const stockData = allSrdStoreStock || [];
+    const items = itemsData || [];
+    const names = storeNames || [];
+
+    // Group data by SRD
+    const mainStoreSrds = srds.filter(s => s.inventoryType === "MAIN_STORE" && s.status === "active");
+    const departmentStoreSrds = srds.filter(s => s.inventoryType === "DEPARTMENT_STORE" && s.status === "active");
+
+    // Build main store summary
+    const mainStoreLedger = mainStoreSrds.map(srd => {
+      const srdStock = stockData.filter(s => s.storeDepartmentId === srd.id);
+      const srdName = names.find(n => n.id === srd.storeNameId);
+      
+      const totals = srdStock.reduce((acc, stock) => {
+        const item = items.find(i => i.id === stock.itemId);
+        const costPrice = safeNumber(stock.costPriceSnapshot || item?.costPrice);
+        const opening = safeNumber(stock.openingQty);
+        const added = safeNumber(stock.addedQty);
+        const issued = safeNumber(stock.issuedQty);
+        const closing = safeNumber(stock.closingQty);
+        // Awaiting count: when physical count is null, exclude from variance totals (matches Inventory Ledger)
+        const isAwaitingCount = stock.physicalClosingQty === null;
+        const physical = isAwaitingCount ? closing : safeNumber(stock.physicalClosingQty);
+        const variance = isAwaitingCount ? 0 : physical - closing;
+        
+        return {
+          openingQty: acc.openingQty + opening,
+          addedQty: acc.addedQty + added,
+          issuedQty: acc.issuedQty + issued,
+          closingQty: acc.closingQty + closing,
+          physicalQty: acc.physicalQty + physical,
+          varianceQty: acc.varianceQty + variance,
+          openingValue: acc.openingValue + (opening * costPrice),
+          addedValue: acc.addedValue + (added * costPrice),
+          issuedValue: acc.issuedValue + (issued * costPrice),
+          closingValue: acc.closingValue + (closing * costPrice),
+          varianceValue: acc.varianceValue + (variance * costPrice),
+          itemCount: acc.itemCount + 1,
+          countedItems: acc.countedItems + (stock.physicalClosingQty !== null ? 1 : 0),
+          awaitingCount: acc.awaitingCount + (stock.physicalClosingQty === null ? 1 : 0),
+        };
+      }, { openingQty: 0, addedQty: 0, issuedQty: 0, closingQty: 0, physicalQty: 0, varianceQty: 0, openingValue: 0, addedValue: 0, issuedValue: 0, closingValue: 0, varianceValue: 0, itemCount: 0, countedItems: 0, awaitingCount: 0 });
+
+      return {
+        id: srd.id,
+        name: srdName?.name || "Main Store",
+        type: "MAIN_STORE",
+        ...totals,
+        items: srdStock.map(stock => {
+          const item = items.find(i => i.id === stock.itemId);
+          return {
+            itemId: stock.itemId,
+            itemName: item?.name || "Unknown",
+            category: item?.category || "Uncategorized",
+            unit: item?.unit || "pcs",
+            ...stock,
+          };
+        }),
+      };
+    });
+
+    // Build department store summary  
+    const departmentStoreLedger = departmentStoreSrds.map(srd => {
+      const srdStock = stockData.filter(s => s.storeDepartmentId === srd.id);
+      const srdName = names.find(n => n.id === srd.storeNameId);
+      
+      const totals = srdStock.reduce((acc, stock) => {
+        const item = items.find(i => i.id === stock.itemId);
+        const costPrice = safeNumber(stock.costPriceSnapshot || item?.costPrice);
+        const opening = safeNumber(stock.openingQty);
+        const added = safeNumber(stock.addedQty);
+        const issued = safeNumber(stock.issuedQty);
+        const closing = safeNumber(stock.closingQty);
+        // Awaiting count: when physical count is null, exclude from variance totals (matches Inventory Ledger)
+        const isAwaitingCount = stock.physicalClosingQty === null;
+        const physical = isAwaitingCount ? closing : safeNumber(stock.physicalClosingQty);
+        const variance = isAwaitingCount ? 0 : physical - closing;
+        
+        return {
+          openingQty: acc.openingQty + opening,
+          addedQty: acc.addedQty + added,
+          issuedQty: acc.issuedQty + issued,
+          closingQty: acc.closingQty + closing,
+          physicalQty: acc.physicalQty + physical,
+          varianceQty: acc.varianceQty + variance,
+          openingValue: acc.openingValue + (opening * costPrice),
+          addedValue: acc.addedValue + (added * costPrice),
+          issuedValue: acc.issuedValue + (issued * costPrice),
+          closingValue: acc.closingValue + (closing * costPrice),
+          varianceValue: acc.varianceValue + (variance * costPrice),
+          itemCount: acc.itemCount + 1,
+          countedItems: acc.countedItems + (stock.physicalClosingQty !== null ? 1 : 0),
+          awaitingCount: acc.awaitingCount + (stock.physicalClosingQty === null ? 1 : 0),
+        };
+      }, { openingQty: 0, addedQty: 0, issuedQty: 0, closingQty: 0, physicalQty: 0, varianceQty: 0, openingValue: 0, addedValue: 0, issuedValue: 0, closingValue: 0, varianceValue: 0, itemCount: 0, countedItems: 0, awaitingCount: 0 });
+
+      return {
+        id: srd.id,
+        name: srdName?.name || "Department Store",
+        type: "DEPARTMENT_STORE",
+        ...totals,
+        items: srdStock.map(stock => {
+          const item = items.find(i => i.id === stock.itemId);
+          return {
+            itemId: stock.itemId,
+            itemName: item?.name || "Unknown",
+            category: item?.category || "Uncategorized",
+            unit: item?.unit || "pcs",
+            ...stock,
+          };
+        }),
+      };
+    });
+
+    // Combined totals across all department stores (use safeNumber for robustness)
+    const combinedDeptTotals = departmentStoreLedger.reduce((acc, dept) => ({
+      openingQty: acc.openingQty + safeNumber(dept.openingQty),
+      addedQty: acc.addedQty + safeNumber(dept.addedQty),
+      issuedQty: acc.issuedQty + safeNumber(dept.issuedQty),
+      closingQty: acc.closingQty + safeNumber(dept.closingQty),
+      physicalQty: acc.physicalQty + safeNumber(dept.physicalQty),
+      varianceQty: acc.varianceQty + safeNumber(dept.varianceQty),
+      openingValue: acc.openingValue + safeNumber(dept.openingValue),
+      addedValue: acc.addedValue + safeNumber(dept.addedValue),
+      issuedValue: acc.issuedValue + safeNumber(dept.issuedValue),
+      closingValue: acc.closingValue + safeNumber(dept.closingValue),
+      varianceValue: acc.varianceValue + safeNumber(dept.varianceValue),
+      itemCount: acc.itemCount + safeNumber(dept.itemCount),
+      countedItems: acc.countedItems + safeNumber(dept.countedItems),
+      awaitingCount: acc.awaitingCount + safeNumber(dept.awaitingCount),
+    }), { openingQty: 0, addedQty: 0, issuedQty: 0, closingQty: 0, physicalQty: 0, varianceQty: 0, openingValue: 0, addedValue: 0, issuedValue: 0, closingValue: 0, varianceValue: 0, itemCount: 0, countedItems: 0, awaitingCount: 0 });
+
+    return {
+      mainStore: mainStoreLedger,
+      departmentStores: departmentStoreLedger,
+      combinedDeptTotals,
+    };
+  };
+
   const buildReportData = () => {
     const metrics = calculateMetrics();
     const deptComparison = getDepartmentComparison();
@@ -587,6 +873,16 @@ export default function Reports() {
       },
     }));
     
+    // Sales & Revenue section data (matches Audit Workspace exactly)
+    const dailySummary = getDailySummary();
+    const reportedPayments = getReportedPaymentsSummary();
+    
+    // Audit Trail Evidence
+    const auditTrailEvidence = getAuditTrailEvidence();
+    
+    // SRD Ledger Summary (matches Inventory Ledger page)
+    const srdLedgerSummary = getSrdLedgerSummary();
+
     setReportData({
       type: reportType,
       period: {
@@ -616,6 +912,13 @@ export default function Reports() {
       selectedSections,
       storeNames: storeNames || [],
       items: itemsData || [],
+      // Sales & Revenue (matches Audit Workspace)
+      dailySummary,
+      reportedPayments,
+      // Audit Trail Evidence
+      auditTrailEvidence,
+      // SRD Ledger Summary (matches Inventory Ledger)
+      srdLedgerSummary,
     });
   };
 
@@ -1049,6 +1352,157 @@ export default function Reports() {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Sales & Revenue (matches Audit Workspace exactly) */}
+                  {selectedSections.includes("sales-revenue") && reportData.dailySummary && (
+                    <div className="page-break-before space-y-6">
+                      <h3 className="font-bold text-lg">Sales & Revenue</h3>
+                      
+                      {/* Variance Statement KPI Block */}
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="border rounded-lg p-4 bg-emerald-50">
+                          <div className="text-xs text-muted-foreground mb-1">System Total (Captured)</div>
+                          <div className="text-xl font-bold font-mono text-emerald-700">{formatMoney(reportData.reportedPayments?.totals?.totalCaptured ?? 0)}</div>
+                        </div>
+                        <div className="border rounded-lg p-4 bg-blue-50">
+                          <div className="text-xs text-muted-foreground mb-1">Declared Total</div>
+                          <div className="text-xl font-bold font-mono text-blue-700">{formatMoney(reportData.reportedPayments?.totals?.totalDeclared ?? 0)}</div>
+                        </div>
+                        <div className={cn(
+                          "border rounded-lg p-4",
+                          (reportData.reportedPayments?.totals?.firstHitVariance ?? 0) === 0 ? "bg-green-50" : 
+                          (reportData.reportedPayments?.totals?.firstHitVariance ?? 0) < 0 ? "bg-red-50" : "bg-amber-50"
+                        )}>
+                          <div className="text-xs text-muted-foreground mb-1">First Hit Variance (Declared - Captured)</div>
+                          <div className={cn(
+                            "text-xl font-bold font-mono",
+                            (reportData.reportedPayments?.totals?.firstHitVariance ?? 0) === 0 ? "text-green-700" : 
+                            (reportData.reportedPayments?.totals?.firstHitVariance ?? 0) < 0 ? "text-red-700" : "text-amber-700"
+                          )}>
+                            {(reportData.reportedPayments?.totals?.firstHitVariance ?? 0) > 0 ? "+" : ""}{formatMoney(reportData.reportedPayments?.totals?.firstHitVariance ?? 0)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Daily Summary Table (matches Audit Workspace) */}
+                      <div>
+                        <h4 className="font-medium mb-3">Daily Summary</h4>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-4">
+                            <div>
+                              <span className="text-sm text-muted-foreground">Period: {reportData.period.start} to {reportData.period.end}</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-2xl font-bold font-mono text-emerald-700">{formatMoney(reportData.dailySummary.totalCaptured)}</div>
+                              <div className="text-xs text-muted-foreground">{reportData.dailySummary.entryCount} entries</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-4">
+                            <div className="text-center p-3 bg-white/60 rounded-lg">
+                              <div className="text-xs text-muted-foreground mb-1">Amount</div>
+                              <div className="font-mono font-medium">{formatMoney(reportData.dailySummary.amount)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-white/60 rounded-lg">
+                              <div className="text-xs text-muted-foreground mb-1">Complimentary</div>
+                              <div className="font-mono font-medium">{formatMoney(reportData.dailySummary.complimentary)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-white/60 rounded-lg">
+                              <div className="text-xs text-muted-foreground mb-1">Vouchers</div>
+                              <div className="font-mono font-medium">{formatMoney(reportData.dailySummary.vouchers)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-white/60 rounded-lg">
+                              <div className="text-xs text-muted-foreground mb-1">Voids</div>
+                              <div className="font-mono font-medium text-muted-foreground">{formatMoney(reportData.dailySummary.voids)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-white/60 rounded-lg">
+                              <div className="text-xs text-muted-foreground mb-1">Others</div>
+                              <div className="font-mono font-medium">{formatMoney(reportData.dailySummary.others)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Reported Payments Summary Table (matches Audit Workspace) */}
+                      {reportData.reportedPayments?.departments?.length > 0 && (
+                        <div>
+                          <h4 className="font-medium mb-3">Reported Payments Summary</h4>
+                          <Table className="text-sm">
+                            <TableHeader>
+                              <TableRow className="bg-gray-100">
+                                <TableHead>Department</TableHead>
+                                <TableHead className="text-right">Total Captured</TableHead>
+                                <TableHead className="text-right">Total Declared</TableHead>
+                                <TableHead className="text-right">First Hit Variance</TableHead>
+                                <TableHead>Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {reportData.reportedPayments.departments.map((r: any) => (
+                                <>
+                                  <TableRow key={r.departmentId}>
+                                    <TableCell className="font-medium">{r.departmentName}</TableCell>
+                                    <TableCell className="text-right font-mono">{formatMoney(r.totalCaptured)}</TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      {r.hasDeclaration ? formatMoney(r.totalDeclared) : <span className="text-muted-foreground">Pending</span>}
+                                    </TableCell>
+                                    <TableCell className={cn(
+                                      "text-right font-mono font-medium",
+                                      !r.hasDeclaration ? "text-amber-600" : r.variance === 0 ? "text-emerald-600" : r.variance < 0 ? "text-red-600" : "text-amber-600"
+                                    )}>
+                                      {!r.hasDeclaration 
+                                        ? <span className="text-amber-600">-{formatMoney(r.totalCaptured)}</span>
+                                        : r.variance === 0 
+                                          ? formatMoney(0)
+                                          : `${r.variance > 0 ? "+" : ""}${formatMoney(r.variance)}`}
+                                    </TableCell>
+                                    <TableCell>
+                                      {!r.hasDeclaration ? (
+                                        <Badge variant="outline" className="text-amber-600 border-amber-600">Awaiting</Badge>
+                                      ) : r.variance === 0 ? (
+                                        <Badge variant="default" className="bg-emerald-600">Matched</Badge>
+                                      ) : r.variance < 0 ? (
+                                        <Badge variant="destructive">Short</Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="bg-amber-100 text-amber-800">Over</Badge>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                  <TableRow key={`${r.departmentId}-breakdown`} className="bg-muted/20 border-b">
+                                    <TableCell className="py-2 pl-8">
+                                      <span className="text-xs text-muted-foreground">Breakdown:</span>
+                                    </TableCell>
+                                    <TableCell colSpan={4} className="py-2">
+                                      <div className="flex items-center gap-6 text-xs">
+                                        <span><span className="text-muted-foreground">Cash:</span> {formatMoney(r.declaredCash)}</span>
+                                        <span><span className="text-muted-foreground">POS:</span> {formatMoney(r.declaredPos)}</span>
+                                        <span><span className="text-muted-foreground">Transfer:</span> {formatMoney(r.declaredTransfer)}</span>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                </>
+                              ))}
+                              <TableRow className="font-bold bg-gray-50">
+                                <TableCell>GRAND TOTAL</TableCell>
+                                <TableCell className="text-right font-mono">{formatMoney(reportData.reportedPayments.totals.totalCaptured)}</TableCell>
+                                <TableCell className="text-right font-mono">{formatMoney(reportData.reportedPayments.totals.totalDeclared)}</TableCell>
+                                <TableCell className={cn(
+                                  "text-right font-mono",
+                                  reportData.reportedPayments.totals.firstHitVariance === 0 ? "text-emerald-600" : 
+                                  reportData.reportedPayments.totals.firstHitVariance < 0 ? "text-red-600" : "text-amber-600"
+                                )}>
+                                  {reportData.reportedPayments.totals.firstHitVariance > 0 ? "+" : ""}{formatMoney(reportData.reportedPayments.totals.firstHitVariance)}
+                                </TableCell>
+                                <TableCell></TableCell>
+                              </TableRow>
+                            </TableBody>
+                          </Table>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            Variance = Declared - Captured. Negative = Short (declared less than captured).
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1641,46 +2095,225 @@ export default function Reports() {
                     </div>
                   )}
 
-                  {/* SRD Main Store Ledger Summary */}
-                  {selectedSections.includes("srd-main-store") && reportData.storeNames?.length > 0 && (
-                    <div className="page-break-before">
-                      <h3 className="font-bold text-lg mb-4">SRD Main Store Ledger Summary</h3>
+                  {/* SRD Main Store Ledger Summary with real data */}
+                  {selectedSections.includes("srd-main-store") && reportData.srdLedgerSummary?.mainStore?.length > 0 && (
+                    <div className="page-break-before space-y-6">
+                      <h3 className="font-bold text-lg">SRD Main Store Ledger Summary</h3>
                       <p className="text-sm text-gray-500 mb-4">
-                        Summary of Main Store SRDs for period: {reportData.period.start} to {reportData.period.end}
+                        Inventory values as of: {reportData.period.end}
                       </p>
+                      {reportData.srdLedgerSummary.mainStore.map((srd: any) => (
+                        <div key={srd.id} className="border rounded-lg p-4 bg-gray-50">
+                          <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-semibold text-base">{srd.name}</h4>
+                            <div className="flex gap-2">
+                              <Badge variant="default">MAIN STORE</Badge>
+                              <span className="text-xs text-muted-foreground">
+                                Count Progress: {srd.countedItems}/{srd.itemCount}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-4 mb-4">
+                            <div className="text-center p-3 bg-white rounded border">
+                              <div className="text-xs text-muted-foreground mb-1">Opening Value</div>
+                              <div className="font-mono font-medium">{formatMoney(srd.openingValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.openingQty.toFixed(2)} units</div>
+                            </div>
+                            <div className="text-center p-3 bg-green-50 rounded border border-green-200">
+                              <div className="text-xs text-muted-foreground mb-1">Added Value</div>
+                              <div className="font-mono font-medium text-green-700">{formatMoney(srd.addedValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.addedQty.toFixed(2)} units</div>
+                            </div>
+                            <div className="text-center p-3 bg-amber-50 rounded border border-amber-200">
+                              <div className="text-xs text-muted-foreground mb-1">Issued Value</div>
+                              <div className="font-mono font-medium text-amber-700">{formatMoney(srd.issuedValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.issuedQty.toFixed(2)} units</div>
+                            </div>
+                            <div className="text-center p-3 bg-blue-50 rounded border border-blue-200">
+                              <div className="text-xs text-muted-foreground mb-1">Closing Value</div>
+                              <div className="font-mono font-bold text-blue-700">{formatMoney(srd.closingValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.closingQty.toFixed(2)} units</div>
+                            </div>
+                            <div className={cn(
+                              "text-center p-3 rounded border",
+                              srd.varianceQty === 0 ? "bg-green-50 border-green-200" :
+                              srd.varianceQty < 0 ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+                            )}>
+                              <div className="text-xs text-muted-foreground mb-1">Variance</div>
+                              <div className={cn(
+                                "font-mono font-medium",
+                                srd.varianceQty === 0 ? "text-green-700" :
+                                srd.varianceQty < 0 ? "text-red-700" : "text-amber-700"
+                              )}>
+                                {srd.varianceValue > 0 ? "+" : ""}{formatMoney(srd.varianceValue)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{srd.varianceQty.toFixed(2)} units</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Stock Report & Variance (Department Stores) */}
+                  {selectedSections.includes("stock-report") && reportData.srdLedgerSummary?.departmentStores?.length > 0 && (
+                    <div className="page-break-before space-y-6">
+                      <h3 className="font-bold text-lg">Stock Report & Variance (Department Stores)</h3>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Inventory values as of: {reportData.period.end}
+                      </p>
+                      {reportData.srdLedgerSummary.departmentStores.map((srd: any) => (
+                        <div key={srd.id} className="border rounded-lg p-4 bg-purple-50/30">
+                          <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-semibold text-base">{srd.name}</h4>
+                            <div className="flex gap-2">
+                              <Badge variant="secondary" className="bg-purple-100 text-purple-800">DEPARTMENT STORE</Badge>
+                              <span className="text-xs text-muted-foreground">
+                                Count Progress: {srd.countedItems}/{srd.itemCount}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-4 mb-4">
+                            <div className="text-center p-3 bg-white rounded border">
+                              <div className="text-xs text-muted-foreground mb-1">Opening Value</div>
+                              <div className="font-mono font-medium">{formatMoney(srd.openingValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.openingQty.toFixed(2)} units</div>
+                            </div>
+                            <div className="text-center p-3 bg-green-50 rounded border border-green-200">
+                              <div className="text-xs text-muted-foreground mb-1">Added (Transfers In)</div>
+                              <div className="font-mono font-medium text-green-700">{formatMoney(srd.addedValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.addedQty.toFixed(2)} units</div>
+                            </div>
+                            <div className="text-center p-3 bg-amber-50 rounded border border-amber-200">
+                              <div className="text-xs text-muted-foreground mb-1">Issued (Sales/Usage)</div>
+                              <div className="font-mono font-medium text-amber-700">{formatMoney(srd.issuedValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.issuedQty.toFixed(2)} units</div>
+                            </div>
+                            <div className="text-center p-3 bg-purple-50 rounded border border-purple-200">
+                              <div className="text-xs text-muted-foreground mb-1">Closing Value</div>
+                              <div className="font-mono font-bold text-purple-700">{formatMoney(srd.closingValue)}</div>
+                              <div className="text-xs text-muted-foreground">{srd.closingQty.toFixed(2)} units</div>
+                            </div>
+                            <div className={cn(
+                              "text-center p-3 rounded border",
+                              srd.varianceQty === 0 ? "bg-green-50 border-green-200" :
+                              srd.varianceQty < 0 ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+                            )}>
+                              <div className="text-xs text-muted-foreground mb-1">Variance</div>
+                              <div className={cn(
+                                "font-mono font-medium",
+                                srd.varianceQty === 0 ? "text-green-700" :
+                                srd.varianceQty < 0 ? "text-red-700" : "text-amber-700"
+                              )}>
+                                {srd.varianceValue > 0 ? "+" : ""}{formatMoney(srd.varianceValue)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{srd.varianceQty.toFixed(2)} units</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {/* Combined Department Stores Total */}
+                      {reportData.srdLedgerSummary.combinedDeptTotals && (
+                        <div className="border-t-2 border-purple-300 pt-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <h4 className="font-bold text-base">Combined Department Stores Total</h4>
+                            <span className="text-sm text-muted-foreground">
+                              {reportData.srdLedgerSummary.departmentStores.length} stores
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-5 gap-4">
+                            <div className="text-center p-3 bg-gray-100 rounded">
+                              <div className="text-xs text-muted-foreground mb-1">Opening Value</div>
+                              <div className="font-mono font-bold">{formatMoney(reportData.srdLedgerSummary.combinedDeptTotals.openingValue)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-100 rounded">
+                              <div className="text-xs text-muted-foreground mb-1">Added Value</div>
+                              <div className="font-mono font-bold text-green-700">{formatMoney(reportData.srdLedgerSummary.combinedDeptTotals.addedValue)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-100 rounded">
+                              <div className="text-xs text-muted-foreground mb-1">Issued Value</div>
+                              <div className="font-mono font-bold text-amber-700">{formatMoney(reportData.srdLedgerSummary.combinedDeptTotals.issuedValue)}</div>
+                            </div>
+                            <div className="text-center p-3 bg-purple-100 rounded">
+                              <div className="text-xs text-muted-foreground mb-1">Closing Value</div>
+                              <div className="font-mono font-bold text-purple-700">{formatMoney(reportData.srdLedgerSummary.combinedDeptTotals.closingValue)}</div>
+                            </div>
+                            <div className={cn(
+                              "text-center p-3 rounded",
+                              reportData.srdLedgerSummary.combinedDeptTotals.varianceValue === 0 ? "bg-green-100" :
+                              reportData.srdLedgerSummary.combinedDeptTotals.varianceValue < 0 ? "bg-red-100" : "bg-amber-100"
+                            )}>
+                              <div className="text-xs text-muted-foreground mb-1">Total Variance</div>
+                              <div className={cn(
+                                "font-mono font-bold",
+                                reportData.srdLedgerSummary.combinedDeptTotals.varianceValue === 0 ? "text-green-700" :
+                                reportData.srdLedgerSummary.combinedDeptTotals.varianceValue < 0 ? "text-red-700" : "text-amber-700"
+                              )}>
+                                {reportData.srdLedgerSummary.combinedDeptTotals.varianceValue > 0 ? "+" : ""}{formatMoney(reportData.srdLedgerSummary.combinedDeptTotals.varianceValue)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Audit Trail Evidence (from Audit Logs API) */}
+                  {selectedSections.includes("audit-evidence") && reportData.auditTrailEvidence?.length > 0 && (
+                    <div className="page-break-before">
+                      <h3 className="font-bold text-lg mb-4">Audit Trail Evidence</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        System-wide activity log for compliance and accountability for period: {reportData.period.start} to {reportData.period.end}
+                      </p>
+                      <div className="bg-blue-50 p-3 rounded mb-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div><strong>Total Logs:</strong> {reportData.auditTrailEvidence.length}</div>
+                          <div><strong>Period:</strong> {reportData.period.start} to {reportData.period.end}</div>
+                          <div><strong>Generated:</strong> {format(new Date(reportData.generatedAt), "MMM d, yyyy HH:mm")}</div>
+                        </div>
+                      </div>
                       <Table className="text-sm">
                         <TableHeader>
                           <TableRow className="bg-gray-100">
-                            <TableHead>SRD Name</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Status</TableHead>
+                            <TableHead className="w-[140px]">Timestamp</TableHead>
+                            <TableHead>User</TableHead>
+                            <TableHead>Action</TableHead>
+                            <TableHead>Entity</TableHead>
+                            <TableHead>Details</TableHead>
+                            <TableHead className="text-right">IP Address</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {reportData.storeNames
-                            .filter((s: any) => s.storeType === "main_store" || !s.storeType)
-                            .map((srd: any) => (
-                              <TableRow key={srd.id}>
-                                <TableCell className="font-medium">{srd.name}</TableCell>
-                                <TableCell>{srd.description || "-"}</TableCell>
-                                <TableCell>
-                                  <Badge variant={srd.storeType === "main_store" ? "default" : "secondary"}>
-                                    {(srd.storeType || "main_store").replace("_", " ").toUpperCase()}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge variant={srd.isActive !== false ? "default" : "outline"}>
-                                    {srd.isActive !== false ? "ACTIVE" : "INACTIVE"}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                          {reportData.auditTrailEvidence.slice(0, 100).map((log: any) => (
+                            <TableRow key={log.id}>
+                              <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                {log.timestamp ? format(new Date(log.timestamp), "MMM d, h:mm a") : "-"}
+                              </TableCell>
+                              <TableCell className="font-medium text-sm">
+                                {log.userId || "System"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="font-normal text-xs">
+                                  {log.action}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm">{log.entity}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">
+                                {log.details || "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                                {log.ipAddress || "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
                         </TableBody>
                       </Table>
-                      <p className="text-xs text-gray-400 mt-2">
-                        Note: Detailed inventory ledger data with opening/closing balances requires individual SRD selection.
-                      </p>
+                      {reportData.auditTrailEvidence.length > 100 && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Showing first 100 of {reportData.auditTrailEvidence.length} logs. Full audit trail available in the Audit Trail page.
+                        </p>
+                      )}
                     </div>
                   )}
 

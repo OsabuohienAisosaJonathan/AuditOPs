@@ -1,0 +1,327 @@
+PROMPT TO PASTE (Real Data Pull for ALL Report Sections)
+TITLE: REPORTS MUST PULL REAL DATA + REAL TABLES FROM SOURCE PAGES (NO MOCKS) — SALES/REVENUE, SRD MAIN STORE, SRD DEPARTMENTS, AUDIT TRAIL EVIDENCE, ALL SECTIONS
+NON-NEGOTIABLE RULES
+
+
+No mock data in Report Preview or PDF.
+
+
+Do not recreate tables manually for the report. Instead: reuse the same data sources / endpoints / queries that power the original pages.
+
+
+Every report section must map to its “source page/table” and pull the exact same dataset, calculations, totals, and column order.
+
+
+Do not remove/rename existing routes or DB columns. Add only minimal endpoints if missing.
+
+
+If a report needs totals (department totals, grand totals), compute them exactly the same way the source page computes them.
+
+
+
+A) SALES & REVENUE (FROM AUDIT WORKSPACE)
+Requirement
+When user selects Sales & Revenue in Reports:
+1) Pull “Daily Summary” table from Audit Workspace
+
+
+Source: Audit Workspace → Sales & Revenue tab/page
+
+
+Pull the exact Daily Summary table (same rows, same totals, same formatting).
+
+
+2) Pull “Reported Payments Summary” table from Audit Workspace
+
+
+Source: Audit Workspace → Sales & Revenue tab/page
+
+
+Pull the exact Reported Payments Summary table (same methods/currencies, same totals).
+
+
+3) Add a clear variance statement (System vs Declared)
+
+
+Must be derived from those same two source tables:
+
+
+System Total (captured)
+
+
+Declared Total
+
+
+Variance = System − Declared
+
+
+
+
+Display as a small summary table or a KPI block above the tables.
+
+
+✅ If the Audit Workspace page already calls an API, reuse it.
+❗ If not, create a minimal backend endpoint like:
+
+
+GET /api/reports/source/audit-sales-summary?clientId=&departmentId=&dateFrom=&dateTo=
+that returns exactly what the UI table is showing.
+
+
+
+B) SRD MAIN STORE LEDGER → “SRD MAIN STORE LEDGER SUMMARY”
+Requirement
+When user selects SRD Main Store Ledger Summary:
+
+
+Source: Inventory Ledger → SRD Main Store Ledger
+
+
+Report must pull:
+
+
+The same Main Store ledger values per item
+
+
+The same totals (purchase/added, returns, losses, req dep totals, closing, etc.)
+
+
+
+
+Output:
+A) Header summary totals (for the period)
+B) Item table (same columns the ledger uses, plus summary)
+
+
+✅ If ledger is computed client-side, move that compute logic to a shared server utility OR expose it via endpoint used by both UI and report.
+
+C) SRD DEPARTMENT STORES → “STOCK REPORT & VARIANCE (SRDs)”
+Requirement
+When user selects Stock Report & Variance (SRDs):
+
+
+Source: Inventory Ledger → SRD Department Store Ledgers
+
+
+The report must include:
+
+
+Each SRD department store ledger table values
+
+
+A combined “All Departments Summary” table
+
+
+
+
+Key rule you requested:
+“Ensure all the various department total are accumulated and used on their respective columns.”
+Meaning:
+
+
+If the report shows one consolidated table:
+
+
+Each department must occupy its own column (Dep1, Dep2, Dep3…)
+
+
+Their totals must match exactly what each department ledger shows
+
+
+
+
+Total columns must include:
+
+
+Total Added
+
+
+Total Issued / Req
+
+
+Total Losses (Waste + Write-off)
+
+
+Total Sold
+
+
+Closing
+
+
+Awaiting Count / Variance where applicable
+
+
+
+
+✅ Must support:
+
+
+Daily, Weekly, Monthly, and custom date ranges
+
+
+If weekly/monthly is selected, show daily breakdown rows inside that section (date-by-date), then a weekly/monthly total row.
+
+
+
+D) AUDIT TRAIL EVIDENCE (PULL FROM RESPECTIVE ACCOUNTS)
+Requirement
+When user selects Audit Trail Evidence:
+
+
+Source: Audit Trail page
+
+
+Pull:
+
+
+User actions
+
+
+Time stamps
+
+
+Entity affected (sales, count, movement, exceptions, ledger edits)
+
+
+Before/After values where available
+
+
+Actor (user) and role
+
+
+
+
+✅ Must be pulled from the same audit trail store/log used by the page.
+If audit trail is incomplete, do not fake it — instead:
+
+
+extend logging minimally so report can show real evidence.
+
+
+
+E) ALL OTHER REPORT SECTIONS MUST PULL FROM THEIR REAL PAGES
+For every selectable report item, enforce this rule:
+
+
+Identify the exact source page.
+
+
+Identify the exact source table and its data query.
+
+
+Reuse that query/endpoint in report mode.
+
+
+PDF/Preview must render the same columns, same totals.
+
+
+This includes (but not limited to):
+
+
+Department Comparison (2nd Hit) → Reconciliation page
+
+
+Stock Movements Summary → Audit Workspace Stock tab
+
+
+Exceptions Log → Exceptions page
+
+
+Purchases Register → Purchases Register page
+
+
+GRN Register → GRN page
+
+
+Receivables → Receivables page
+
+
+Surplus → Surplus page
+
+
+
+F) RENDERING RULES FOR REPORT PREVIEW + PDF
+
+
+Preview must match PDF output exactly.
+
+
+Tables must:
+
+
+repeat header on new PDF pages
+
+
+never drop columns (use landscape if needed)
+
+
+use proper currency formatting
+
+
+
+
+If a table is too wide:
+
+
+switch that section page to landscape
+
+
+reduce font slightly
+
+
+allow wrapping
+
+
+but NEVER remove columns
+
+
+
+
+
+G) OUTPUT REQUIRED FROM YOU (AI BUILDER)
+
+
+Show exact file paths edited.
+
+
+For each edited file, print first 10–15 lines to confirm correct file.
+
+
+Provide code patches with clear start/end markers.
+
+
+If new endpoints were added:
+
+
+list endpoint routes
+
+
+show request params
+
+
+show response JSON structure
+
+
+
+
+Provide test checklist:
+
+
+Sales & Revenue matches Audit Workspace Daily Summary + Reported Payments Summary exactly
+
+
+SRD Main Store Ledger Summary matches Inventory Ledger main store data exactly
+
+
+Stock Report & Variance (SRDs) totals match each department ledger exactly
+
+
+Audit Trail Evidence matches Audit Trail page records
+
+
+All other sections pull from their respective pages and contain real rows
+
+
+
+
+END PROMPT
