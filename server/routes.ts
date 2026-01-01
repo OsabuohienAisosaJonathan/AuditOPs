@@ -2038,6 +2038,24 @@ export async function registerRoutes(
             targetDate
           );
           
+          // Record purchase item event for the register
+          const qty = parseFloat(purchaseQty);
+          const unitCost = parseFloat(item.costPrice || "0");
+          const totalCost = qty * unitCost;
+          await storage.createPurchaseItemEvent({
+            clientId: item.clientId,
+            srdId: mainStoreInvDept.id,
+            itemId: item.id,
+            date: targetDate,
+            qty: purchaseQty,
+            unitCostAtPurchase: item.costPrice || "0.00",
+            totalCost: totalCost.toFixed(2),
+            supplierName: null,
+            invoiceNo: null,
+            notes: null,
+            createdBy: req.session.userId!,
+          });
+          
           const dateStr = targetDate.toISOString().split('T')[0];
           await storage.createAuditLog({
             userId: req.session.userId!,
