@@ -1533,6 +1533,18 @@ export async function registerRoutes(
           return res.status(400).json({ error: "Category name must be at least 2 characters" });
         }
         updateData.name = normalizeCategoryName(updateData.name);
+        
+        // Check for duplicate name within same client
+        const existingCategory = await storage.getCategory(req.params.id);
+        if (existingCategory) {
+          const allCategories = await storage.getCategories(existingCategory.clientId);
+          const duplicate = allCategories.find(
+            c => c.id !== req.params.id && c.name.toLowerCase() === updateData.name.toLowerCase()
+          );
+          if (duplicate) {
+            return res.status(400).json({ error: "A category with this name already exists" });
+          }
+        }
       }
       
       const category = await storage.updateCategory(req.params.id, updateData);

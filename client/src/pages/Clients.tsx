@@ -38,6 +38,9 @@ export default function Clients() {
   const [deleteDeptConfirm, setDeleteDeptConfirm] = useState<Department | null>(null);
   const [suspendDeptDialog, setSuspendDeptDialog] = useState<Department | null>(null);
   const [suspendReason, setSuspendReason] = useState("");
+  
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
 
   const queryClient = useQueryClient();
 
@@ -104,6 +107,30 @@ export default function Clients() {
     },
     onError: () => {
       toast.error("Failed to create category");
+    },
+  });
+
+  const updateCategoryMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => categoriesApi.update(id, { name }),
+    onMutate: async ({ id, name }) => {
+      await queryClient.cancelQueries({ queryKey: ["categories", expandedClientId] });
+      const previousCategories = queryClient.getQueryData<Category[]>(["categories", expandedClientId]);
+      queryClient.setQueryData<Category[]>(["categories", expandedClientId], (old) =>
+        old?.map((cat) => (cat.id === id ? { ...cat, name } : cat)) || []
+      );
+      return { previousCategories };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+      toast.success("Category updated");
+    },
+    onError: (error: any, variables, context) => {
+      if (context?.previousCategories) {
+        queryClient.setQueryData(["categories", expandedClientId], context.previousCategories);
+      }
+      toast.error(error.message || "Failed to update category");
     },
   });
 
@@ -417,14 +444,70 @@ export default function Clients() {
                               <div 
                                 key={category.id}
                                 className="flex items-center justify-between p-3 border rounded-lg"
+                                data-testid={`category-row-${category.id}`}
                               >
                                 <div className="flex items-center gap-3">
                                   <FolderTree className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">{category.name}</span>
+                                  {editingCategoryId === category.id ? (
+                                    <Input
+                                      value={editingCategoryName}
+                                      onChange={(e) => setEditingCategoryName(e.target.value.toUpperCase())}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          const trimmed = editingCategoryName.trim();
+                                          if (trimmed && trimmed !== category.name) {
+                                            updateCategoryMutation.mutate({ id: category.id, name: trimmed });
+                                          } else {
+                                            setEditingCategoryId(null);
+                                            setEditingCategoryName("");
+                                          }
+                                        } else if (e.key === "Escape") {
+                                          setEditingCategoryId(null);
+                                          setEditingCategoryName("");
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        const trimmed = editingCategoryName.trim();
+                                        if (trimmed && trimmed !== category.name) {
+                                          updateCategoryMutation.mutate({ id: category.id, name: trimmed });
+                                        } else {
+                                          setEditingCategoryId(null);
+                                          setEditingCategoryName("");
+                                        }
+                                      }}
+                                      autoFocus
+                                      className="h-7 w-48"
+                                      data-testid={`input-edit-category-${category.id}`}
+                                    />
+                                  ) : (
+                                    <span 
+                                      className="font-medium cursor-pointer hover:text-primary"
+                                      onClick={() => {
+                                        setEditingCategoryId(category.id);
+                                        setEditingCategoryName(category.name);
+                                      }}
+                                      data-testid={`text-category-name-${category.id}`}
+                                    >
+                                      {category.name}
+                                    </span>
+                                  )}
                                   <Badge variant="secondary" className="text-xs">
                                     {getDepartmentsByCategory(category.id).length} departments
                                   </Badge>
                                 </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => {
+                                    setEditingCategoryId(category.id);
+                                    setEditingCategoryName(category.name);
+                                  }}
+                                  data-testid={`button-edit-category-${category.id}`}
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
                               </div>
                             ))}
                           </div>

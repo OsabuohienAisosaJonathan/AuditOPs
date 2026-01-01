@@ -1,0 +1,130 @@
+PROMPT: MAKE CATEGORY NAME EDITABLE + AUTO-SAVE + REFLECT EVERYWHERE
+GOAL
+
+On the Client page, allow users to edit an inventory category name inline. When edited, it should:
+
+Auto-save (no “Save” button needed)
+
+Update everywhere in the app immediately, especially:
+
+Inventory Management page
+
+SRD Ledger tables
+
+Stock Count item dropdowns
+
+Stock Movement item dropdowns
+
+Reports (where category is shown)
+
+IMPORTANT RULE
+
+This is NOT a new feature build. The category system already exists. This is an adjustment + bug-proof update propagation.
+
+1) UI CHANGE: INLINE EDIT CATEGORY NAME (CLIENT PAGE)
+REQUIREMENT
+
+In the Client page category list/table:
+
+Show category name as normal text
+
+Add an Edit icon (pencil)
+
+When clicked:
+
+Replace text with an input field
+
+Autofocus input
+
+Enter key saves
+
+Escape cancels
+
+Clicking outside saves (if changed)
+
+AUTO SAVE BEHAVIOR
+
+When user finishes editing:
+
+If name didn’t change → do nothing
+
+If name changed:
+
+Immediately update UI (optimistic update)
+
+Call backend to persist
+
+If backend fails → revert and show toast error
+
+2) BACKEND: UPDATE CATEGORY NAME ENDPOINT (DO NOT BREAK EXISTING TABLES)
+If there is already an endpoint, reuse it.
+
+If not, create this minimal endpoint:
+
+PATCH /api/clients/:clientId/categories/:categoryId
+Body:
+
+{ "name": "New Category Name" }
+
+
+Validation rules:
+
+name required, trimmed
+
+min length 2
+
+prevent duplicates per client (case-insensitive)
+
+return updated category record
+
+3) STATE + CACHE: UPDATE EVERYWHERE WITHOUT PAGE REFRESH
+MUST FIX: REFLECT UPDATE ACROSS APP
+
+After successful save:
+
+Update the frontend category store/cache
+
+Ensure Inventory Management page reads category names from the same source
+
+Implementation rule:
+
+Category display should always use categoryId -> category.name
+
+Avoid storing raw categoryName strings inside item rows (causes stale labels)
+
+If any tables currently store categoryName strings:
+
+Keep stored string for backward compatibility
+
+But UI should show live name from category map where possible
+
+Add fallback: if category missing, show stored string
+
+4) ENSURE INVENTORY MANAGEMENT PAGE UPDATES
+Bug to fix:
+
+When category name changes, Inventory Management page must instantly reflect:
+
+Category labels
+
+Category filters dropdown
+
+Category grouping headers (if any)
+
+If Inventory page fetches categories only on page load:
+
+Introduce shared hook/store: useCategories(clientId)
+
+On category update, invalidate/refetch or update local cache.
+
+5) FILE PATHS + PATCH FORMAT REQUIREMENTS
+
+Output MUST include:
+
+Exact file paths edited
+
+First 10–15 lines of each edited file to confirm correct file
+
+Code patches with start/end markers for replacement
+
+Test checklist
