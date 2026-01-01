@@ -53,6 +53,7 @@ PostgreSQL database with the following core entities:
 - **exceptions/exceptionComments**: Audit discrepancy cases
 - **auditLogs/adminActivityLogs**: Compliance logging
 - **itemSerialEvents**: Serial number tracking events for inventory movements
+- **purchaseItemEvents**: Purchase register tracking all item purchases with qty, cost, supplier, and invoice details
 
 ### Serial Number Tracking
 Items can be configured with serial tracking types:
@@ -74,6 +75,15 @@ Main Store ledger includes:
 Department Store ledger includes:
 - Collapsible Transfers column group with In/Out breakdowns by source type
 - Opening + Added + Received - Issued Out - Losses formula for totals
+
+### Purchase Item Events Register
+The Item Purchases page (`/item-purchases`) provides a comprehensive register of all purchase transactions:
+- Filterable by date range, SRD, item, or search term
+- Displays item, SRD, quantity, unit cost, total cost, supplier, invoice number, and notes
+- Shows total value summary for filtered results
+- Supports CSV export for reporting
+- Automatically logs purchase events when purchases are recorded in the Inventory module
+- Client access enforced via `requireClientAccess` middleware for multi-tenant isolation
 
 ### Department Architecture
 The department system supports flexible inheritance:

@@ -2029,32 +2029,39 @@ export async function registerRoutes(
         if (mainStoreInvDept) {
           console.log(`[Purchase Capture] Using Main Store inventory dept: ${mainStoreInvDept.id}`);
           
+          // Use the item's current cost price as the purchase price
+          // Note: The actual cost price at purchase time is captured
+          const purchaseCostPrice = item.costPrice || "0.00";
+          
           await storage.addPurchaseToStoreStock(
             item.clientId,
             mainStoreInvDept.id, // Use inventory department ID, not linked department ID
             item.id,
             parseFloat(purchaseQty),
-            item.costPrice || "0.00",
+            purchaseCostPrice,
             targetDate
           );
           
           // Record purchase item event for the register
-          const qty = parseFloat(purchaseQty);
-          const unitCost = parseFloat(item.costPrice || "0");
-          const totalCost = qty * unitCost;
-          await storage.createPurchaseItemEvent({
-            clientId: item.clientId,
-            srdId: mainStoreInvDept.id,
-            itemId: item.id,
-            date: targetDate,
-            qty: purchaseQty,
-            unitCostAtPurchase: item.costPrice || "0.00",
-            totalCost: totalCost.toFixed(2),
-            supplierName: null,
-            invoiceNo: null,
-            notes: null,
-            createdBy: req.session.userId!,
-          });
+          // Only log if we have a valid cost price
+          if (item.costPrice && parseFloat(item.costPrice) > 0) {
+            const qty = parseFloat(purchaseQty);
+            const unitCost = parseFloat(purchaseCostPrice);
+            const totalCost = qty * unitCost;
+            await storage.createPurchaseItemEvent({
+              clientId: item.clientId,
+              srdId: mainStoreInvDept.id,
+              itemId: item.id,
+              date: targetDate,
+              qty: purchaseQty,
+              unitCostAtPurchase: purchaseCostPrice,
+              totalCost: totalCost.toFixed(2),
+              supplierName: null,
+              invoiceNo: null,
+              notes: `Auto-logged from inventory purchase capture`,
+              createdBy: req.session.userId!,
+            });
+          }
           
           const dateStr = targetDate.toISOString().split('T')[0];
           await storage.createAuditLog({
@@ -5149,7 +5156,7 @@ export async function registerRoutes(
   });
 
   // ============== PURCHASE ITEM EVENTS REGISTER ==============
-  app.get("/api/clients/:clientId/purchase-item-events", requireAuth, async (req, res) => {
+  app.get("/api/clients/:clientId/purchase-item-events", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.params;
       const { srdId, itemId, dateFrom, dateTo } = req.query;
@@ -5167,13 +5174,32 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/clients/:clientId/purchase-item-events", requireAuth, async (req, res) => {
+  app.post("/api/clients/:clientId/purchase-item-events", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.params;
+      
+      // Validate required fields
+      const { itemId, date, qty, unitCostAtPurchase } = req.body;
+      if (!itemId || !date || !qty || !unitCostAtPurchase) {
+        return res.status(400).json({ error: "Missing required fields: itemId, date, qty, unitCostAtPurchase" });
+      }
+      
+      const qtyNum = parseFloat(qty);
+      const unitCostNum = parseFloat(unitCostAtPurchase);
+      if (isNaN(qtyNum) || qtyNum <= 0) {
+        return res.status(400).json({ error: "Quantity must be a positive number" });
+      }
+      if (isNaN(unitCostNum) || unitCostNum < 0) {
+        return res.status(400).json({ error: "Unit cost must be a non-negative number" });
+      }
+      
+      const totalCost = (qtyNum * unitCostNum).toFixed(2);
+      
       const data = {
         ...req.body,
         clientId,
-        date: new Date(req.body.date),
+        date: new Date(date),
+        totalCost,
         createdBy: req.session.userId,
       };
       
@@ -5184,7 +5210,7 @@ export async function registerRoutes(
         action: "Created Purchase Event",
         entity: "PurchaseItemEvent",
         entityId: event.id,
-        details: `Item: ${req.body.itemId}, Qty: ${req.body.qty}`,
+        details: `Item: ${itemId}, Qty: ${qty}, Total: ${totalCost}`,
         ipAddress: req.ip || "Unknown",
       });
       
