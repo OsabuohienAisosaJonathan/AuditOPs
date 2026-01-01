@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers,
+  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -33,7 +33,8 @@ import {
   type ReceivableHistory, type InsertReceivableHistory,
   type Surplus, type InsertSurplus,
   type SurplusHistory, type InsertSurplusHistory,
-  type SrdTransfer, type InsertSrdTransfer
+  type SrdTransfer, type InsertSrdTransfer,
+  type OrganizationSettings, type InsertOrganizationSettings
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
@@ -418,11 +419,15 @@ export class DbStorage implements IStorage {
 
   // Categories
   async getCategories(clientId: string): Promise<Category[]> {
-    return db.select().from(categories).where(eq(categories.clientId, clientId)).orderBy(categories.name);
+    return db.select().from(categories)
+      .where(and(eq(categories.clientId, clientId), sql`${categories.deletedAt} IS NULL`))
+      .orderBy(categories.name);
   }
 
   async getAllCategories(): Promise<Category[]> {
-    return db.select().from(categories).orderBy(categories.name);
+    return db.select().from(categories)
+      .where(sql`${categories.deletedAt} IS NULL`)
+      .orderBy(categories.name);
   }
 
   async getCategory(id: string): Promise<Category | undefined> {
@@ -440,11 +445,39 @@ export class DbStorage implements IStorage {
     return category;
   }
 
+  async softDeleteCategory(id: string, deletedBy: string): Promise<Category | undefined> {
+    const [category] = await db.update(categories)
+      .set({ deletedAt: new Date(), deletedBy })
+      .where(eq(categories.id, id))
+      .returning();
+    return category;
+  }
+
   async deleteCategory(id: string): Promise<boolean> {
     // Set categoryId to null for all departments in this category before deleting
     await db.update(departments).set({ categoryId: null }).where(eq(departments.categoryId, id));
     await db.delete(categories).where(eq(categories.id, id));
     return true;
+  }
+
+  // Organization Settings
+  async getOrganizationSettings(): Promise<OrganizationSettings | undefined> {
+    const [settings] = await db.select().from(organizationSettings).limit(1);
+    return settings;
+  }
+
+  async upsertOrganizationSettings(data: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings> {
+    const existing = await this.getOrganizationSettings();
+    if (existing) {
+      const [updated] = await db.update(organizationSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(organizationSettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(organizationSettings).values(data as InsertOrganizationSettings).returning();
+      return created;
+    }
   }
 
   // Departments

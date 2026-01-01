@@ -1,0 +1,118 @@
+PROMPT TO AI BUILDER (COPY + PASTE)
+
+TASK 1: CATEGORY DELETE (WITH STRONG WARNING + SAFE RULES)
+On the Client page, enable users (role-based) to DELETE a Category.
+
+A) Delete action
+1) Add a “Delete” (trash) action on each category row.
+2) When clicked, open a confirmation modal with BETTER WORDING + PROFESSIONAL DESIGN.
+
+B) Confirmation modal (better rendering)
+Title:
+“Delete Category?”
+
+Body text (render cleanly with emphasis):
+“You’re about to delete this category from this client.
+Deleting a category can affect records already linked to it.
+
+Important:
+• Items and transactions previously tagged with this category may no longer appear correctly in category-based views, filters, SRD tables, stock counts, and reports.
+• This action cannot be undone.”
+
+(If you support soft-delete, reflect that: “You can restore it later.” Otherwise keep “cannot be undone”.)
+
+Checkbox:
+“I understand the impact of deleting this category.”
+
+Buttons:
+1) Cancel
+2) Delete Category (destructive red)
+
+C) Delete rules (DO NOT BREAK DATA)
+1) DO NOT hard-delete if category is referenced by items/transactions.
+2) Implement SAFE deletion:
+   Option 1 (recommended): Soft delete
+   - Add fields: isDeleted, deletedAt, deletedBy
+   - Hide deleted categories from dropdowns and new assignments
+   - Keep historic records intact for reporting
+   - On historic data where categoryId exists but category is deleted, display:
+     “(Deleted Category)” + original saved name (if available)
+
+   Option 2: Block delete if referenced
+   - If category has items/transactions linked, show:
+     “This category cannot be deleted because it is already used. You can archive it instead.”
+   - Provide an “Archive Category” action (soft hide from selection)
+
+Choose the best safe approach (prefer soft delete / archive) without removing existing DB columns/routes.
+
+D) Ensure application-wide consistency
+After delete/archive:
+1) Category dropdowns refresh instantly everywhere:
+   - Inventory Management
+   - SRD Ledgers
+   - Stock Count selections
+   - Stock Movement selections
+   - Reports filters
+2) Existing records remain viewable; no blank labels.
+
+============================================================
+TASK 2: SETTINGS PAGE (COMPANY PROFILE FIRST + AUTO SAVE)
+Create/Update the Settings page to include a “Company Profile” section at the top.
+
+A) Company Profile fields (must appear first)
+1) Company Name (first field)
+2) Address
+3) Email
+4) Phone Number
+
+B) Auto-save behavior
+1) Save automatically on change (debounced)
+2) Show small status text:
+   - “Saving…” then “Saved”
+3) Backend must store settings per tenant/account (based on your current auth design).
+
+============================================================
+TASK 3: CURRENCY SETTING (GLOBAL + HEADER SELECTOR + AUTO SAVE)
+Add a Currency setting that:
+1) Auto-saves on selection
+2) Reflects across the entire app immediately
+3) Is selectable from the APPLICATION HEADER
+
+A) Currency Selector (Header)
+1) Add a currency dropdown in the header near the existing selectors.
+2) Options minimum:
+   - NGN (₦)
+   - USD ($)
+   - GBP (£)
+   - EUR (€)
+(You may include more, but keep it clean.)
+
+B) Default + persistence
+1) Default currency: NGN (₦) unless user changes it.
+2) Persist per organization/account in DB (not only localStorage).
+3) Also cache in localStorage for fast load, but the DB is source of truth.
+
+C) Global formatting rule
+1) All money displayed in the app must use the selected currency symbol:
+   - Dashboard metrics
+   - Sales tables
+   - Declared totals
+   - Reports (PDF/Excel)
+   - SRD variance values
+2) Use a single shared formatter utility/hook:
+   - formatMoney(amount) → includes symbol and separators
+3) When currency changes, UI updates instantly without refresh.
+
+============================================================
+OUTPUT REQUIRED FROM YOU (STRICT)
+1) Show exact file paths edited.
+2) For each edited file, show first 10–15 lines to confirm correct file.
+3) Provide code patches with clear start/end markers.
+4) If DB schema changes are needed, provide additive migration steps only.
+5) Provide test checklist:
+   - Delete/Archive category warning modal works
+   - Deleted category does not break historical records
+   - Company profile fields save and persist
+   - Currency selector in header saves and updates app-wide instantly
+
+END PROMPT

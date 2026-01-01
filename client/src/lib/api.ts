@@ -465,6 +465,26 @@ export const categoriesApi = {
     }),
 };
 
+export interface OrganizationSettings {
+  id?: string;
+  companyName?: string | null;
+  address?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  currency: string;
+  updatedBy?: string | null;
+  updatedAt?: string;
+}
+
+export const organizationSettingsApi = {
+  get: () => fetchApi<OrganizationSettings>("/organization-settings"),
+  update: (data: Partial<OrganizationSettings>) =>
+    fetchApi<OrganizationSettings>("/organization-settings", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+};
+
 export const departmentsApi = {
   getAll: () => fetchApi<Department[]>("/departments"),
   getByClient: (clientId: string) => fetchApi<Department[]>(`/clients/${clientId}/departments`),

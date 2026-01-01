@@ -44,6 +44,20 @@ export const categories = pgTable("categories", {
   status: text("status").notNull().default("active"),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: varchar("deleted_by").references(() => users.id),
+});
+
+// Organization settings for company profile and currency
+export const organizationSettings = pgTable("organization_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyName: text("company_name"),
+  address: text("address"),
+  email: text("email"),
+  phone: text("phone"),
+  currency: text("currency").notNull().default("NGN"),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Departments are the core operational unit - all transactions and reconciliations tie to departments
@@ -679,6 +693,7 @@ export const insertGoodsReceivedNoteSchema = createInsertSchema(goodsReceivedNot
 export const insertSrdTransferSchema = createInsertSchema(srdTransfers).omit({ id: true, createdAt: true }).extend({
   transferDate: z.coerce.date(),
 });
+export const insertOrganizationSettingsSchema = createInsertSchema(organizationSettings).omit({ id: true, updatedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -755,3 +770,5 @@ export type InsertSrdTransfer = z.infer<typeof insertSrdTransferSchema>;
 export type SrdTransfer = typeof srdTransfers.$inferSelect;
 export type InsertItemSerialEvent = z.infer<typeof insertItemSerialEventSchema>;
 export type ItemSerialEvent = typeof itemSerialEvents.$inferSelect;
+export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettingsSchema>;
+export type OrganizationSettings = typeof organizationSettings.$inferSelect;

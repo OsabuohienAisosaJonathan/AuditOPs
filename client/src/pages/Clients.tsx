@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree, AlertTriangle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { clientsApi, categoriesApi, departmentsApi, Client, Category, Department } from "@/lib/api";
@@ -41,6 +42,8 @@ export default function Clients() {
   
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [deleteCategoryConfirm, setDeleteCategoryConfirm] = useState<Category | null>(null);
+  const [deleteCategoryAck, setDeleteCategoryAck] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -131,6 +134,19 @@ export default function Clients() {
         queryClient.setQueryData(["categories", expandedClientId], context.previousCategories);
       }
       toast.error(error.message || "Failed to update category");
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (id: string) => categoriesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setDeleteCategoryConfirm(null);
+      setDeleteCategoryAck(false);
+      toast.success("Category deleted successfully");
+    },
+    onError: () => {
+      toast.error("Failed to delete category");
     },
   });
 
@@ -496,18 +512,29 @@ export default function Clients() {
                                     {getDepartmentsByCategory(category.id).length} departments
                                   </Badge>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => {
-                                    setEditingCategoryId(category.id);
-                                    setEditingCategoryName(category.name);
-                                  }}
-                                  data-testid={`button-edit-category-${category.id}`}
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => {
+                                      setEditingCategoryId(category.id);
+                                      setEditingCategoryName(category.name);
+                                    }}
+                                    data-testid={`button-edit-category-${category.id}`}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={() => setDeleteCategoryConfirm(category)}
+                                    data-testid={`button-delete-category-${category.id}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -835,6 +862,61 @@ export default function Clients() {
                 ? "Updating..." 
                 : suspendDeptDialog?.status === "active" ? "Suspend" : "Reactivate"
               }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!deleteCategoryConfirm} onOpenChange={(open) => {
+        if (!open) {
+          setDeleteCategoryConfirm(null);
+          setDeleteCategoryAck(false);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Category
+            </DialogTitle>
+            <DialogDescription>
+              You are about to delete the category "{deleteCategoryConfirm?.name}".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+              <p className="font-medium mb-2">Warning:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Departments in this category will become uncategorized</li>
+                <li>Historical records will retain the category reference</li>
+                <li>This action cannot be undone</li>
+              </ul>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="delete-ack" 
+                checked={deleteCategoryAck}
+                onCheckedChange={(checked) => setDeleteCategoryAck(checked === true)}
+                data-testid="checkbox-delete-category-ack"
+              />
+              <label htmlFor="delete-ack" className="text-sm cursor-pointer">
+                I understand and want to proceed with deletion
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setDeleteCategoryConfirm(null);
+              setDeleteCategoryAck(false);
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => deleteCategoryConfirm && deleteCategoryMutation.mutate(deleteCategoryConfirm.id)}
+              disabled={!deleteCategoryAck || deleteCategoryMutation.isPending}
+              data-testid="button-confirm-delete-category"
+            >
+              {deleteCategoryMutation.isPending ? "Deleting..." : "Delete Category"}
             </Button>
           </DialogFooter>
         </DialogContent>

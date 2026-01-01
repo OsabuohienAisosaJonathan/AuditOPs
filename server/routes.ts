@@ -1559,18 +1559,46 @@ export async function registerRoutes(
 
   app.delete("/api/categories/:id", requireSupervisorOrAbove, async (req, res) => {
     try {
-      await storage.deleteCategory(req.params.id);
+      // Soft delete - mark as deleted instead of removing
+      const category = await storage.softDeleteCategory(req.params.id, req.session.userId!);
+      
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
+      }
       
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Deleted Category",
         entity: "Category",
         entityId: req.params.id,
-        details: `Category deleted`,
+        details: `Category soft-deleted: ${category.name}`,
         ipAddress: req.ip || "Unknown",
       });
 
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== ORGANIZATION SETTINGS ==============
+  
+  app.get("/api/organization-settings", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getOrganizationSettings();
+      res.json(settings || { currency: "NGN" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/organization-settings", requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const settings = await storage.upsertOrganizationSettings({
+        ...req.body,
+        updatedBy: req.session.userId,
+      });
+      res.json(settings);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
