@@ -150,6 +150,49 @@
   --sidebar-ring: 212.7 26.8% 83.9%;
 }
 
+/* Public Dark Theme - for public marketing pages and auth pages */
+.public-dark {
+  /* Base background: #0B0B0D (HSL: 240 8% 4%) */
+  --background: 240 8% 4%;
+  /* Foreground: #FFFFFF */
+  --foreground: 0 0% 100%;
+
+  /* Card background: #111115 (HSL: 240 8% 8%) */
+  --card: 240 8% 8%;
+  --card-foreground: 0 0% 100%;
+
+  /* Popover background: #111115 */
+  --popover: 240 8% 8%;
+  --popover-foreground: 0 0% 100%;
+
+  /* Primary: #F5C542 (Gold) HSL: 43 89% 61% */
+  --primary: 43 89% 61%;
+  --primary-foreground: 0 0% 0%;
+
+  /* Secondary: slightly lighter than card */
+  --secondary: 240 8% 12%;
+  --secondary-foreground: 0 0% 100%;
+
+  /* Muted: used for subtle backgrounds */
+  --muted: 240 8% 10%;
+  /* Muted foreground: rgba(255,255,255,0.55) ~55% white */
+  --muted-foreground: 0 0% 55%;
+
+  /* Accent: same as secondary for consistency */
+  --accent: 240 8% 12%;
+  --accent-foreground: 0 0% 100%;
+
+  /* Destructive: red tones */
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  /* Border: rgba(255,255,255,0.1) ~10% */
+  --border: 0 0% 20%;
+  /* Input: rgba(255,255,255,0.12) ~slightly lighter */
+  --input: 0 0% 22%;
+  --ring: 43 89% 61%;
+}
+
 @layer base {
   * {
     @apply border-border;

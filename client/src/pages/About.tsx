@@ -4,14 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { useLocation, Link } from "wouter";
 import { 
   ChevronRight,
-  ClipboardCheck,
   Warehouse,
   Calculator,
   AlertTriangle,
   FileBarChart,
   Shield,
   Users,
-  Building2,
   Utensils,
   Wine,
   Hotel
@@ -52,35 +50,22 @@ export default function About() {
   ];
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#0B0B0D' }}>
-      <nav className="sticky top-0 z-50 border-b" style={{ backgroundColor: '#000000', borderColor: 'rgba(255,255,255,0.1)' }}>
+    <div className="public-dark min-h-screen bg-background">
+      <nav className="sticky top-0 z-50 bg-black border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Link href="/" className="flex items-center gap-3">
-              <img src={logoDarkImage} alt="MiAuditOps" className="h-14 object-contain" style={{ maxHeight: '56px' }} />
+              <img src={logoDarkImage} alt="MiAuditOps" className="h-14 object-contain" />
             </Link>
             <div className="hidden md:flex items-center gap-6">
-              <Link href="/#features" className="text-sm transition-colors" style={{ color: 'rgba(255,255,255,0.75)' }} data-testid="nav-features">Features</Link>
-              <Link href="/#pricing" className="text-sm transition-colors" style={{ color: 'rgba(255,255,255,0.75)' }} data-testid="nav-pricing">Pricing</Link>
-              <Link href="/about" className="text-sm font-medium" style={{ color: '#FFFFFF' }} data-testid="nav-about">About</Link>
-              <Link href="/contact" className="text-sm transition-colors" style={{ color: 'rgba(255,255,255,0.75)' }} data-testid="nav-contact">Contact</Link>
+              <Link href="/#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-features">Features</Link>
+              <Link href="/#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-pricing">Pricing</Link>
+              <Link href="/about" className="text-sm font-medium text-foreground" data-testid="nav-about">About</Link>
+              <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-contact">Contact</Link>
             </div>
             <div className="flex items-center gap-3">
-              <Button 
-                variant="ghost" 
-                onClick={() => setLocation("/login")} 
-                className="hover:bg-white/10"
-                style={{ color: 'rgba(255,255,255,0.75)' }}
-                data-testid="nav-signin"
-              >
-                Sign In
-              </Button>
-              <Button 
-                onClick={() => setLocation("/signup")} 
-                className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ backgroundColor: '#F5C542', color: '#000000' }}
-                data-testid="nav-get-started"
-              >
+              <Button variant="ghost" onClick={() => setLocation("/login")} className="text-muted-foreground hover:text-foreground hover:bg-white/10" data-testid="nav-signin">Sign In</Button>
+              <Button onClick={() => setLocation("/signup")} className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" data-testid="nav-get-started">
                 Get Started
               </Button>
             </div>
@@ -90,18 +75,12 @@ export default function About() {
 
       <section className="py-16 lg:py-24">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <Badge 
-            variant="outline" 
-            className="mb-4"
-            style={{ borderColor: 'rgba(255,255,255,0.25)', color: 'rgba(255,255,255,0.75)' }}
-          >
-            About Us
-          </Badge>
-          <h1 className="text-4xl md:text-5xl font-display font-bold mb-6" style={{ color: '#FFFFFF' }}>
+          <Badge variant="outline" className="mb-4">About Us</Badge>
+          <h1 className="text-4xl md:text-5xl font-display font-bold mb-6 text-foreground">
             Purpose-Built for{" "}
-            <span style={{ color: '#F5C542' }}>Hospitality Audits</span>
+            <span className="text-primary">Hospitality Audits</span>
           </h1>
-          <p className="text-lg leading-relaxed max-w-2xl mx-auto" style={{ color: 'rgba(255,255,255,0.75)' }}>
+          <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl mx-auto">
             MiAuditOps is not a generic accounting tool. It's a specialized audit operations platform 
             designed specifically for the unique challenges of hospitality businesses—where daily cash flows, 
             high-volume inventory, and multiple revenue points demand rigorous, evidence-based audit procedures.
@@ -109,40 +88,27 @@ export default function About() {
         </div>
       </section>
 
-      <section className="py-16 lg:py-24" style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+      <section className="py-16 lg:py-24 bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <Badge 
-              variant="outline" 
-              className="mb-4"
-              style={{ borderColor: 'rgba(255,255,255,0.25)', color: 'rgba(255,255,255,0.75)' }}
-            >
-              Who It's For
-            </Badge>
-            <h2 className="text-3xl md:text-4xl font-display font-bold mb-4" style={{ color: '#FFFFFF' }}>
+            <Badge variant="outline" className="mb-4">Who It's For</Badge>
+            <h2 className="text-3xl md:text-4xl font-display font-bold mb-4 text-foreground">
               Built for Your Industry
             </h2>
-            <p className="max-w-2xl mx-auto" style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
               Whether you're an external auditor or running your own hospitality business, 
               MiAuditOps adapts to your workflow.
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {whoItsFor.map((item, i) => (
-              <Card 
-                key={i} 
-                className="text-center group transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
-                style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
-              >
+              <Card key={i} className="text-center group transition-all duration-300 hover:shadow-lg hover:border-primary/50 hover:-translate-y-1">
                 <CardContent className="pt-8 pb-6">
-                  <div 
-                    className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:opacity-100 transition-opacity"
-                    style={{ backgroundColor: 'rgba(245,197,66,0.15)' }}
-                  >
-                    <item.icon className="h-8 w-8" style={{ color: '#F5C542' }} />
+                  <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4 group-hover:bg-primary/30 transition-colors">
+                    <item.icon className="h-8 w-8 text-primary" />
                   </div>
-                  <h3 className="font-semibold text-lg mb-2" style={{ color: '#FFFFFF' }}>{item.title}</h3>
-                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>{item.description}</p>
+                  <h3 className="font-semibold text-lg mb-2 text-foreground">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground">{item.description}</p>
                 </CardContent>
               </Card>
             ))}
@@ -153,39 +119,26 @@ export default function About() {
       <section className="py-16 lg:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <Badge 
-              variant="outline" 
-              className="mb-4"
-              style={{ borderColor: 'rgba(255,255,255,0.25)', color: 'rgba(255,255,255,0.75)' }}
-            >
-              Why MiAuditOps
-            </Badge>
-            <h2 className="text-3xl md:text-4xl font-display font-bold mb-4" style={{ color: '#FFFFFF' }}>
+            <Badge variant="outline" className="mb-4">Why MiAuditOps</Badge>
+            <h2 className="text-3xl md:text-4xl font-display font-bold mb-4 text-foreground">
               What Makes It Different
             </h2>
-            <p className="max-w-2xl mx-auto" style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
               We didn't just build another spreadsheet replacement. We built a complete audit methodology into software.
             </p>
           </div>
           <div className="grid md:grid-cols-2 gap-8">
             {differentiators.map((item, i) => (
-              <Card 
-                key={i} 
-                className="group transition-all duration-300 hover:shadow-lg"
-                style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
-              >
+              <Card key={i} className="group transition-all duration-300 hover:shadow-lg hover:border-primary/50">
                 <CardContent className="p-6 flex gap-4">
                   <div className="flex-shrink-0">
-                    <div 
-                      className="w-12 h-12 rounded-lg flex items-center justify-center group-hover:opacity-100 transition-opacity"
-                      style={{ backgroundColor: 'rgba(245,197,66,0.15)' }}
-                    >
-                      <item.icon className="h-6 w-6" style={{ color: '#F5C542' }} />
+                    <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors">
+                      <item.icon className="h-6 w-6 text-primary" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-lg mb-2" style={{ color: '#FFFFFF' }}>{item.title}</h3>
-                    <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>{item.description}</p>
+                    <h3 className="font-semibold text-lg mb-2 text-foreground">{item.title}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -194,15 +147,15 @@ export default function About() {
         </div>
       </section>
 
-      <section className="py-16 lg:py-24" style={{ backgroundColor: 'rgba(245,197,66,0.05)' }}>
+      <section className="py-16 lg:py-24 bg-primary/5">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="flex items-center justify-center gap-4 mb-6">
-            <Shield className="h-10 w-10" style={{ color: '#F5C542' }} />
+            <Shield className="h-10 w-10 text-primary" />
           </div>
-          <h2 className="text-3xl md:text-4xl font-display font-bold mb-4" style={{ color: '#FFFFFF' }}>
+          <h2 className="text-3xl md:text-4xl font-display font-bold mb-4 text-foreground">
             Ready to Transform Your Audit Operations?
           </h2>
-          <p className="mb-8 max-w-xl mx-auto" style={{ color: 'rgba(255,255,255,0.75)' }}>
+          <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
             Join audit teams and hospitality businesses that trust MiAuditOps for daily operations.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -210,7 +163,6 @@ export default function About() {
               size="lg" 
               onClick={() => setLocation("/signup")} 
               className="text-base px-8 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
-              style={{ backgroundColor: '#F5C542', color: '#000000' }}
               data-testid="button-start-free"
             >
               Start Free <ChevronRight className="ml-2 h-4 w-4" />
@@ -219,8 +171,7 @@ export default function About() {
               size="lg" 
               variant="outline" 
               onClick={() => setLocation("/#pricing")}
-              className="text-base px-8 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/10"
-              style={{ borderColor: 'rgba(255,255,255,0.25)', color: '#FFFFFF' }}
+              className="text-base px-8 transition-all duration-200 hover:-translate-y-0.5"
               data-testid="button-view-pricing"
             >
               View Pricing
@@ -229,18 +180,18 @@ export default function About() {
         </div>
       </section>
 
-      <footer className="border-t py-8" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+      <footer className="border-t border-border py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3">
               <img src={logoDarkImage} alt="MiAuditOps" className="h-10 object-contain" />
             </div>
             <div className="flex items-center gap-6 text-sm">
-              <Link href="/" className="transition-colors" style={{ color: 'rgba(255,255,255,0.55)' }} data-testid="footer-link-home">Home</Link>
-              <Link href="/about" className="font-medium" style={{ color: '#FFFFFF' }} data-testid="footer-link-about">About</Link>
-              <Link href="/contact" className="transition-colors" style={{ color: 'rgba(255,255,255,0.55)' }} data-testid="footer-link-contact">Contact</Link>
+              <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="footer-link-home">Home</Link>
+              <Link href="/about" className="text-foreground font-medium" data-testid="footer-link-about">About</Link>
+              <Link href="/contact" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="footer-link-contact">Contact</Link>
             </div>
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            <p className="text-sm text-muted-foreground">
               &copy; {new Date().getFullYear()} Miemploya
             </p>
           </div>

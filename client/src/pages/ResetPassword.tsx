@@ -83,38 +83,27 @@ export default function ResetPassword() {
 
   if (resetSuccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
-        <div 
-          className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
-          style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
-        >
+      <div className="public-dark flex min-h-screen items-center justify-center p-4 bg-background">
+        <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
           <div className="text-center space-y-4">
             <Link href="/" className="block mx-auto mb-4">
               <img 
                 src={logoDarkImage} 
                 alt="MiAuditOps" 
                 className="h-24 mx-auto object-contain cursor-pointer" 
-                style={{ maxHeight: '100px' }}
               />
             </Link>
-            <div 
-              className="mx-auto w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(74,222,128,0.15)' }}
-            >
-              <CheckCircle2 className="h-8 w-8" style={{ color: '#4ADE80' }} />
+            <div className="mx-auto w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center">
+              <CheckCircle2 className="h-8 w-8 text-green-500" />
             </div>
-            <h2 className="text-2xl font-bold" style={{ color: '#FFFFFF' }}>Password Reset Complete</h2>
-            <p style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <h2 className="text-2xl font-bold text-foreground">Password Reset Complete</h2>
+            <p className="text-muted-foreground">
               Your password has been successfully reset. You can now sign in with your new password.
             </p>
           </div>
           <div className="pt-4">
             <Link href="/login">
-              <Button 
-                className="w-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ backgroundColor: '#F5C542', color: '#000000' }}
-                data-testid="button-go-to-login"
-              >
+              <Button className="w-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" data-testid="button-go-to-login">
                 Sign In
               </Button>
             </Link>
@@ -126,38 +115,27 @@ export default function ResetPassword() {
 
   if (!token || error === "Invalid or missing reset token") {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
-        <div 
-          className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
-          style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
-        >
+      <div className="public-dark flex min-h-screen items-center justify-center p-4 bg-background">
+        <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
           <div className="text-center space-y-4">
             <Link href="/" className="block mx-auto mb-4">
               <img 
                 src={logoDarkImage} 
                 alt="MiAuditOps" 
                 className="h-24 mx-auto object-contain cursor-pointer" 
-                style={{ maxHeight: '100px' }}
               />
             </Link>
-            <div 
-              className="mx-auto w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}
-            >
-              <XCircle className="h-8 w-8" style={{ color: '#EF4444' }} />
+            <div className="mx-auto w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center">
+              <XCircle className="h-8 w-8 text-destructive" />
             </div>
-            <h2 className="text-2xl font-bold" style={{ color: '#FFFFFF' }}>Invalid Reset Link</h2>
-            <p style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <h2 className="text-2xl font-bold text-foreground">Invalid Reset Link</h2>
+            <p className="text-muted-foreground">
               This password reset link is invalid or has expired. Please request a new one.
             </p>
           </div>
           <div className="pt-4">
             <Link href="/forgot-password">
-              <Button 
-                className="w-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ backgroundColor: '#F5C542', color: '#000000' }}
-                data-testid="button-request-new-link"
-              >
+              <Button className="w-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" data-testid="button-request-new-link">
                 Request New Reset Link
               </Button>
             </Link>
@@ -168,58 +146,44 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#0B0B0D' }}>
-      <div 
-        className="w-full max-w-md space-y-8 p-8 rounded-xl border shadow-lg"
-        style={{ backgroundColor: '#111115', borderColor: 'rgba(255,255,255,0.1)' }}
-      >
+    <div className="public-dark flex min-h-screen items-center justify-center p-4 bg-background">
+      <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
         <div className="text-center space-y-2">
           <Link href="/" className="block mx-auto mb-4">
             <img 
               src={logoDarkImage} 
               alt="MiAuditOps" 
               className="h-24 mx-auto object-contain cursor-pointer" 
-              style={{ maxHeight: '100px' }}
             />
           </Link>
-          <h2 className="text-2xl font-bold" style={{ color: '#FFFFFF' }}>Reset your password</h2>
-          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
+          <h2 className="text-2xl font-bold text-foreground">Reset your password</h2>
+          <p className="text-sm text-muted-foreground">
             Enter your new password below.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="password" style={{ color: 'rgba(255,255,255,0.75)' }}>New Password</Label>
+            <Label htmlFor="password">New Password</Label>
             <Input 
               id="password" 
               name="password"
               type="password" 
-              className="h-10 focus:ring-2"
-              style={{ 
-                backgroundColor: '#0F0F14', 
-                borderColor: 'rgba(255,255,255,0.12)', 
-                color: '#FFFFFF',
-              }}
+              className="h-10"
               required
               minLength={8}
               data-testid="input-password"
             />
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>Must be at least 8 characters</p>
+            <p className="text-xs text-muted-foreground">Must be at least 8 characters</p>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword" style={{ color: 'rgba(255,255,255,0.75)' }}>Confirm New Password</Label>
+            <Label htmlFor="confirmPassword">Confirm New Password</Label>
             <Input 
               id="confirmPassword" 
               name="confirmPassword"
               type="password" 
-              className="h-10 focus:ring-2"
-              style={{ 
-                backgroundColor: '#0F0F14', 
-                borderColor: 'rgba(255,255,255,0.12)', 
-                color: '#FFFFFF',
-              }}
+              className="h-10"
               required
               minLength={8}
               data-testid="input-confirm-password"
@@ -227,10 +191,7 @@ export default function ResetPassword() {
           </div>
 
           {error && (
-            <div 
-              className="p-3 rounded-lg border text-sm"
-              style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444' }}
-            >
+            <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -239,7 +200,6 @@ export default function ResetPassword() {
             type="submit" 
             className="w-full h-10 font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" 
             disabled={isLoading}
-            style={{ backgroundColor: '#F5C542', color: '#000000' }}
             data-testid="button-reset-password"
           >
             {isLoading ? "Resetting..." : "Reset Password"}
@@ -248,12 +208,7 @@ export default function ResetPassword() {
 
         <div className="text-center">
           <Link href="/login">
-            <Button 
-              variant="link" 
-              className="text-sm"
-              style={{ color: 'rgba(255,255,255,0.55)' }}
-              data-testid="link-back-to-login"
-            >
+            <Button variant="link" className="text-sm text-muted-foreground" data-testid="link-back-to-login">
               Back to Sign In
             </Button>
           </Link>
