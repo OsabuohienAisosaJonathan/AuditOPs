@@ -619,9 +619,12 @@ export async function registerRoutes(
 
       const user = await storage.getUserByEmail(email);
       
-      // Always return success to prevent email enumeration
+      // Always return the same generic response to prevent email enumeration
+      const genericResponse = { success: true, message: "If an account exists with this email, a password reset link will be sent." };
+      
       if (!user) {
-        return res.json({ success: true, message: "If an account exists with this email, a password reset link will be sent." });
+        console.log(`[Auth] Password reset requested for non-existent email: ${email}`);
+        return res.json(genericResponse);
       }
 
       const resetToken = randomBytes(32).toString('hex');
@@ -636,11 +639,12 @@ export async function registerRoutes(
       const emailResult = await sendPasswordResetEmail(email, resetToken, user.fullName, req);
 
       if (!emailResult.success) {
+        // Log error but still return generic success to prevent enumeration
         console.warn(`[Auth] Failed to send password reset email to ${email}: ${emailResult.error}`);
-        return res.status(500).json({ error: "Failed to send password reset email. Please try again." });
       }
 
-      res.json({ success: true, message: "If an account exists with this email, a password reset link will be sent." });
+      // Always return same response regardless of outcome
+      res.json(genericResponse);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
