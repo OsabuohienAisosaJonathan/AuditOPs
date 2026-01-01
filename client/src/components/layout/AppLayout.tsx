@@ -1,13 +1,13 @@
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarTrigger, SidebarRail, SidebarGroup, SidebarGroupLabel } from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarTrigger, SidebarRail, SidebarGroup, SidebarGroupLabel, useSidebar } from "@/components/ui/sidebar";
 import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Bell, Building2, LayoutDashboard, ClipboardCheck, ShoppingBag, PackageSearch, FileCheck, AlertOctagon, FileText, Settings, History, Users, ShieldCheck, LogOut, Check, ChevronsUpDown, Layers, UserCog, BookOpen, Sun, Moon } from "lucide-react";
+import { Bell, Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
@@ -15,26 +15,10 @@ import { useClientContext } from "@/lib/client-context";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-
-const MAIN_NAV_ITEMS = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: Building2, label: "Clients", href: "/clients" },
-  { icon: ClipboardCheck, label: "Audit Workspace", href: "/audit-workspace" },
-  { icon: ShoppingBag, label: "Sales Capture", href: "/sales-capture" },
-  { icon: PackageSearch, label: "Inventory & Purchases", href: "/inventory" },
-  { icon: BookOpen, label: "Inventory Ledger", href: "/inventory-ledger" },
-  { icon: FileCheck, label: "Reconciliation", href: "/reconciliation" },
-  { icon: AlertOctagon, label: "Exceptions", href: "/exceptions" },
-  { icon: FileText, label: "Reports", href: "/reports" },
-  { icon: History, label: "Audit Trail", href: "/audit-trail" },
-];
-
-const ADMIN_NAV_ITEMS = [
-  { icon: Users, label: "User Management", href: "/users" },
-  { icon: UserCog, label: "Client Access", href: "/client-access" },
-  { icon: ShieldCheck, label: "Admin Activity", href: "/admin-activity" },
-  { icon: Settings, label: "Settings", href: "/settings" },
-];
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { MAIN_NAV_ITEMS, ADMIN_NAV_ITEMS } from "@/lib/menu-config";
+import { HorizontalNav } from "./HorizontalNav";
+import { useLayout } from "@/lib/layout-context";
 
 const getRoleBadge = (role: string) => {
   switch (role) {
@@ -49,10 +33,12 @@ const getRoleBadge = (role: string) => {
   }
 };
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { state: sidebarState } = useSidebar();
+  const { canGoBack, canGoForward, goBack, goForward, sidebarCollapsed, setSidebarCollapsed } = useLayout();
   const { 
     clients, 
     selectedClient, 
@@ -70,17 +56,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [departmentSearchOpen, setDepartmentSearchOpen] = useState(false);
 
   const date = selectedDate ? new Date(selectedDate + "T00:00:00") : new Date();
-
-  if (location === "/" || location === "/setup") return <>{children}</>;
+  
+  useEffect(() => {
+    setSidebarCollapsed(sidebarState === "collapsed");
+  }, [sidebarState, setSidebarCollapsed]);
 
   return (
-    <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
         <AppSidebar location={location} user={user} onLogout={logout} />
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-4 border-b bg-background px-6 shadow-sm">
             <SidebarTrigger />
-            <div className="h-6 w-px bg-border mx-2" />
+            <div className="h-6 w-px bg-border mx-1" />
+            
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={goBack}
+                    disabled={!canGoBack}
+                    className="h-8 w-8"
+                    data-testid="button-nav-back"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Back</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={goForward}
+                    disabled={!canGoForward}
+                    className="h-8 w-8"
+                    data-testid="button-nav-forward"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Forward</TooltipContent>
+              </Tooltip>
+            </div>
+            <div className="h-6 w-px bg-border mx-1" />
             
             <div className="flex items-center gap-2 flex-1 overflow-x-auto no-scrollbar">
               <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
@@ -261,11 +282,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           
+          {sidebarCollapsed && <HorizontalNav />}
+          
           <div className="flex-1 overflow-auto p-6">
             {children}
           </div>
         </main>
       </div>
+  );
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  
+  if (location === "/" || location === "/setup") return <>{children}</>;
+  
+  return (
+    <SidebarProvider>
+      <AppLayoutContent>{children}</AppLayoutContent>
     </SidebarProvider>
   );
 }

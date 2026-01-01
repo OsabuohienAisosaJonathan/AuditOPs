@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ClientProvider } from "@/lib/client-context";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CurrencyProvider } from "@/lib/currency-context";
+import { LayoutProvider } from "@/lib/layout-context";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import Setup from "@/pages/Setup";
@@ -120,10 +121,12 @@ function App() {
         <AuthProvider>
           <ClientProvider>
             <CurrencyProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Router />
-              </TooltipProvider>
+              <LayoutProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Router />
+                </TooltipProvider>
+              </LayoutProvider>
             </CurrencyProvider>
           </ClientProvider>
         </AuthProvider>

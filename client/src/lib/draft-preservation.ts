@@ -73,7 +73,7 @@ export function useDraftPreservation<T>(
   const { enabled = true, debounceMs = 500 } = options;
   const [location] = useLocation();
   const { selectedClientId, selectedDepartmentId, selectedDate } = useClientContext();
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initialLoadDone = useRef(false);
 
   const draftKey: DraftKey = {
