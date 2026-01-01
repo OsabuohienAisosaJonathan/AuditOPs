@@ -9,7 +9,6 @@ interface NavigationHistoryEntry {
 interface LayoutContextType {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  toggleSidebar: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
   goBack: () => void;
@@ -55,10 +54,6 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     setSidebarCollapsedState(collapsed);
     localStorage.setItem(SIDEBAR_STATE_KEY, String(collapsed));
   }, []);
-
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed(!sidebarCollapsed);
-  }, [sidebarCollapsed, setSidebarCollapsed]);
 
   useEffect(() => {
     if (location === "/" || location === "/setup") return;
@@ -120,7 +115,6 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     <LayoutContext.Provider value={{
       sidebarCollapsed,
       setSidebarCollapsed,
-      toggleSidebar,
       canGoBack,
       canGoForward,
       goBack,

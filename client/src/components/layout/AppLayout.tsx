@@ -2,7 +2,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Bell, Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Bell, Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import logoImage from "@assets/Mi_EMPLOYA_LOGO4_(1)_1766735385076.jpg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -39,6 +39,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const { state: sidebarState } = useSidebar();
   const { canGoBack, canGoForward, goBack, goForward, sidebarCollapsed, setSidebarCollapsed } = useLayout();
+  const isSidebarCollapsed = sidebarState === "collapsed";
   const { 
     clients, 
     selectedClient, 
@@ -58,8 +59,8 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const date = selectedDate ? new Date(selectedDate + "T00:00:00") : new Date();
   
   useEffect(() => {
-    setSidebarCollapsed(sidebarState === "collapsed");
-  }, [sidebarState, setSidebarCollapsed]);
+    setSidebarCollapsed(isSidebarCollapsed);
+  }, [isSidebarCollapsed, setSidebarCollapsed]);
 
   return (
       <div className="flex min-h-screen w-full bg-background">
@@ -282,7 +283,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           
-          {sidebarCollapsed && <HorizontalNav />}
+          {isSidebarCollapsed && <HorizontalNav />}
           
           <div className="flex-1 overflow-auto p-6">
             {children}
@@ -292,13 +293,19 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   );
 }
 
+const SIDEBAR_STATE_KEY = "miemploya-sidebar-collapsed";
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const [defaultOpen] = useState(() => {
+    const stored = localStorage.getItem(SIDEBAR_STATE_KEY);
+    return stored !== "true";
+  });
   
   if (location === "/" || location === "/setup") return <>{children}</>;
   
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={defaultOpen}>
       <AppLayoutContent>{children}</AppLayoutContent>
     </SidebarProvider>
   );
