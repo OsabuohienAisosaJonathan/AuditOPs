@@ -1,0 +1,86 @@
+TASK: FIX PUBLIC PAGES SHOWING DASHBOARD SHELL + REPLACE ALL LOGOS WITH OFFICIAL MIAUDITOPS LOGO
+
+IMPORTANT:
+- This is NOT a new build. Only adjust what already exists.
+- Do NOT break or redesign the SRD ledger logic or any backend routes.
+- Fix ONLY layout routing + branding/logo usage.
+
+PART 1 — FIX “GET STARTED / SIGNUP” AND “SIGNUP” PAGES SHOWING DASHBOARD CONTENT
+Problem:
+- The / (Home / Get Started) and /signup pages are currently wrapped by the main dashboard layout (sidebar/topbar), so they display dashboard navigation/content when they should be public pages.
+
+Required Fix:
+A) Create two separate layouts/shells:
+1) PublicLayout (NO sidebar, NO dashboard top controls, NO client selector)
+   - Used for: Home, About, Contact, Pricing, Login, Signup, Forgot Password, Verify Email screens
+2) AppLayout (the existing dashboard layout with sidebar/topbar)
+   - Used for: Dashboard pages (Audit Workspace, Inventory Ledger, Reports, Reconciliation, etc.)
+
+B) Routing must enforce:
+- Public routes MUST NOT render AppLayout
+- App routes MUST render AppLayout
+- If an unauthenticated user tries to access App routes, redirect to /login
+- If a logged-in user visits /login or /signup, redirect to /dashboard (or the default landing page)
+
+Implementation (choose what matches the codebase):
+1) If this is Next.js App Router:
+- Use route groups:
+  app/(public)/...  -> public pages + app/(public)/layout.tsx
+  app/(app)/...     -> protected pages + app/(app)/layout.tsx
+- Move current dashboard layout to app/(app)/layout.tsx
+- Ensure public pages have their own minimal layout.
+
+2) If React Router:
+- Create <PublicLayout /> and <AppLayout />
+- Wrap routes accordingly:
+  <Route element={<PublicLayout/>}> ...public routes... </Route>
+  <Route element={<RequireAuth><AppLayout/></RequireAuth>}> ...protected routes... </Route>
+
+Output requirement:
+- Show exact file paths edited
+- For each edited file, print first 10–15 lines to confirm correct file
+- Provide code patches with clear START/END markers
+
+PART 2 — REPLACE ALL LOGOS WITH OFFICIAL MIAUDITOPS LOGO (LOGO 2)
+Problem:
+- Different pages/components still show mixed/old/placeholder logos.
+
+Required Fix:
+A) Add the official logo assets in ONE place and reuse everywhere.
+- Put logo file(s) in a standard location, e.g.:
+  client/src/assets/brand/miauditops-logo.jpg (or /public/brand/...)
+- Create a reusable component:
+  <BrandLogo variant="light|dark" size="sm|md|lg" linkToHome />
+- Clicking logo MUST route to the Home page ("/") for public pages,
+  and to the dashboard landing page for authenticated users if desired (optional).
+  If unsure, always link to "/".
+
+B) Replace logo usage in these areas:
+1) Sidebar header logo (AppLayout)
+2) Login page card/logo
+3) Signup page card/logo
+4) Any top header logo area
+5) Report preview/export headers if a logo is rendered there
+
+C) Dark sidebar handling:
+- Since the logo is on white background (Logo 2), render it inside a white rounded container on dark sidebar:
+  e.g. container: bg-white rounded-xl p-2 shadow-sm
+- Do NOT invert colors or apply weird filters that ruin branding.
+
+Output requirement:
+- List every file where a logo reference was replaced.
+
+PART 3 — QUICK QA CHECKLIST (MANDATORY)
+1) Open /signup -> must NOT show sidebar/dashboard menu
+2) Open /login -> must NOT show sidebar/dashboard menu
+3) Open /about and /contact -> must NOT show sidebar/dashboard menu
+4) Open /dashboard (or protected pages) while logged out -> redirect to /login
+5) Logo appears correctly on:
+   - Sidebar (in white rounded container)
+   - Login card
+   - Signup card
+6) Clicking logo returns to Home ("/") without breaking navigation.
+
+NOTE:
+Do not add paid “new features” here — this is only a UI/layout + branding fix for what already exists.
+END TASK
