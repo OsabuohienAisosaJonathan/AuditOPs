@@ -324,13 +324,14 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
   
   return (
     <Sidebar className="border-r border-border/40">
-      <SidebarHeader className="border-b border-border/40 px-4 py-3">
-        <Link href="/dashboard" className="block">
+      <SidebarHeader className="border-b border-border/40 px-4 py-4">
+        <Link href="/dashboard" className="flex items-center gap-3">
           <img 
             src={Simple_Profile_Photo_Instagram_Post}
             alt="MiAuditOps" 
-            className="h-12 w-auto max-w-full object-contain"
+            className="h-24 w-auto max-w-[120px] object-contain"
           />
+          <span className="font-display font-bold text-xl text-white">MiAuditOps</span>
         </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">
