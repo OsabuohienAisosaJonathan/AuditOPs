@@ -306,7 +306,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return stored !== "true";
   });
   
-  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup"];
+  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
   if (publicRoutes.includes(location)) return <>{children}</>;
   
   return (
