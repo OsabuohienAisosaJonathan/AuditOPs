@@ -24,6 +24,8 @@ import { useLayout } from "@/lib/layout-context";
 
 import logo2 from "@assets/logo2.png";
 
+import Simple_Profile_Photo_Instagram_Post from "@assets/Simple Profile Photo Instagram Post.png";
+
 const getRoleBadge = (role: string) => {
   switch (role) {
     case "super_admin":
@@ -325,7 +327,7 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
       <SidebarHeader className="border-b border-border/40 px-4 py-3">
         <Link href="/dashboard" className="block">
           <img 
-            src={logo2}
+            src={Simple_Profile_Photo_Instagram_Post}
             alt="MiAuditOps" 
             className="h-12 w-auto max-w-full object-contain"
           />
