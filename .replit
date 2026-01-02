@@ -44,3 +44,6 @@ mockupState = "FULLSTACK"
 [userenv]
 
 [userenv.shared]
+
+[userenv.production]
+APP_URL = "https://miauditops.com"
