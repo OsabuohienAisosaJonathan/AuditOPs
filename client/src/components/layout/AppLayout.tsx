@@ -323,15 +323,12 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
   return (
     <Sidebar className="border-r border-border/40">
       <SidebarHeader className="border-b border-border/40 px-4 py-3">
-        <Link href="/dashboard" className="flex items-center gap-3">
-          <div className="bg-white rounded-lg p-2 shadow-sm">
-            <img 
-              src={logo2}
-              alt="MiAuditOps Logo" 
-              className="h-12 w-12 object-contain"
-            />
-          </div>
-          <span className="font-display font-bold text-lg text-white">MiAuditOps</span>
+        <Link href="/dashboard" className="block">
+          <img 
+            src={logo2}
+            alt="MiAuditOps" 
+            className="h-12 w-auto max-w-full object-contain"
+          />
         </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">
