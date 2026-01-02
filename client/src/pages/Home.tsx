@@ -31,6 +31,8 @@ import { useToast } from "@/hooks/use-toast";
 
 import logo_1 from "@assets/logo 1.png";
 
+import Simple_Profile_Photo_Instagram_Post__1_ from "@assets/Simple Profile Photo Instagram Post (1).png";
+
 export default function Home() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -188,7 +190,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Link href="/" className="flex items-center">
-              <img src={logo_1} alt="MiAuditOps" className="h-10 object-contain" />
+              <img src={Simple_Profile_Photo_Instagram_Post__1_} alt="MiAuditOps" className="h-10 object-contain" />
             </Link>
             <div className="hidden md:flex items-center gap-6">
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-features">Features</a>
