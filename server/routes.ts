@@ -37,6 +37,36 @@ const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
+const passwordResetRequests = new Map<string, number>();
+const PASSWORD_RESET_COOLDOWN_SECONDS = 60;
+
+// Cache of recently-used verification tokens for idempotency (5 minute TTL)
+const usedVerificationTokens = new Map<string, { email: string; usedAt: number }>();
+const VERIFICATION_TOKEN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function cacheUsedVerificationToken(token: string, email: string): void {
+  usedVerificationTokens.set(token, { email, usedAt: Date.now() });
+  // Cleanup old entries periodically
+  if (usedVerificationTokens.size > 100) {
+    const now = Date.now();
+    usedVerificationTokens.forEach((value, key) => {
+      if (now - value.usedAt > VERIFICATION_TOKEN_CACHE_TTL_MS) {
+        usedVerificationTokens.delete(key);
+      }
+    });
+  }
+}
+
+function getUsedVerificationTokenEmail(token: string): string | null {
+  const entry = usedVerificationTokens.get(token);
+  if (!entry) return null;
+  if (Date.now() - entry.usedAt > VERIFICATION_TOKEN_CACHE_TTL_MS) {
+    usedVerificationTokens.delete(token);
+    return null;
+  }
+  return entry.email;
+}
+
 function checkRateLimit(identifier: string): { allowed: boolean; remainingAttempts: number } {
   const now = Date.now();
   const attempts = loginAttempts.get(identifier);
@@ -529,15 +559,29 @@ export async function registerRoutes(
 
       const user = await storage.getUserByVerificationToken(token);
       
+      // If token not found in DB, check short-lived cache for recently-used tokens
       if (!user) {
+        const cachedEmail = getUsedVerificationTokenEmail(token);
+        if (cachedEmail) {
+          // Token was recently used - check if user is now verified
+          const verifiedUser = await storage.getUserByEmail(cachedEmail);
+          if (verifiedUser?.emailVerified) {
+            return res.json({ 
+              success: true, 
+              message: "Email is already verified. You can log in.", 
+              alreadyVerified: true 
+            });
+          }
+        }
         return res.status(400).json({ error: "Invalid or expired verification token" });
       }
 
-      // Already verified - short circuit
+      // Already verified - idempotent success (token still in DB, user already verified)
       if (user.emailVerified) {
         return res.json({ success: true, message: "Email is already verified. You can log in.", alreadyVerified: true });
       }
 
+      // Check if token has expired
       if (user.verificationExpiry && new Date(user.verificationExpiry) < new Date()) {
         return res.status(400).json({ 
           error: "Verification token has expired. Please request a new one.",
@@ -546,6 +590,10 @@ export async function registerRoutes(
         });
       }
 
+      // Cache the token before clearing it (for 5-minute idempotency window)
+      cacheUsedVerificationToken(token, user.email);
+
+      // Mark as verified and clear the token (properly invalidate)
       await storage.updateUser(user.id, {
         emailVerified: true,
         verificationToken: null,
@@ -617,6 +665,18 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Email is required" });
       }
 
+      // Rate limit: one reset request per email every 60 seconds
+      const normalizedEmail = email.toLowerCase().trim();
+      const lastRequest = passwordResetRequests.get(normalizedEmail);
+      const now = Date.now();
+      
+      if (lastRequest && now - lastRequest < PASSWORD_RESET_COOLDOWN_SECONDS * 1000) {
+        const remainingSeconds = Math.ceil((PASSWORD_RESET_COOLDOWN_SECONDS * 1000 - (now - lastRequest)) / 1000);
+        return res.status(429).json({ 
+          error: `Please wait ${remainingSeconds} seconds before requesting another reset link.` 
+        });
+      }
+
       const user = await storage.getUserByEmail(email);
       
       // Always return the same generic response to prevent email enumeration
@@ -624,9 +684,12 @@ export async function registerRoutes(
       
       if (!user) {
         console.log(`[Auth] Password reset requested for non-existent email: ${email}`);
+        // Still record the request to prevent enumeration via timing
+        passwordResetRequests.set(normalizedEmail, now);
         return res.json(genericResponse);
       }
 
+      // Generate new token (this invalidates any existing token automatically)
       const resetToken = randomBytes(32).toString('hex');
       const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
@@ -634,6 +697,9 @@ export async function registerRoutes(
         passwordResetToken: resetToken,
         passwordResetExpiry: resetExpiry,
       });
+      
+      // Record the request time for rate limiting
+      passwordResetRequests.set(normalizedEmail, now);
 
       const { sendPasswordResetEmail } = await import('./email');
       const emailResult = await sendPasswordResetEmail(email, resetToken, user.fullName, req);
