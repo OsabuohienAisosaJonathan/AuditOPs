@@ -353,6 +353,33 @@ export class ApiError extends Error {
   }
 }
 
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
+let isRedirecting = false;
+
+// Will be set by queryClient.ts to allow clearing queries on 401
+let queryClientRef: { clear: () => void } | null = null;
+
+export function setQueryClientRef(client: { clear: () => void }) {
+  queryClientRef = client;
+}
+
+export function handle401Redirect() {
+  if (isRedirecting) return; // Prevent duplicate redirects
+  
+  const currentPath = window.location.pathname;
+  if (!PUBLIC_PATHS.includes(currentPath)) {
+    isRedirecting = true;
+    
+    // Clear React Query cache to stop pending queries
+    if (queryClientRef) {
+      queryClientRef.clear();
+    }
+    
+    toast.error("Session expired, please log in again");
+    window.location.href = "/login";
+  }
+}
+
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   try {
     const response = await fetch(`${API_BASE}${url}`, {
@@ -370,7 +397,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 
       switch (response.status) {
         case 401:
-          toast.error("Session expired, please log in again");
+          handle401Redirect();
           break;
         case 403:
           toast.error("You don't have permission to perform this action");

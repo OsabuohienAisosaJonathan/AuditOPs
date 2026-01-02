@@ -1,7 +1,11 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { handle401Redirect, setQueryClientRef } from "./api";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    if (res.status === 401) {
+      handle401Redirect();
+    }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }
@@ -33,8 +37,12 @@ export const getQueryFn: <T>(options: {
       credentials: "include",
     });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+    if (res.status === 401) {
+      if (unauthorizedBehavior === "returnNull") {
+        return null;
+      }
+      // For "throw" behavior, redirect then throw via throwIfResNotOk
+      // handle401Redirect is called in throwIfResNotOk for 401
     }
 
     await throwIfResNotOk(res);
@@ -55,3 +63,6 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+// Set reference for 401 handling to clear cache
+setQueryClientRef(queryClient);
