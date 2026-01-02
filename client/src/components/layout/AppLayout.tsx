@@ -22,6 +22,8 @@ import { Lock } from "lucide-react";
 import { HorizontalNav } from "./HorizontalNav";
 import { useLayout } from "@/lib/layout-context";
 
+import logo2 from "@assets/logo2.png";
+
 const getRoleBadge = (role: string) => {
   switch (role) {
     case "super_admin":
@@ -324,14 +326,13 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
         <Link href="/dashboard">
           <div className="bg-white rounded-xl p-2 shadow-sm">
             <img 
-              src={logoImage}
+              src={logo2}
               alt="MiAuditOps Logo" 
               className="h-10 object-contain"
             />
           </div>
         </Link>
       </SidebarHeader>
-      
       <SidebarContent className="px-2">
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1">
@@ -406,13 +407,11 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
           </SidebarGroup>
         )}
       </SidebarContent>
-      
       <SidebarFooter className="border-t border-border/40 p-4">
         <div className="text-xs text-muted-foreground text-center">
           v1.0.0 - Miemploya AuditOps
         </div>
       </SidebarFooter>
-      
       <SidebarRail />
     </Sidebar>
   );
