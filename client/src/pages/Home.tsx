@@ -29,6 +29,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
 import { useToast } from "@/hooks/use-toast";
 
+import logo_1 from "@assets/logo 1.png";
+
 export default function Home() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -186,7 +188,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Link href="/" className="flex items-center">
-              <img src={logoDarkImage} alt="MiAuditOps" className="h-10 object-contain" />
+              <img src={logo_1} alt="MiAuditOps" className="h-10 object-contain" />
             </Link>
             <div className="hidden md:flex items-center gap-6">
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-features">Features</a>
@@ -205,7 +207,6 @@ export default function Home() {
           </div>
         </div>
       </nav>
-
       <section className="relative py-20 lg:py-32 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
@@ -243,7 +244,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
       <section className="py-16 lg:py-24 bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -284,7 +284,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
       <section id="features" className="py-16 lg:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -313,7 +312,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
       <section id="pricing" className="py-16 lg:py-24 bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -461,7 +459,6 @@ export default function Home() {
           </TooltipProvider>
         </div>
       </section>
-
       <section id="about" className="py-16 lg:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -499,7 +496,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
       <section id="contact" className="py-16 lg:py-24 bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-12">
@@ -600,7 +596,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
       <section className="py-16 lg:py-24">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -623,7 +618,6 @@ export default function Home() {
           </Accordion>
         </div>
       </section>
-
       <footer className="border-t border-border py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
