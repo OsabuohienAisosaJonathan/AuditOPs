@@ -324,14 +324,14 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
     <Sidebar className="border-r border-border/40">
       <SidebarHeader className="border-b border-border/40 px-4 py-3">
         <Link href="/dashboard" className="flex items-center gap-3">
-          <div className="bg-white rounded-lg p-1.5 shadow-sm">
+          <div className="bg-white rounded-lg p-2 shadow-sm">
             <img 
               src={logo2}
               alt="MiAuditOps Logo" 
-              className="h-8 w-8 object-contain"
+              className="h-12 w-12 object-contain"
             />
           </div>
-          <span className="font-display font-bold text-lg text-foreground">MiAuditOps</span>
+          <span className="font-display font-bold text-lg text-white">MiAuditOps</span>
         </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">
