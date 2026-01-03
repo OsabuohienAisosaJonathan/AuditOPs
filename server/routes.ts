@@ -147,10 +147,9 @@ export async function registerRoutes(
 ): Promise<Server> {
   const PgStore = connectPgSimple(session);
   
-  if (process.env.NODE_ENV === "production") {
-    // Trust all proxy hops (Cloudflare → Replit) to set req.secure correctly
-    app.set("trust proxy", true);
-  }
+  // ALWAYS trust proxy - Replit uses reverse proxy in all environments
+  // This ensures req.secure is set correctly from X-Forwarded-Proto header
+  app.set("trust proxy", true);
   
   // Configure session cookie domain for production to support both www and non-www
   const cookieDomain = process.env.NODE_ENV === "production" && process.env.COOKIE_DOMAIN 
@@ -162,6 +161,10 @@ export async function registerRoutes(
   const SESSION_ABSOLUTE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days absolute max
   const SESSION_REFRESH_THRESHOLD = 10 * 60 * 1000; // Refresh if session expires in less than 10 minutes
   
+  // Session middleware - use secure cookies when behind HTTPS proxy
+  // Both production (custom domain) and development (Replit webview) use HTTPS
+  const isProduction = process.env.NODE_ENV === "production";
+  
   app.use(
     session({
       store: new PgStore({
@@ -172,11 +175,14 @@ export async function registerRoutes(
       secret: process.env.SESSION_SECRET || "audit-ops-secret-key-change-in-production",
       resave: true, // Allow resave for sliding sessions
       saveUninitialized: false,
-      proxy: process.env.NODE_ENV === "production",
+      proxy: true, // Always behind proxy on Replit
       rolling: true, // Enable sliding sessions - extends expiry on each request
       cookie: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        // Secure cookie: use req.secure which is set by trust proxy from X-Forwarded-Proto
+        // When accessed via HTTPS (Replit webview or production), req.secure will be true
+        // When accessed via HTTP (local curl), req.secure will be false
+        secure: false, // TEMPORARILY disabled to debug - will be set dynamically below
         sameSite: "lax",
         maxAge: SESSION_IDLE_MAX_AGE,
         domain: cookieDomain,
@@ -184,6 +190,17 @@ export async function registerRoutes(
       },
     })
   );
+  
+  // Dynamically set cookie.secure based on request protocol (req.secure is set by trust proxy)
+  // This ensures cookies work in both HTTPS (Replit/production) and HTTP (local testing)
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.session?.cookie) {
+      // If request is secure (HTTPS via X-Forwarded-Proto), set cookie as secure
+      // Otherwise leave as non-secure for local HTTP testing
+      req.session.cookie.secure = req.secure;
+    }
+    next();
+  });
   
   // Sliding session middleware - extends session on authenticated requests
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -393,7 +410,7 @@ export async function registerRoutes(
           secure: req.secure,
           xForwardedProto: req.headers['x-forwarded-proto'] || 'not set',
           cookieDomain: process.env.COOKIE_DOMAIN || 'not set',
-          trustProxy: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled',
+          trustProxy: 'enabled', // Always enabled on Replit
           responseTimeMs: Date.now() - startTime
         };
         console.log(`[SESSION DIAGNOSTIC] Response (not authed):`, JSON.stringify(response));
@@ -533,7 +550,7 @@ export async function registerRoutes(
       sessionExists: !!req.session,
       sessionUserId: req.session?.userId || null,
       isProduction,
-      trustProxy: isProduction ? 'enabled' : 'disabled',
+      trustProxy: 'enabled', // Always enabled on Replit
       cookieDomain: process.env.COOKIE_DOMAIN || 'not set',
       ...details,
     };
