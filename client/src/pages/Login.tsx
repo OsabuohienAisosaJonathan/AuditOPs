@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Mail, Play, Eye, EyeOff } from "lucide-react";
-import logoImage from "@/assets/logo.png";
+import logoImage from "@/assets/miauditops-logo-dark.jpeg";
 
 const isDevelopment = import.meta.env.DEV;
 

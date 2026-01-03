@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import logoImage from "@/assets/logo.png";
+import logoImage from "@/assets/miauditops-logo-dark.jpeg";
 
 export default function Home() {
   const [, setLocation] = useLocation();

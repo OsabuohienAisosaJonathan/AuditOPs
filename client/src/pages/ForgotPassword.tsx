@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Mail } from "lucide-react";
-import logoImage from "@/assets/logo.png";
+import logoImage from "@/assets/miauditops-logo-dark.jpeg";
 
 export default function ForgotPassword() {
   const { toast } = useToast();

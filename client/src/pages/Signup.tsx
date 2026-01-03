@@ -7,7 +7,7 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, Building2, Users, ArrowLeft } from "lucide-react";
-import logoImage from "@/assets/logo.png";
+import logoImage from "@/assets/miauditops-logo-dark.jpeg";
 
 export default function Signup() {
   const [, setLocation] = useLocation();
