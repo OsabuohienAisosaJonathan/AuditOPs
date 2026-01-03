@@ -342,28 +342,44 @@ export interface DashboardSummary {
 }
 
 const API_BASE = "/api";
-const API_TIMEOUT_MS = 15000; // 15 second timeout (increased for production reliability)
+const API_TIMEOUT_MS = 12000; // 12 second timeout
 
 export class ApiError extends Error {
   code?: string;
   email?: string;
   isTimeout?: boolean;
+  isAborted?: boolean;
   
-  constructor(public status: number, message: string, options?: { code?: string; email?: string; isTimeout?: boolean }) {
+  constructor(public status: number, message: string, options?: { code?: string; email?: string; isTimeout?: boolean; isAborted?: boolean }) {
     super(message);
     this.name = "ApiError";
     this.code = options?.code;
     this.email = options?.email;
     this.isTimeout = options?.isTimeout;
+    this.isAborted = options?.isAborted;
   }
 }
 
-function createTimeoutController(timeoutMs: number = API_TIMEOUT_MS): { controller: AbortController; clear: () => void } {
+// Generate unique request ID for correlation
+function generateRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function createTimeoutController(timeoutMs: number = API_TIMEOUT_MS): { 
+  controller: AbortController; 
+  clear: () => void;
+  isTimedOut: () => boolean;
+} {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   return {
     controller,
     clear: () => clearTimeout(timeoutId),
+    isTimedOut: () => timedOut,
   };
 }
 
@@ -378,13 +394,12 @@ export function setQueryClientRef(client: { clear: () => void }) {
 }
 
 export function handle401Redirect() {
-  if (isRedirecting) return; // Prevent duplicate redirects
+  if (isRedirecting) return;
   
   const currentPath = window.location.pathname;
   if (!PUBLIC_PATHS.includes(currentPath)) {
     isRedirecting = true;
     
-    // Clear React Query cache to stop pending queries
     if (queryClientRef) {
       queryClientRef.clear();
     }
@@ -394,8 +409,14 @@ export function handle401Redirect() {
   }
 }
 
+// Reset redirect flag (useful after logout)
+export function resetRedirectState() {
+  isRedirecting = false;
+}
+
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
-  const { controller, clear } = createTimeoutController();
+  const requestId = generateRequestId();
+  const { controller, clear, isTimedOut } = createTimeoutController();
   const startTime = Date.now();
   
   try {
@@ -405,15 +426,16 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        "X-Request-Id": requestId,
         ...options?.headers,
       },
     });
     
-    clear(); // Clear timeout on successful response
+    clear();
     
     const duration = Date.now() - startTime;
     if (duration > 3000) {
-      console.warn(`[API] Slow request: ${url} took ${duration}ms`);
+      console.warn(`[API] Slow request: ${url} took ${duration}ms (reqId: ${requestId})`);
     }
 
     if (!response.ok) {
@@ -425,7 +447,9 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
           handle401Redirect();
           break;
         case 403:
-          toast.error("You don't have permission to perform this action");
+          if (!error.code) {
+            toast.error("You don't have permission to perform this action");
+          }
           break;
         case 404:
           toast.error("Resource not found");
@@ -435,6 +459,11 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
           break;
         case 500:
           toast.error("Server error, please try again");
+          break;
+        case 502:
+        case 503:
+        case 504:
+          toast.error("Server temporarily unavailable. Please try again.");
           break;
         default:
           if (response.status >= 400) {
@@ -454,18 +483,25 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
     }
     return {} as T;
   } catch (error) {
-    clear(); // Clear timeout on error
+    clear();
     
     if (error instanceof ApiError) {
       throw error;
     }
     
-    // Handle timeout/abort errors
+    // Handle abort errors - distinguish between timeout and manual cancel
     if (error instanceof DOMException && error.name === "AbortError") {
-      const timeoutMsg = "Request timed out. Please try again.";
-      toast.error(timeoutMsg);
-      console.error(`[API] Timeout: ${url} exceeded ${API_TIMEOUT_MS}ms`);
-      throw new ApiError(0, timeoutMsg, { isTimeout: true });
+      if (isTimedOut()) {
+        // True timeout - show error
+        const timeoutMsg = "Request timed out. Please try again.";
+        toast.error(timeoutMsg);
+        console.error(`[API] Timeout: ${url} exceeded ${API_TIMEOUT_MS}ms (reqId: ${requestId})`);
+        throw new ApiError(0, timeoutMsg, { isTimeout: true });
+      } else {
+        // Cancelled by external signal (e.g., component unmount) - don't show error
+        console.debug(`[API] Request cancelled: ${url} (reqId: ${requestId})`);
+        throw new ApiError(0, "Request cancelled", { isAborted: true });
+      }
     }
     
     if (error instanceof TypeError && error.message.includes("fetch")) {
@@ -473,7 +509,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
       throw new ApiError(0, "Network error, please check your connection");
     }
     
-    console.error(`[API] Unexpected error for ${url}:`, error);
+    console.error(`[API] Unexpected error for ${url} (reqId: ${requestId}):`, error);
     throw error;
   }
 }

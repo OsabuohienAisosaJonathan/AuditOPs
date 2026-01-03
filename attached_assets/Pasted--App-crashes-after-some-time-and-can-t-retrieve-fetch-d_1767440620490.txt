@@ -1,0 +1,137 @@
+- App crashes after some time and can’t retrieve/fetch data anymore
+We need FULL diagnosis, not guess fixes.
+
+NON-NEGOTIABLE OUTPUT RULES:
+1) List every edited file path.
+2) For each file, print first 10–15 lines to confirm correct file.
+3) Provide patches with clear START/END markers.
+4) Provide a test checklist and confirm results with screenshots or logs.
+
+------------------------------------------------------------
+A) DIAGNOSE FIRST — IDENTIFY THE EXACT FAILURE POINT
+A1) Open browser DevTools Network and reproduce:
+- Load Dashboard
+- Load Clients
+- Load Inventory
+- Click Add Client
+- Click Edit Client/Category
+Record for each failed request:
+- URL (full)
+- method
+- status code
+- response body
+- time taken (pending/hanging)
+- request headers (cookie/auth)
+Then report the results.
+
+A2) Add correlation IDs:
+- Frontend generates X-Request-Id header for every API call (uuid)
+- Backend logs that request id with route + status + duration + userId + organizationId
+
+A3) Add backend request logging (for all /api/*):
+Log: method, route, status, duration(ms), userId, organizationId, error stack
+This is mandatory to stop blind debugging.
+
+A4) Add health/diag endpoints:
+- GET /api/health -> { ok, env, db: ok/fail, time }
+- GET /api/diag/session -> { authed, userId, organizationId, role }
+- GET /api/diag/routes -> list key routes enabled (optional)
+
+------------------------------------------------------------
+B) FIX “PAGE GOES BLIND” WHEN SERVER NOT REACHABLE
+B1) Create a single API client wrapper (AbortController + timeout + retry):
+- File: client/src/lib/apiClient.ts (or your convention)
+Features:
+- timeout 12s (abort)
+- retry 2 times only for network errors + 502/503/504 (backoff 400ms, 800ms)
+- always returns JSON or throws normalized error { status, code, message }
+- credentials: "include" if cookie auth is used
+- base URL must be correct for prod/dev (no hardcoded localhost)
+
+B2) Replace ALL fetch calls used by:
+- Dashboard page
+- Clients page
+- Inventory page
+- Categories CRUD
+- Departments CRUD
+with apiClient()
+
+B3) Every page MUST exit loading state:
+try/catch/finally => finally always sets loading false
+No infinite spinner allowed.
+
+B4) Add global ErrorBoundary so app never whitescreens.
+If an error occurs:
+- show error UI with message
+- show “Reload” + “Go to Login”
+- in dev also show stack trace.
+
+------------------------------------------------------------
+C) FIX CRUD FAILURES (ADD/EDIT CLIENT + CATEGORY)
+C1) Locate client creation flow and category creation flow.
+For each:
+- confirm UI calls the correct endpoint
+- confirm endpoint exists and is wired in server routes
+- confirm server returns JSON on success/failure (no HTML / no empty response)
+
+C2) Fix auth/org scoping:
+- organizationId must come from session on server, NOT from client payload
+- every CRUD query MUST include organizationId filter
+- if organizationId missing: return 403 with clear error code "ORG_REQUIRED"
+
+C3) Fix silent failures:
+- if backend returns 401/403/500, show toast + error UI
+- do not keep spinner running
+
+C4) Fix state refresh after CRUD:
+After Add/Edit:
+- invalidate/refetch the list OR optimistically update the list
+- ensure UI updates instantly and consistently
+
+------------------------------------------------------------
+D) FIX “APP CRASH AFTER SOME TIME”
+D1) Identify if crash is caused by:
+- memory leak in interval/polling
+- repeated fetch loops (useEffect dependencies)
+- unhandled promise rejection
+- websocket or long-poll stuck
+- react state update on unmounted component
+
+D2) Patch:
+- clean up intervals/timeouts in useEffect return()
+- prevent double fetching (guard with stable deps)
+- handle aborted fetch properly (do not treat abort as fatal crash)
+
+------------------------------------------------------------
+E) PRODUCTION VS DEVELOPMENT DATA MIX-UP (TENANT ISOLATION)
+E1) Confirm whether prod and dev share same database.
+- If they share DB: split them NOW (separate DB URLs for prod/dev).
+- If they do not share DB: ensure no demo seed runs in prod.
+
+E2) Ensure “seed demo data” is disabled in production:
+- only run seeds when explicitly invoked
+- never run on server start in prod
+
+------------------------------------------------------------
+F) WHAT I EXPECT YOU TO DELIVER
+F1) A root-cause summary:
+- Exact routes failing and why (wrong URL, 401, DB error, missing org, hanging query, etc.)
+
+F2) Fixes committed:
+- apiClient.ts wrapper + adopted across pages
+- ErrorBoundary added
+- backend logging + /api/health + /api/diag/session
+- CRUD routes fixed for Add/Edit client/category
+- tenant isolation verified
+
+F3) Test checklist (must pass):
+- login prod -> dashboard loads < 5s
+- clients list loads < 5s
+- add client works, list updates
+- add category works, list updates
+- edit works and persists
+- when server unreachable -> shows friendly error UI + retry (no blank page)
+- no cross-tenant data leakage
+
+DO NOT do redesign. DO NOT delete DB tables. Only bug-fix, reliability, and correct data flow.
+END.

@@ -177,6 +177,28 @@ export async function registerRoutes(
     })
   );
 
+  // Request correlation ID middleware for debugging
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const requestId = req.headers['x-request-id'] as string || `srv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    (req as any).requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    
+    const startTime = Date.now();
+    
+    // Log request completion with timing
+    res.on('finish', () => {
+      const duration = Date.now() - startTime;
+      const userId = req.session?.userId || 'anonymous';
+      
+      // Log slow requests (>3s) or errors
+      if (duration > 3000 || res.statusCode >= 500) {
+        console.warn(`[SLOW/ERROR] ${req.method} ${req.path} ${res.statusCode} ${duration}ms userId=${userId} reqId=${requestId}`);
+      }
+    });
+    
+    next();
+  });
+
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {
       return res.status(401).json({ error: "Unauthorized" });
