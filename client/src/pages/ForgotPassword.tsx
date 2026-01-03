@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Mail } from "lucide-react";
-import { logoImage, getLogoClass, logoContainerClass } from "@/lib/logo-config";
+import logoImage from "@/assets/logo2.png";
 
 export default function ForgotPassword() {
   const { toast } = useToast();
@@ -58,13 +58,11 @@ export default function ForgotPassword() {
         <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
           <div className="text-center space-y-4">
             <Link href="/" className="block mx-auto mb-4">
-              <div className={`${logoContainerClass} mx-auto`}>
-                <img 
-                  src={logoImage} 
-                  alt="MiAuditOps" 
-                  className={`${getLogoClass("auth")} object-contain cursor-pointer`}
-                />
-              </div>
+              <img 
+                src={logoImage} 
+                alt="MiAuditOps" 
+                className="h-24 mx-auto object-contain cursor-pointer" 
+              />
             </Link>
             <div className="mx-auto w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
               <Mail className="h-8 w-8 text-primary" />
@@ -96,13 +94,11 @@ export default function ForgotPassword() {
       <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
         <div className="text-center space-y-2">
           <Link href="/" className="block mx-auto mb-4">
-            <div className={`${logoContainerClass} mx-auto`}>
-              <img 
-                src={logoImage} 
-                alt="MiAuditOps" 
-                className={`${getLogoClass("auth")} object-contain cursor-pointer`}
-              />
-            </div>
+            <img 
+              src={logoImage} 
+              alt="MiAuditOps" 
+              className="h-24 mx-auto object-contain cursor-pointer" 
+            />
           </Link>
           <h2 className="text-2xl font-bold text-foreground">Forgot your password?</h2>
           <p className="text-sm text-muted-foreground">
