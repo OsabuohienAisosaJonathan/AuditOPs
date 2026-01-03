@@ -342,7 +342,7 @@ export interface DashboardSummary {
 }
 
 const API_BASE = "/api";
-const API_TIMEOUT_MS = 10000; // 10 second timeout
+const API_TIMEOUT_MS = 15000; // 15 second timeout (increased for production reliability)
 
 export class ApiError extends Error {
   code?: string;
