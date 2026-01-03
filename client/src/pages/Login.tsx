@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Mail, Play, Eye, EyeOff } from "lucide-react";
-import logoImage from "@/assets/logo2.png";
+import { logoImage, getLogoClass, logoContainerClass } from "@/lib/logo-config";
 
 const isDevelopment = import.meta.env.DEV;
 
@@ -129,11 +129,13 @@ export default function Login() {
       <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
         <div className="text-center space-y-2">
           <Link href="/" className="block mx-auto mb-4">
-            <img 
-              src={logoImage} 
-              alt="MiAuditOps" 
-              className="h-24 mx-auto object-contain cursor-pointer" 
-            />
+            <div className={`${logoContainerClass} mx-auto`}>
+              <img 
+                src={logoImage} 
+                alt="MiAuditOps" 
+                className={`${getLogoClass("auth")} object-contain cursor-pointer`}
+              />
+            </div>
           </Link>
           <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>
         </div>
