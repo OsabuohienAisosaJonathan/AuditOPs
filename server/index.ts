@@ -35,6 +35,69 @@ export function log(message: string, source = "express") {
 }
 
 const SLOW_ROUTE_THRESHOLD_MS = 2000;
+const SERVER_REQUEST_TIMEOUT_MS = 15000; // 15 second server-side timeout
+
+// Routes exempt from timeout (streaming, downloads, uploads)
+const TIMEOUT_EXEMPT_PATTERNS = [
+  '/api/exports/',
+  '/api/upload',
+  '/api/files/',
+  '/api/health', // Health check should be fast, exempt to avoid false positives
+];
+
+// Server-side request timeout middleware using native res.setTimeout
+app.use((req, res, next) => {
+  // Skip timeout for non-API routes
+  if (!req.path.startsWith("/api")) {
+    return next();
+  }
+  
+  // Skip timeout for exempt routes (streaming, uploads, downloads)
+  const isExempt = TIMEOUT_EXEMPT_PATTERNS.some(pattern => req.path.startsWith(pattern));
+  if (isExempt) {
+    return next();
+  }
+  
+  // Track if request has timed out
+  (req as any).__timedOut = false;
+  
+  // Wrap res.json and res.send to prevent writes after timeout
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+  const originalEnd = res.end.bind(res);
+  
+  res.json = function(body: any) {
+    if ((req as any).__timedOut || res.destroyed || res.headersSent) {
+      console.debug(`[SKIP WRITE] ${req.method} ${req.path} - response already handled`);
+      return res;
+    }
+    return originalJson(body);
+  };
+  
+  res.send = function(body: any) {
+    if ((req as any).__timedOut || res.destroyed || res.headersSent) {
+      console.debug(`[SKIP WRITE] ${req.method} ${req.path} - response already handled`);
+      return res;
+    }
+    return originalSend(body);
+  };
+  
+  // Use res.setTimeout for cooperative timeout
+  res.setTimeout(SERVER_REQUEST_TIMEOUT_MS, () => {
+    (req as any).__timedOut = true;
+    if (!res.headersSent && !res.destroyed) {
+      console.error(`[REQUEST TIMEOUT] ${req.method} ${req.path} exceeded ${SERVER_REQUEST_TIMEOUT_MS}ms - aborting`);
+      try {
+        res.status(504);
+        originalJson({ error: "timeout", message: "Request took too long. Please try again." });
+      } catch (e) {
+        // Response may already be destroyed
+      }
+    }
+  });
+  
+  next();
+});
 
 app.use((req, res, next) => {
   const start = Date.now();

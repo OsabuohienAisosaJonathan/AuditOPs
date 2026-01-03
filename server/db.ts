@@ -16,7 +16,25 @@ function ensureDatabase() {
   if (!_pool) {
     _pool = new Pool({
       connectionString: process.env.DATABASE_URL,
+      // Connection pool settings for production reliability
+      max: 50, // Maximum 50 connections in pool (sized for multi-tenant workload)
+      min: 5, // Keep at least 5 connections ready
+      idleTimeoutMillis: 30000, // Close idle connections after 30s
+      connectionTimeoutMillis: 5000, // Timeout for acquiring connection: 5s (fail fast)
+      query_timeout: 10000, // Query timeout: 10s (fail fast for slow queries)
     });
+    
+    // Log pool errors
+    _pool.on('error', (err) => {
+      console.error('[DB Pool] Unexpected error on idle client:', err.message);
+    });
+    
+    // Log pool connection events in development
+    if (process.env.NODE_ENV !== 'production') {
+      _pool.on('connect', () => {
+        console.debug('[DB Pool] New connection established');
+      });
+    }
   }
   
   if (!_db) {

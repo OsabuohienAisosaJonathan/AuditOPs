@@ -344,7 +344,7 @@ export interface DashboardSummary {
 }
 
 const API_BASE = "/api";
-const API_TIMEOUT_MS = 12000; // 12 second timeout
+const API_TIMEOUT_MS = 14000; // 14 second timeout (just under server's 15s timeout)
 
 export class ApiError extends Error {
   code?: string;
