@@ -40,6 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await authApi.logout();
     setUser(null);
+    // Clear all tenant-scoped localStorage data on logout
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("selectedClientId");
+      localStorage.removeItem("selectedCategoryId");
+      localStorage.removeItem("selectedDepartmentId");
+      localStorage.removeItem("selectedDate");
+    }
   };
 
   return (

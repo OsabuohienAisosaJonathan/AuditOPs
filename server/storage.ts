@@ -103,6 +103,8 @@ export interface IStorage {
   getDepartments(clientId: string): Promise<Department[]>;
   getDepartmentsByCategory(categoryId: string): Promise<Department[]>;
   getAllDepartments(): Promise<Department[]>;
+  getDepartmentsByOrganization(organizationId: string): Promise<Department[]>;
+  getCategoriesByOrganization(organizationId: string): Promise<Category[]>;
   getDepartment(id: string): Promise<Department | undefined>;
   createDepartment(department: InsertDepartment): Promise<Department>;
   createDepartmentsBulk(departments: InsertDepartment[]): Promise<Department[]>;
@@ -667,6 +669,24 @@ export class DbStorage implements IStorage {
 
   async getAllDepartments(): Promise<Department[]> {
     return db.select().from(departments).orderBy(departments.name);
+  }
+
+  async getDepartmentsByOrganization(organizationId: string): Promise<Department[]> {
+    return db.select({ department: departments })
+      .from(departments)
+      .innerJoin(clients, eq(departments.clientId, clients.id))
+      .where(eq(clients.organizationId, organizationId))
+      .orderBy(departments.name)
+      .then(results => results.map(r => r.department));
+  }
+
+  async getCategoriesByOrganization(organizationId: string): Promise<Category[]> {
+    return db.select({ category: categories })
+      .from(categories)
+      .innerJoin(clients, eq(categories.clientId, clients.id))
+      .where(and(eq(clients.organizationId, organizationId), sql`${categories.deletedAt} IS NULL`))
+      .orderBy(categories.name)
+      .then(results => results.map(r => r.category));
   }
 
   async getDepartment(id: string): Promise<Department | undefined> {

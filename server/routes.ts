@@ -936,7 +936,7 @@ export async function registerRoutes(
     }
   });
   
-  app.get("/api/departments/by-client/:clientId", requireAuth, async (req, res) => {
+  app.get("/api/departments/by-client/:clientId", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.params;
       const departments = await storage.getDepartments(clientId);
@@ -2006,7 +2006,7 @@ export async function registerRoutes(
   });
 
   // ============== CATEGORIES ==============
-  app.get("/api/clients/:clientId/categories", requireAuth, async (req, res) => {
+  app.get("/api/clients/:clientId/categories", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const categories = await storage.getCategories(req.params.clientId);
       res.json(categories);
@@ -2017,7 +2017,12 @@ export async function registerRoutes(
 
   app.get("/api/categories", requireAuth, async (req, res) => {
     try {
-      const categories = await storage.getAllCategories();
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const categories = await storage.getCategoriesByOrganization(user.organizationId);
       res.json(categories);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -2463,7 +2468,7 @@ export async function registerRoutes(
   // ============== DEPARTMENTS ==============
   
   // Get departments for a client
-  app.get("/api/clients/:clientId/departments", requireAuth, async (req, res) => {
+  app.get("/api/clients/:clientId/departments", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const departments = await storage.getDepartments(req.params.clientId);
       res.json(departments);
@@ -2566,7 +2571,12 @@ export async function registerRoutes(
 
   app.get("/api/departments", requireAuth, async (req, res) => {
     try {
-      const departments = await storage.getAllDepartments();
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const departments = await storage.getDepartmentsByOrganization(user.organizationId);
       res.json(departments);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -3552,7 +3562,7 @@ export async function registerRoutes(
   });
 
   // ============== INVENTORY DEPARTMENTS ==============
-  app.get("/api/clients/:clientId/inventory-departments", requireAuth, async (req, res) => {
+  app.get("/api/clients/:clientId/inventory-departments", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const inventoryDepts = await storage.getInventoryDepartments(req.params.clientId);
       res.json(inventoryDepts);
