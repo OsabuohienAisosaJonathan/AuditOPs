@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useClientContext } from "@/lib/client-context";
 import { useCurrency } from "@/lib/currency-context";
 import { organizationSettingsApi } from "@/lib/api";
+import { useEntitlements } from "@/lib/entitlements-context";
 
 const REPORT_TYPES = [
   { value: "daily", label: "Daily Audit Report" },
@@ -86,6 +87,7 @@ export default function Reports() {
   const { selectedClientId, clients } = useClientContext();
   const clientId = selectedClientId || clients?.[0]?.id || "";
   const selectedClient = clients?.find(c => c.id === clientId);
+  const { checkAndShowLocked } = useEntitlements();
 
   const getDateRange = () => {
     const today = new Date();
@@ -931,11 +933,17 @@ export default function Reports() {
   };
 
   const handleDownloadPDF = () => {
+    if (!checkAndShowLocked("canDownloadReports", "Report Downloads", "Growth")) {
+      return;
+    }
     window.print();
     toast.success("Use your browser's 'Save as PDF' option in the print dialog");
   };
 
   const exportExcel = () => {
+    if (!checkAndShowLocked("canDownloadReports", "Report Downloads", "Growth")) {
+      return;
+    }
     if (!reportData) {
       toast.error("Generate a preview first");
       return;

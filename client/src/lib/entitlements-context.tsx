@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useAuth } from "./auth-context";
+import { LockedFeatureModal } from "@/components/LockedFeatureModal";
 
 export interface Entitlements {
   maxClients: number;
@@ -32,6 +33,8 @@ interface EntitlementsContextType {
   entitlements: Entitlements | null;
   isLoading: boolean;
   refresh: () => Promise<void>;
+  showLockedModal: (feature: string, requiredPlan?: string, description?: string) => void;
+  checkAndShowLocked: (feature: keyof Pick<Entitlements, 'canDownloadReports' | 'canPrintReports' | 'canAccessPurchasesRegisterPage' | 'canAccessSecondHitPage' | 'canDownloadSecondHitFullTable' | 'canDownloadMainStoreLedgerSummary' | 'canUseBetaFeatures'>, featureLabel: string, requiredPlan?: string) => boolean;
 }
 
 const defaultEntitlements: Entitlements = {
@@ -59,6 +62,8 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [lockedModalOpen, setLockedModalOpen] = useState(false);
+  const [lockedFeature, setLockedFeature] = useState({ feature: "", requiredPlan: "Growth", description: "" });
 
   const refresh = async () => {
     if (!user) {
@@ -85,13 +90,37 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const showLockedModal = (feature: string, requiredPlan = "Growth", description = "") => {
+    setLockedFeature({ feature, requiredPlan, description });
+    setLockedModalOpen(true);
+  };
+
+  const checkAndShowLocked = (
+    feature: keyof Pick<Entitlements, 'canDownloadReports' | 'canPrintReports' | 'canAccessPurchasesRegisterPage' | 'canAccessSecondHitPage' | 'canDownloadSecondHitFullTable' | 'canDownloadMainStoreLedgerSummary' | 'canUseBetaFeatures'>,
+    featureLabel: string,
+    requiredPlan = "Growth"
+  ): boolean => {
+    if (entitlements && !entitlements[feature]) {
+      showLockedModal(featureLabel, requiredPlan);
+      return false;
+    }
+    return true;
+  };
+
   useEffect(() => {
     refresh();
   }, [user]);
 
   return (
-    <EntitlementsContext.Provider value={{ entitlements, isLoading, refresh }}>
+    <EntitlementsContext.Provider value={{ entitlements, isLoading, refresh, showLockedModal, checkAndShowLocked }}>
       {children}
+      <LockedFeatureModal
+        open={lockedModalOpen}
+        onOpenChange={setLockedModalOpen}
+        feature={lockedFeature.feature}
+        requiredPlan={lockedFeature.requiredPlan}
+        description={lockedFeature.description}
+      />
     </EntitlementsContext.Provider>
   );
 }
