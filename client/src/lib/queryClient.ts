@@ -24,9 +24,6 @@ function createTimeoutController(timeoutMs: number = QUERY_TIMEOUT_MS): {
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    if (res.status === 401) {
-      handle401Redirect();
-    }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }
@@ -49,6 +46,12 @@ export async function apiRequest(
     });
     
     clear();
+    
+    if (res.status === 401) {
+      handle401Redirect();
+      return new Promise(() => {});
+    }
+    
     await throwIfResNotOk(res);
     return res;
   } catch (error) {
@@ -76,7 +79,6 @@ export const getQueryFn: <T>(options: {
     const startTime = Date.now();
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // If React Query provides a signal (for cancellation), listen to it
     if (signal) {
       signal.addEventListener('abort', () => {
         controller.abort();
@@ -104,6 +106,8 @@ export const getQueryFn: <T>(options: {
         if (unauthorizedBehavior === "returnNull") {
           return null;
         }
+        handle401Redirect();
+        return new Promise(() => {});
       }
 
       await throwIfResNotOk(res);
@@ -116,7 +120,6 @@ export const getQueryFn: <T>(options: {
           console.error(`[Query] Timeout: ${queryKeyStr} exceeded ${QUERY_TIMEOUT_MS}ms`);
           throw new Error("Request timed out. Please try again.");
         }
-        // Request was cancelled by React Query (component unmount, refetch, etc.)
         const cancelError = new Error("Request cancelled");
         (cancelError as any).isAborted = true;
         throw cancelError;
@@ -133,18 +136,15 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: Infinity,
       retry: (failureCount, error) => {
-        // Don't retry on auth errors
         if (error instanceof Error && (error.message.includes("401") || error.message.includes("Unauthorized"))) {
           return false;
         }
-        // Don't retry cancelled requests
         if (error instanceof Error && ((error as any).isAborted || error.message === "Request cancelled")) {
           return false;
         }
-        // Retry up to 2 times for other errors (including timeouts)
         return failureCount < 2;
       },
-      retryDelay: (attemptIndex) => Math.min(400 * 2 ** attemptIndex, 2000), // 400ms, 800ms
+      retryDelay: (attemptIndex) => Math.min(400 * 2 ** attemptIndex, 2000),
     },
     mutations: {
       retry: false,
@@ -152,5 +152,4 @@ export const queryClient = new QueryClient({
   },
 });
 
-// Set reference for 401 handling to clear cache
 setQueryClientRef(queryClient);

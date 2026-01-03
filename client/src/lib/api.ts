@@ -445,7 +445,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
       switch (response.status) {
         case 401:
           handle401Redirect();
-          break;
+          return new Promise(() => {}) as Promise<T>;
         case 403:
           if (!error.code) {
             toast.error("You don't have permission to perform this action");
