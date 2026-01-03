@@ -1,4 +1,17 @@
 import { db } from "./db";
+
+// DB Query timing instrumentation
+const DB_SLOW_THRESHOLD_MS = 500;
+
+function logDbTiming(operation: string, startTime: number, context?: Record<string, any>) {
+  const duration = Date.now() - startTime;
+  const contextStr = context ? ` ${JSON.stringify(context)}` : "";
+  if (duration > DB_SLOW_THRESHOLD_MS) {
+    console.warn(`[DB SLOW] ${operation} took ${duration}ms${contextStr}`);
+  }
+  return duration;
+}
+
 import { 
   users, clients, categories, departments, salesEntries, purchases,
   stockMovements, stockMovementLines, reconciliations, exceptions, exceptionComments, exceptionActivity, auditLogs, adminActivityLogs, systemSettings,
@@ -365,17 +378,23 @@ export interface IStorage {
 export class DbStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
+    const startTime = Date.now();
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    logDbTiming("getUser", startTime, { userId: id });
     return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
+    const startTime = Date.now();
     const [user] = await db.select().from(users).where(eq(users.username, username));
+    logDbTiming("getUserByUsername", startTime, { username });
     return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
+    const startTime = Date.now();
     const [user] = await db.select().from(users).where(eq(users.email, email));
+    logDbTiming("getUserByEmail", startTime, { email });
     return user;
   }
 
@@ -449,12 +468,17 @@ export class DbStorage implements IStorage {
 
   // Clients
   async getClients(organizationId?: string): Promise<Client[]> {
+    const startTime = Date.now();
+    let result: Client[];
     if (organizationId) {
-      return db.select().from(clients)
+      result = await db.select().from(clients)
         .where(eq(clients.organizationId, organizationId))
         .orderBy(desc(clients.createdAt));
+    } else {
+      result = await db.select().from(clients).orderBy(desc(clients.createdAt));
     }
-    return db.select().from(clients).orderBy(desc(clients.createdAt));
+    logDbTiming("getClients", startTime, { organizationId, count: result.length });
+    return result;
   }
 
   async getClient(id: string): Promise<Client | undefined> {
@@ -528,26 +552,32 @@ export class DbStorage implements IStorage {
 
   // Organization Settings
   async getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined> {
+    const startTime = Date.now();
     const [settings] = await db.select().from(organizationSettings)
       .where(eq(organizationSettings.organizationId, organizationId));
+    logDbTiming("getOrganizationSettings", startTime, { organizationId });
     return settings;
   }
 
   async upsertOrganizationSettings(organizationId: string, data: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings> {
-    const existing = await this.getOrganizationSettings(organizationId);
-    if (existing) {
-      const [updated] = await db.update(organizationSettings)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(organizationSettings.id, existing.id))
-        .returning();
-      return updated;
-    } else {
-      const [created] = await db.insert(organizationSettings).values({
+    const startTime = Date.now();
+    // Use proper UPSERT via onConflictDoUpdate to prevent race conditions and unique constraint conflicts
+    const [result] = await db.insert(organizationSettings)
+      .values({
         ...data,
-        organizationId
-      } as InsertOrganizationSettings).returning();
-      return created;
-    }
+        organizationId,
+        updatedAt: new Date()
+      } as InsertOrganizationSettings)
+      .onConflictDoUpdate({
+        target: organizationSettings.organizationId,
+        set: {
+          ...data,
+          updatedAt: new Date()
+        }
+      })
+      .returning();
+    logDbTiming("upsertOrganizationSettings", startTime, { organizationId });
+    return result;
   }
 
   // User Settings

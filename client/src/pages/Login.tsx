@@ -14,8 +14,9 @@ const isDevelopment = import.meta.env.DEV;
 
 interface HealthCheckResult {
   ok: boolean;
-  time?: string;
+  serverTime?: string;
   dbLatency?: number;
+  dbOk?: boolean;
   error?: string;
 }
 
@@ -50,9 +51,10 @@ export default function Login() {
       if (response.ok) {
         const data = await response.json();
         setHealthResult({
-          ok: true,
-          time: data.time,
-          dbLatency: data.dbLatency,
+          ok: data.ok,
+          serverTime: data.serverTime,
+          dbLatency: data.db?.latencyMs,
+          dbOk: data.db?.ok,
         });
       } else {
         setHealthResult({ ok: false, error: `Server returned ${response.status}` });
@@ -303,8 +305,8 @@ export default function Login() {
                     <>
                       <div className="font-medium">Server is reachable</div>
                       <div className="text-xs mt-1">
-                        Time: {healthResult.time}<br />
-                        DB Latency: {healthResult.dbLatency}ms
+                        Time: {healthResult.serverTime}<br />
+                        DB: {healthResult.dbOk ? "Connected" : "Error"} ({healthResult.dbLatency}ms)
                       </div>
                     </>
                   ) : (

@@ -333,21 +333,37 @@ export async function registerRoutes(
       
       res.json({
         ok: true,
-        time: new Date().toISOString(),
-        env: process.env.NODE_ENV || "development",
-        db: dbOk ? "ok" : "fail",
-        dbLatency,
+        serverTime: new Date().toISOString(),
+        db: {
+          ok: dbOk,
+          latencyMs: dbLatency
+        },
+        env: {
+          DATABASE_URL: !!process.env.DATABASE_URL,
+          RESEND_API_KEY: !!process.env.RESEND_API_KEY,
+          FROM_EMAIL: !!process.env.FROM_EMAIL,
+          APP_URL: !!process.env.APP_URL,
+          NODE_ENV: process.env.NODE_ENV || "development"
+        },
         responseTimeMs: Date.now() - startTime,
         version: "1.0.0"
       });
     } catch (error: any) {
       res.status(500).json({
         ok: false,
-        time: new Date().toISOString(),
-        env: process.env.NODE_ENV || "development",
-        db: "fail",
-        dbLatency: null,
-        error: error.message,
+        serverTime: new Date().toISOString(),
+        db: {
+          ok: false,
+          latencyMs: null,
+          error: error.message
+        },
+        env: {
+          DATABASE_URL: !!process.env.DATABASE_URL,
+          RESEND_API_KEY: !!process.env.RESEND_API_KEY,
+          FROM_EMAIL: !!process.env.FROM_EMAIL,
+          APP_URL: !!process.env.APP_URL,
+          NODE_ENV: process.env.NODE_ENV || "development"
+        },
         responseTimeMs: Date.now() - startTime,
         version: "1.0.0"
       });

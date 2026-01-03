@@ -34,6 +34,8 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+const SLOW_ROUTE_THRESHOLD_MS = 2000;
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -48,9 +50,24 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      const status = res.statusCode;
+      let logLine = `${req.method} ${path} ${status} in ${duration}ms`;
+      
+      // Truncate response body for logging (max 200 chars)
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        const bodyStr = JSON.stringify(capturedJsonResponse);
+        const truncated = bodyStr.length > 200 ? bodyStr.slice(0, 200) + "..." : bodyStr;
+        logLine += ` :: ${truncated}`;
+      }
+
+      // SLOW ROUTE alert for any request over threshold
+      if (duration > SLOW_ROUTE_THRESHOLD_MS) {
+        console.warn(`[SLOW ROUTE] ${req.method} ${path} took ${duration}ms (threshold: ${SLOW_ROUTE_THRESHOLD_MS}ms) status=${status}`);
+      }
+      
+      // Log 500 errors with details
+      if (status >= 500) {
+        console.error(`[SERVER ERROR] ${req.method} ${path} ${status} in ${duration}ms`);
       }
 
       log(logLine);
