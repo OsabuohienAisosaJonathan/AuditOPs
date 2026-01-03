@@ -179,6 +179,7 @@ export async function registerRoutes(
         sameSite: "lax",
         maxAge: SESSION_IDLE_MAX_AGE,
         domain: cookieDomain,
+        path: "/",
       },
     })
   );
