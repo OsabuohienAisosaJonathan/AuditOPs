@@ -131,6 +131,8 @@ export interface Item {
   sellingPrice: string;
   reorderLevel: number;
   status: string;
+  serialTracking?: string | null;
+  serialNotes?: string | null;
   createdAt: Date;
 }
 

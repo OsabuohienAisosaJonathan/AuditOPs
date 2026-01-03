@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal, Warehouse, Building, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Filter, Search, Package, Users, Truck, Pencil, Trash2, MoreHorizontal, Warehouse, Building, ChevronDown, ChevronRight, AlertTriangle, RefreshCw } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -74,13 +74,13 @@ export default function Inventory() {
 
   const selectedClientId = contextClientId || clients?.[0]?.id;
 
-  const { data: items, isLoading: itemsLoading } = useQuery({
+  const { data: items, isLoading: itemsLoading, error: itemsError, refetch: refetchItems } = useQuery({
     queryKey: ["items", selectedClientId],
     queryFn: () => selectedClientId ? itemsApi.getByClient(selectedClientId) : Promise.resolve([]),
     enabled: !!selectedClientId,
   });
 
-  const { data: suppliers, isLoading: suppliersLoading } = useQuery({
+  const { data: suppliers, isLoading: suppliersLoading, error: suppliersError, refetch: refetchSuppliers } = useQuery({
     queryKey: ["suppliers", selectedClientId],
     queryFn: () => selectedClientId ? suppliersApi.getByClient(selectedClientId) : Promise.resolve([]),
     enabled: !!selectedClientId,
@@ -392,6 +392,54 @@ export default function Inventory() {
     });
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [items]);
+
+  const isDataLoading = itemsLoading || suppliersLoading;
+  const dataError = itemsError || suppliersError;
+  
+  if (isDataLoading && !items && !suppliers) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]" data-testid="loading-inventory">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  if (dataError && !items && !suppliers) {
+    const errorMessage = dataError instanceof Error ? dataError.message : "Unknown error";
+    const isAuthError = errorMessage.includes("401") || errorMessage.includes("Unauthorized") || errorMessage.includes("Session expired");
+    const isTimeout = errorMessage.includes("timed out") || errorMessage.includes("timeout");
+    return (
+      <Empty className="min-h-[400px] border" data-testid="error-inventory">
+        <EmptyMedia variant="icon">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyTitle>
+            {isAuthError ? "Session expired" : isTimeout ? "Request timed out" : "Failed to load inventory"}
+          </EmptyTitle>
+          <EmptyDescription>
+            {isAuthError 
+              ? "Your session has expired. Please log in again."
+              : isTimeout
+              ? "The server took too long to respond. Please check your connection and try again."
+              : `Error: ${errorMessage}. Please try again.`}
+          </EmptyDescription>
+        </EmptyHeader>
+        <div className="flex gap-3 mt-4">
+          {isAuthError ? (
+            <Button onClick={() => window.location.href = "/login"}>
+              Go to Login
+            </Button>
+          ) : (
+            <Button onClick={() => { refetchItems(); refetchSuppliers(); }}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
+          )}
+        </div>
+      </Empty>
+    );
+  }
 
   if (!clients || clients.length === 0) {
     return (

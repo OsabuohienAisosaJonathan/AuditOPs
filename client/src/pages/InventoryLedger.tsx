@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye, ChevronLeft, Lock, History, Calendar, RotateCcw } from "lucide-react";
+import { Store, ChefHat, AlertCircle, Package, Settings2, ChevronDown, ChevronRight, Save, EyeOff, Eye, ChevronLeft, Lock, History, Calendar, RotateCcw, AlertTriangle, RefreshCw } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useClientContext } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
@@ -218,7 +218,7 @@ export default function InventoryLedger() {
   }, [srdIdFromUrl, initialSrdSet]);
 
   // Fetch inventory departments for the client
-  const { data: inventoryDepts, isLoading: invDeptsLoading } = useQuery<InventoryDepartment[]>({
+  const { data: inventoryDepts, isLoading: invDeptsLoading, error: invDeptsError, refetch: refetchInvDepts } = useQuery<InventoryDepartment[]>({
     queryKey: ["inventory-departments", selectedClientId],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${selectedClientId}/inventory-departments`);
@@ -263,7 +263,7 @@ export default function InventoryLedger() {
   });
 
   // Fetch items for the client - filtered by inventory department's assigned categories
-  const { data: items, isLoading: itemsLoading } = useQuery<Item[]>({
+  const { data: items, isLoading: itemsLoading, error: itemsError, refetch: refetchItems } = useQuery<Item[]>({
     queryKey: ["items", selectedClientId, selectedInvDept],
     queryFn: async () => {
       // Use filtered endpoint when an inventory department is selected
@@ -278,7 +278,7 @@ export default function InventoryLedger() {
   });
 
   // Fetch store stock for selected department and date (with auto-seeding)
-  const { data: storeStockData, isLoading: stockLoading } = useQuery<StoreStock[]>({
+  const { data: storeStockData, isLoading: stockLoading, error: stockError, refetch: refetchStock } = useQuery<StoreStock[]>({
     queryKey: ["store-stock", selectedClientId, selectedInvDept, selectedDate],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${selectedDate}&autoSeed=true`);
@@ -929,6 +929,7 @@ export default function InventoryLedger() {
         cost,
         value,
         stockId: stock?.id,
+        awaitingCount: stock?.physicalClosingQty !== null ? parseFloat(stock?.physicalClosingQty || "0") : null,
       };
     });
   }, [items, selectedDept, storeStockData, prevDayStock, departmentStores, issueBreakdown, movementBreakdown]);
@@ -1125,6 +1126,52 @@ export default function InventoryLedger() {
     }
     setVisibleDepts(newSet);
   };
+
+  const isDataLoading = invDeptsLoading || (selectedInvDept && stockLoading);
+  const dataError = invDeptsError || itemsError || stockError;
+
+  if (isDataLoading && !inventoryDepts && !storeStockData) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]" data-testid="loading-ledger">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  if (dataError && !inventoryDepts && !storeStockData) {
+    const errorMessage = dataError instanceof Error ? dataError.message : "Unknown error";
+    const isAuthError = errorMessage.includes("401") || errorMessage.includes("Unauthorized") || errorMessage.includes("Session expired");
+    const isTimeout = errorMessage.includes("timed out") || errorMessage.includes("timeout");
+    return (
+      <div className="p-6">
+        <Card className="border-destructive">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">
+              {isAuthError ? "Session expired" : isTimeout ? "Request timed out" : "Failed to load ledger"}
+            </h3>
+            <p className="text-muted-foreground mb-4">
+              {isAuthError 
+                ? "Your session has expired. Please log in again."
+                : isTimeout
+                ? "The server took too long to respond. Please check your connection and try again."
+                : `Error: ${errorMessage}. Please try again.`}
+            </p>
+            {isAuthError ? (
+              <Button onClick={() => window.location.href = "/login"}>
+                Go to Login
+              </Button>
+            ) : (
+              <Button onClick={() => { refetchInvDepts(); refetchItems(); refetchStock(); }}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Try Again
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!selectedClientId) {
     return (
