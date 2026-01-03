@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { logAuthEvent } from "./auth-debug";
 
 export interface User {
   id: string;
@@ -409,32 +410,55 @@ export async function attemptSilentRefresh(): Promise<boolean> {
   // Prevent refresh spam
   const now = Date.now();
   if (now - lastRefreshAttempt < REFRESH_COOLDOWN_MS) {
+    logAuthEvent("REFRESH_FAIL", { message: "Cooldown active, skipping refresh" });
     return false;
   }
   lastRefreshAttempt = now;
   
+  const startTime = Date.now();
+  logAuthEvent("REFRESH_START", { endpoint: "/auth/refresh", method: "POST" });
+  
   // Create a new refresh promise (dedupe concurrent calls)
   refreshPromise = (async () => {
     try {
-      console.debug("[Auth] Attempting silent session refresh...");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for refresh
+      
       const response = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         credentials: "include",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
         },
       });
       
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+      
       if (response.ok) {
         const data = await response.json();
+        logAuthEvent("REFRESH_OK", { endpoint: "/auth/refresh", duration, status: response.status });
         console.debug("[Auth] Session refreshed successfully", data.expiresAt);
         return true;
       } else {
         const error = await response.json().catch(() => ({}));
+        logAuthEvent("REFRESH_FAIL", { 
+          endpoint: "/auth/refresh", 
+          duration, 
+          status: response.status,
+          message: error.code || error.error || "Unknown error"
+        });
         console.debug("[Auth] Session refresh failed:", error.code || response.status);
         return false;
       }
-    } catch (error) {
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      if (error.name === "AbortError") {
+        logAuthEvent("REFRESH_FAIL", { endpoint: "/auth/refresh", duration, status: "TIMEOUT", message: "Refresh timed out" });
+      } else {
+        logAuthEvent("REFRESH_FAIL", { endpoint: "/auth/refresh", duration, status: "NETWORK", message: error.message });
+      }
       console.debug("[Auth] Session refresh error:", error);
       return false;
     } finally {
@@ -451,6 +475,7 @@ export function handle401Redirect() {
   const currentPath = window.location.pathname;
   if (!PUBLIC_PATHS.includes(currentPath)) {
     isRedirecting = true;
+    logAuthEvent("REDIRECT_LOGIN", { message: `Redirecting from ${currentPath}` });
     
     if (queryClientRef) {
       queryClientRef.clear();
@@ -498,6 +523,7 @@ async function fetchApi<T>(url: string, options?: RequestInit, isRetry = false):
 
       switch (response.status) {
         case 401:
+          logAuthEvent("API_401", { endpoint: url, method: options?.method || "GET", status: 401, duration });
           // Don't try to refresh if this is already a retry or if we're on the refresh endpoint
           if (!isRetry && !url.includes("/auth/refresh")) {
             // Attempt silent refresh
@@ -510,7 +536,8 @@ async function fetchApi<T>(url: string, options?: RequestInit, isRetry = false):
           }
           // Refresh failed or this is a retry - redirect to login
           handle401Redirect();
-          return new Promise(() => {}) as Promise<T>;
+          // Throw error instead of hanging forever so UI can show error state
+          throw new ApiError(401, "Session expired", { code: "SESSION_EXPIRED" });
         case 403:
           if (!error.code) {
             toast.error("You don't have permission to perform this action");
@@ -556,9 +583,11 @@ async function fetchApi<T>(url: string, options?: RequestInit, isRetry = false):
     
     // Handle abort errors - distinguish between timeout and manual cancel
     if (error instanceof DOMException && error.name === "AbortError") {
+      const duration = Date.now() - startTime;
       if (isTimedOut()) {
         // True timeout - show error
         const timeoutMsg = "Request timed out. Please try again.";
+        logAuthEvent("API_TIMEOUT", { endpoint: url, method: options?.method || "GET", status: "TIMEOUT", duration });
         toast.error(timeoutMsg);
         console.error(`[API] Timeout: ${url} exceeded ${API_TIMEOUT_MS}ms (reqId: ${requestId})`);
         throw new ApiError(0, timeoutMsg, { isTimeout: true });
@@ -570,6 +599,8 @@ async function fetchApi<T>(url: string, options?: RequestInit, isRetry = false):
     }
     
     if (error instanceof TypeError && error.message.includes("fetch")) {
+      const duration = Date.now() - startTime;
+      logAuthEvent("API_NETWORK_ERROR", { endpoint: url, method: options?.method || "GET", status: "NETWORK", duration });
       toast.error("Network error, please check your connection");
       throw new ApiError(0, "Network error, please check your connection");
     }

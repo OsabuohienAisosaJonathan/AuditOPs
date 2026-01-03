@@ -325,8 +325,10 @@ export async function registerRoutes(
   app.get("/api/health", async (req, res) => {
     const startTime = Date.now();
     try {
-      // Test database connection
+      // Test database connection with latency measurement
+      const dbStartTime = Date.now();
       const dbResult = await pool.query("SELECT 1 as test");
+      const dbLatency = Date.now() - dbStartTime;
       const dbOk = dbResult.rows.length > 0;
       
       res.json({
@@ -334,6 +336,7 @@ export async function registerRoutes(
         time: new Date().toISOString(),
         env: process.env.NODE_ENV || "development",
         db: dbOk ? "ok" : "fail",
+        dbLatency,
         responseTimeMs: Date.now() - startTime,
         version: "1.0.0"
       });
@@ -343,6 +346,7 @@ export async function registerRoutes(
         time: new Date().toISOString(),
         env: process.env.NODE_ENV || "development",
         db: "fail",
+        dbLatency: null,
         error: error.message,
         responseTimeMs: Date.now() - startTime,
         version: "1.0.0"

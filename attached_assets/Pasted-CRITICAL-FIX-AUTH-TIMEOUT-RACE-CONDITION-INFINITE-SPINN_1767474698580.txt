@@ -1,0 +1,68 @@
+CRITICAL FIX: AUTH TIMEOUT + RACE CONDITION + INFINITE SPINNER (ADD DIAGNOSTICS)
+
+Problem:
+Users get logged out, refresh/login times out, and UI spins/blank/black pages. I need you to IDENTIFY the exact failing request and fix the auth flow so UI never hangs.
+
+Goals:
+1) Detect exactly which endpoint is timing out or returning 401.
+2) Prevent refresh/login redirect race conditions.
+3) Ensure NO page can spin forever: every request must end in success OR visible error state.
+
+A) ADD AUTH EVENT LOGGING (CLIENT)
+1) Create a tiny AuthDebug logger that records:
+   - timestamp
+   - event type (LOGIN_START, LOGIN_OK, LOGIN_FAIL, REFRESH_START, REFRESH_OK, REFRESH_FAIL, REDIRECT_LOGIN, API_401, API_TIMEOUT)
+   - endpoint + method
+   - status code or “TIMEOUT”
+2) Store last 200 events in memory and show them in a hidden debug panel:
+   - enable by URL param ?debugAuth=1 OR env NEXT_PUBLIC_DEBUG_AUTH=true
+3) Also console.log them when debug is on.
+
+B) ADD REQUEST TIMEOUTS THAT ALWAYS RESOLVE UI
+1) In the central apiClient wrapper:
+   - Add AbortController timeout (12–15s) for ALL calls.
+   - Return a normalized error object: { type: "timeout"|"http"|"network", status?, endpoint, message }
+2) NEVER leave loading=true on timeout/errors. Always set loading=false in finally.
+3) For auth endpoints (/login, /refresh, /me, /org):
+   - NO retry loops
+   - Max 1 attempt
+   - On failure show a visible error card (not blank page)
+
+C) SINGLE REFRESH LOCK + NO RACE CONDITIONS
+1) Ensure only ONE refresh runs at a time (global promise lock).
+2) If refresh is running, other requests wait for it (or fail fast) — no multiple refresh calls.
+3) On 401:
+   - attempt refresh once
+   - if refresh fails -> clear auth state -> redirect to /login
+4) Prevent redirect loops:
+   - if already on /login or /signup, do NOT trigger redirect again
+
+D) FIX CONFUSING STATE: “SIGNED IN BUT VERIFY FAILED”
+1) Make verification outcome authoritative:
+   - If verify endpoint returns failure, user should NOT be marked authenticated.
+   - Ensure auth state is set only after server confirms session/user.
+
+E) ADD HEALTH CHECK + SERVER VISIBILITY
+1) Add /api/health endpoint returning:
+   - ok: true
+   - db: ok/fail + latency
+   - serverTime
+2) On login page, if login fails due to timeout:
+   - show “Server unreachable / timed out” and show a “Check server health” button that calls /api/health and prints result.
+
+F) GUARANTEE UI NEVER GOES BLANK
+1) Add global ErrorBoundary around app layout (if not already).
+2) Add friendly fallback for every protected page:
+   - if auth unresolved -> show skeleton + “Checking session…”
+   - if auth failed -> show login CTA
+   - if data fetch failed -> show error card + retry
+
+OUTPUT REQUIRED:
+1) List exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide patches with START/END markers.
+4) Provide a “How to reproduce + what to look at” checklist:
+   - which endpoint timed out
+   - which endpoint returned 401
+   - what auth debug log shows
+END

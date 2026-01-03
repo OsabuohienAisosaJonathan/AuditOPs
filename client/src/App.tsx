@@ -42,17 +42,64 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useEffect } from "react";
 
 function ProtectedRoute({ component: Component, requiredRole }: { component: React.ComponentType; requiredRole?: string }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, authError, clearAuthError } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    // Only redirect to login if we're done loading, no user, and no auth error
+    // (auth errors like timeout should show error UI, not redirect)
+    if (!isLoading && !user && !authError) {
       setLocation("/login");
     }
-  }, [user, isLoading, setLocation]);
+  }, [user, isLoading, authError, setLocation]);
 
+  // Show skeleton while checking session
   if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+          <p className="text-muted-foreground">Checking session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if auth failed due to timeout/network
+  if (authError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4 p-6 max-w-md">
+          <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+            <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-foreground">
+            {authError === "timeout" ? "Connection Timeout" : "Connection Problem"}
+          </h2>
+          <p className="text-muted-foreground">
+            {authError === "timeout" 
+              ? "The server took too long to respond. Please try again."
+              : "Unable to verify your session. Please check your connection."}
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => { clearAuthError(); window.location.reload(); }}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => { clearAuthError(); setLocation("/login"); }}
+              className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              Go to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!user) {

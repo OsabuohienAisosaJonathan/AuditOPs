@@ -6,10 +6,18 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, Mail, Play, Eye, EyeOff } from "lucide-react";
+import { RefreshCw, Mail, Play, Eye, EyeOff, Activity } from "lucide-react";
 import logoImage from "@/assets/logo2.png";
+import { logAuthEvent } from "@/lib/auth-debug";
 
 const isDevelopment = import.meta.env.DEV;
+
+interface HealthCheckResult {
+  ok: boolean;
+  time?: string;
+  dbLatency?: number;
+  error?: string;
+}
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -20,6 +28,45 @@ export default function Login() {
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [healthResult, setHealthResult] = useState<HealthCheckResult | null>(null);
+
+  const checkServerHealth = async () => {
+    setIsCheckingHealth(true);
+    setHealthResult(null);
+    logAuthEvent("HEALTH_CHECK", { message: "Manual health check triggered" });
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch("/api/health", { 
+        signal: controller.signal,
+        credentials: "include"
+      });
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setHealthResult({
+          ok: true,
+          time: data.time,
+          dbLatency: data.dbLatency,
+        });
+      } else {
+        setHealthResult({ ok: false, error: `Server returned ${response.status}` });
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        setHealthResult({ ok: false, error: "Health check timed out" });
+      } else {
+        setHealthResult({ ok: false, error: err.message || "Network error" });
+      }
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   const handleDemoLogin = async () => {
     setIsDemoLoading(true);
@@ -98,6 +145,8 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
     setUnverifiedEmail(null);
+    setLoginError(null);
+    setHealthResult(null);
     
     const formData = new FormData(e.currentTarget);
     const username = formData.get("username") as string;
@@ -114,6 +163,14 @@ export default function Login() {
       if (error.code === "EMAIL_NOT_VERIFIED" && error.email) {
         setUnverifiedEmail(error.email);
       }
+      
+      // Track if this is a timeout/network error for health check button
+      if (error.isTimeout) {
+        setLoginError("timeout");
+      } else if (error.status === 0 || error.message?.includes("Network")) {
+        setLoginError("network");
+      }
+      
       toast({
         variant: "destructive",
         title: "Login failed",
@@ -199,6 +256,67 @@ export default function Login() {
           >
             {isLoading ? "Signing in..." : "Sign In"}
           </Button>
+
+          {/* Show health check button when login fails due to timeout/network */}
+          {loginError && (
+            <div className="p-4 rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                  {loginError === "timeout" ? "Server Timed Out" : "Connection Problem"}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                {loginError === "timeout" 
+                  ? "The server took too long to respond." 
+                  : "Unable to connect to the server."}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={checkServerHealth}
+                disabled={isCheckingHealth}
+                className="w-full gap-2"
+                data-testid="button-health-check"
+              >
+                {isCheckingHealth ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Checking...
+                  </>
+                ) : (
+                  <>
+                    <Activity className="h-4 w-4" />
+                    Check Server Health
+                  </>
+                )}
+              </Button>
+              
+              {healthResult && (
+                <div className={`mt-3 p-3 rounded text-sm ${
+                  healthResult.ok 
+                    ? "bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-300" 
+                    : "bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-300"
+                }`}>
+                  {healthResult.ok ? (
+                    <>
+                      <div className="font-medium">Server is reachable</div>
+                      <div className="text-xs mt-1">
+                        Time: {healthResult.time}<br />
+                        DB Latency: {healthResult.dbLatency}ms
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-medium">Server unreachable</div>
+                      <div className="text-xs mt-1">{healthResult.error}</div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {isDevelopment && (
             <div className="relative">
