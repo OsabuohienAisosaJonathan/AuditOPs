@@ -184,6 +184,11 @@ The application includes offline support and data caching for improved reliabili
 **UI Components**:
 - `ErrorCard`: Amber card with retry button for error states
 - `DashboardSkeleton`, `TableSkeleton`, `ListSkeleton`: Loading states
+- Cache badges: Pages show "Cached" badge with last updated timestamp when showing cached data
+
+**Pages Using Caching**:
+- Dashboard: `useCachedQuery` for clients and summary data with cache status badges
+- Clients: `useCachedQuery` for client list with cache status badges
 
 ### Build System
 - Development: Vite dev server with HMR

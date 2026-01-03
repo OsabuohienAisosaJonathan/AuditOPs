@@ -1,0 +1,71 @@
+OFFLINE RESILIENCE + CACHED UI (PHASED, NO REDESIGN)
+
+Goal:
+Even when server/network is slow or unreachable, the UI must still render, show cached data, and never go blank. Start with cached READS. Add offline WRITE queue only for safe modules.
+
+PHASE 1 (DO NOW): STOP BLANK PAGES + OFFLINE READ CACHE
+
+A) STOP BLANK/BLACK PAGES
+1) Add a global React ErrorBoundary around the full authenticated app layout.
+2) Ensure every page (Dashboard, Clients, Inventory) ALWAYS renders:
+   - loading skeleton
+   - error state (friendly error card)
+   - retry button
+   - cached fallback (if available)
+   - never return null/blank
+3) Guard all rendering:
+   - handle undefined arrays before map()
+   - safe number/date formatting (no crashes)
+   - show “No data yet” instead of crashing
+
+B) OFFLINE DETECTION + UI
+1) Add useNetworkStatus hook:
+   - online/offline from navigator.onLine + window events
+2) Show a top banner when offline:
+   “Offline — showing last saved data. Some actions are disabled.”
+
+C) CACHING (INDEXEDDB via localforage)
+1) Add a caching layer in IndexedDB (NOT localStorage).
+2) Cache last successful API responses per organizationId:
+   - clients list
+   - dashboard summary
+   - inventory items list
+   - organization settings
+3) Cache key format:
+   ${organizationId}:${endpoint}:${paramsHash}
+4) Implement stale-while-revalidate:
+   - show cached data immediately if present
+   - fetch fresh in background
+   - update UI on success
+   - if fetch fails, keep cached + show “Last updated” timestamp
+
+D) TIMEOUTS + RETRY (IMPORTANT)
+1) Add request timeout (AbortController) to all fetches (e.g., 12–15s).
+2) On timeout:
+   - show cached data if available
+   - show “Server slow, showing last saved data”
+3) Add controlled retry (max 1 retry) for GET requests only.
+
+PHASE 2 (LATER): OFFLINE OUTBOX (QUEUE WRITES) — LIMITED SCOPE ONLY
+1) Implement outbox ONLY for these safe endpoints:
+   - create/update client
+   - create/update category
+   - update organization settings
+2) Do NOT queue stock movements, sales capture, GRN/SRD posting until a later phase.
+3) Add idempotency key header per write request to prevent duplicates.
+
+CRITICAL RULES
+1) Never store auth tokens in IndexedDB/localStorage.
+2) Never mix tenants: all cache keys MUST include organizationId.
+3) Do not redesign UI or rename routes.
+
+REQUIRED OUTPUT
+1) List exact file paths edited
+2) Print first 10–15 lines of each edited file
+3) Provide code patches with clear start/end markers
+4) Provide test checklist:
+   - offline dashboard loads cached data
+   - offline clients loads cached data
+   - timeout shows cached + warning (no blank page)
+   - no crash on failed fetch (error card + retry)
+END

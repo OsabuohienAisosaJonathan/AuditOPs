@@ -5,11 +5,15 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree, AlertTriangle, RefreshCw } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree, AlertTriangle, RefreshCw, Clock } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { clientsApi, categoriesApi, departmentsApi, Client, Category, Department } from "@/lib/api";
+import { useCachedQuery } from "@/lib/useCachedQuery";
+import { useNetworkStatus } from "@/lib/network-status";
+import { TableSkeleton } from "@/components/ui/loading-skeleton";
+import { ErrorCard } from "@/components/ui/error-card";
 import { format } from "date-fns";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
@@ -46,11 +50,21 @@ export default function Clients() {
   const [deleteCategoryAck, setDeleteCategoryAck] = useState(false);
 
   const queryClient = useQueryClient();
+  const { isOnline } = useNetworkStatus();
 
-  const { data: clients, isLoading, error } = useQuery({
-    queryKey: ["clients"],
-    queryFn: clientsApi.getAll,
-  });
+  const { 
+    data: clients, 
+    cachedData: cachedClients,
+    isLoading, 
+    error,
+    refetch,
+    isUsingCache: clientsUsingCache,
+    lastUpdated: clientsLastUpdated
+  } = useCachedQuery(
+    ["clients"],
+    clientsApi.getAll,
+    { cacheEndpoint: "clients" }
+  );
 
   const { data: expandedCategories = [] } = useQuery({
     queryKey: ["categories", expandedClientId],
@@ -235,49 +249,28 @@ export default function Clients() {
 
   const uncategorizedDepartments = expandedDepartments.filter(d => !d.categoryId);
 
-  if (isLoading) {
+  if (isLoading && !clients) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner className="h-8 w-8" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
+            <p className="text-muted-foreground">Manage clients, categories, and departments/Sales Outlets</p>
+          </div>
+        </div>
+        <TableSkeleton rows={5} />
       </div>
     );
   }
 
-  if (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const isAuthError = errorMessage.includes("401") || errorMessage.includes("Unauthorized");
-    const isTimeout = errorMessage.includes("timed out") || errorMessage.includes("timeout");
-    
+  if (error && !clients && !cachedClients) {
     return (
-      <Empty className="min-h-[400px] border" data-testid="error-clients">
-        <EmptyMedia variant="icon">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </EmptyMedia>
-        <EmptyHeader>
-          <EmptyTitle>
-            {isAuthError ? "Session expired" : isTimeout ? "Request timed out" : "Failed to load clients"}
-          </EmptyTitle>
-          <EmptyDescription>
-            {isAuthError 
-              ? "Your session has expired. Please log in again."
-              : isTimeout
-              ? "The server took too long to respond. Please check your connection and try again."
-              : "We couldn't load your clients. Please try again."}
-          </EmptyDescription>
-        </EmptyHeader>
-        <div className="flex gap-3 mt-4">
-          {isAuthError ? (
-            <Button onClick={() => window.location.href = "/login"}>
-              Go to Login
-            </Button>
-          ) : (
-            <Button onClick={() => queryClient.invalidateQueries({ queryKey: ["clients"] })}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Try Again
-            </Button>
-          )}
-        </div>
-      </Empty>
+      <ErrorCard
+        title="Failed to load clients"
+        message="We couldn't load your clients. Please try again."
+        onRetry={() => refetch()}
+        isOffline={!isOnline}
+      />
     );
   }
 
@@ -285,8 +278,21 @@ export default function Clients() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
-          <p className="text-muted-foreground">Manage clients, categories, and departments/Sales Outlets</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
+            {clientsUsingCache && (
+              <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                <Clock className="h-3 w-3 mr-1" />
+                Cached
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-muted-foreground">Manage clients, categories, and departments/Sales Outlets</p>
+            {clientsUsingCache && clientsLastUpdated && (
+              <span className="text-xs text-amber-600">Last updated {clientsLastUpdated}</span>
+            )}
+          </div>
         </div>
         <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-client">
           <Plus className="mr-2 h-4 w-4" />

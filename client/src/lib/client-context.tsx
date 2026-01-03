@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { clientsApi, categoriesApi, departmentsApi, Client, Category, Department } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { format } from "date-fns";
+import { useCachedQuery } from "@/lib/useCachedQuery";
 
 interface ClientContextType {
   selectedClient: Client | null;
@@ -59,13 +60,19 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     return format(new Date(), "yyyy-MM-dd");
   });
 
-  const { data: clients = [], isLoading } = useQuery({
-    queryKey: ["clients"],
-    queryFn: clientsApi.getAll,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    enabled: !!user,
-  });
+  const { data: clientsData, isLoading: clientsQueryLoading } = useCachedQuery(
+    ["clients"],
+    clientsApi.getAll,
+    { 
+      cacheEndpoint: "clients",
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+      enabled: !!user,
+    }
+  );
+  
+  const clients = clientsData || [];
+  const isLoading = clientsQueryLoading && clients.length === 0;
 
   const { data: categories = [], isLoading: isLoadingCategories } = useQuery({
     queryKey: ["categories", selectedClientId],
