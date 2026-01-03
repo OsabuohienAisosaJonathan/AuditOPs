@@ -1,0 +1,134 @@
+CRITICAL BUG FIX: MULTI-TENANT DATA ISOLATION + FRESH NEW OWNER EXPERIENCE + STOP DEV DATA LEAKING INTO PRODUCTION
+
+PROBLEM:
+1) New owners (new accounts) are seeing departments/clients/settings/history created by other owners (dev/testing owners).
+2) New owners dashboard and pages keep spinning / not loading properly.
+3) Dev data appears in production and/or production pages show data that should not exist.
+4) App was initially private; now public SaaS requires tenant isolation.
+
+GOAL:
+- Each registered account MUST only see its own data (clients, departments, categories, SRDs, audit workspace, reports, settings, etc.)
+- A brand new owner must see a fresh empty workspace (no demo/development history).
+- Dev and Production must NOT share data.
+- Fix infinite loading/spinner by guaranteeing API returns tenant-scoped data and UI handles empty states.
+
+ABSOLUTE RULES:
+- DO NOT remove/rename existing routes.
+- DO NOT delete existing tables/columns.
+- Changes must be additive + safe migrations.
+- Tenant scoping must be enforced in BACKEND (front-end filtering is not enough).
+
+========================================
+A) CONFIRM DEV vs PROD DATA SEPARATION (HIGHEST PRIORITY)
+1) Check environment variables:
+   - Ensure PRODUCTION uses a different DATABASE_URL from DEVELOPMENT.
+   - If Replit uses the same secrets for both, split them:
+     DATABASE_URL_DEV and DATABASE_URL_PROD (or similar)
+   - The deployment environment MUST point to PROD DB only.
+
+2) If seeding exists:
+   - Ensure seed scripts DO NOT run in production.
+   - Guard seeds with:
+     if (process.env.NODE_ENV !== "production") { seedDemoData(); }
+   - Also ensure seeds do NOT run on every server boot.
+
+OUTPUT:
+- Show where database connection is configured and confirm it uses the correct env var for prod/deploy.
+- Confirm seeding is fully disabled in production.
+
+========================================
+B) INTRODUCE TENANT / ORGANIZATION MODEL (SO DATA NEVER LEAKS)
+1) Create tenants table:
+   - tenants: id, name, createdAt
+2) Link users to tenants:
+   - user_tenants: id, userId, tenantId, role, createdAt
+   - On signup: create a tenant for that user automatically.
+   - That user becomes role = "OWNER" or "SUPER_ADMIN" within that tenant.
+
+3) Add tenantId column to ALL business tables that should be private:
+   Examples (likely):
+   - clients
+   - departments (SRDs)
+   - categories
+   - inventory_items
+   - purchases / GRNs
+   - sales captures
+   - stock movements
+   - stock counts
+   - exceptions
+   - reports
+   - settings/company profile
+   - audit workspace records
+   - audit trail logs
+   (Do NOT guess blindly: inspect schema.ts / DB schema and apply to all relevant tables.)
+
+4) Add tenant scoping to every API read/write:
+   - Always resolve tenantId from the authenticated session/user.
+   - Every SELECT must include WHERE tenantId = currentTenantId.
+   - Every INSERT must write tenantId = currentTenantId.
+   - Every UPDATE/DELETE must include WHERE tenantId = currentTenantId AND id = ?
+
+IMPORTANT:
+- If the app currently uses “selectedClientId” in localStorage, that alone causes leaks.
+  The server must still validate tenant ownership.
+
+========================================
+C) SAFE MIGRATION / BACKFILL (NO DATA LOSS)
+1) Add tenantId columns as nullable first.
+2) Backfill existing rows:
+   - For the current existing data, assign them to the tenant of the creator user if possible.
+   - If “createdBy” exists, use it to map tenantId.
+   - If no createdBy exists, assign existing rows to the earliest admin user tenant (temporary).
+3) Then set tenantId NOT NULL for tables where applicable.
+
+OUTPUT:
+- Provide migration steps and SQL (or drizzle migration) clearly.
+
+========================================
+D) FIX UI DATA LEAK POINTS (DEPARTMENTS DROPDOWN / HEADER / FILTERS)
+PROBLEM BEHAVIOR:
+- Department dropdown shows “Bar, Grill, Kitchen…” for new owners.
+
+FIX:
+1) Ensure the departments dropdown is fetched from:
+   GET /api/departments?clientId=...
+   and backend scopes by tenantId.
+2) Clear all persisted selections on auth change:
+   - If user logs in and their tenant differs, clear:
+     localStorage selectedClientId, selectedDepartmentId, selectedDate
+3) Add empty states:
+   - If no clients yet: show “Create your first client/company”
+   - If client exists but no departments: show “Create SRD departments/Main store”
+   - Do not spin forever.
+
+========================================
+E) FIX INFINITE SPINNER / PAGES NOT LOADING
+1) Add global request timeout (e.g., 15s) for fetch calls.
+2) In pages that load data:
+   - If API returns 401 -> redirect to /login
+   - If API returns 403 -> show “Access denied / subscription locked”
+   - If API returns 200 with empty list -> show empty state UI (not spinner)
+3) Add error boundary or component-level error display instead of silent loading.
+4) Ensure dashboard does not require selectedClientId to render:
+   - It should render shell + ask user to select/create client.
+
+========================================
+F) VERIFY TENANT SECURITY (MUST PASS)
+Test checklist:
+1) Create Owner A: add client + departments + categories.
+2) Create Owner B: log in fresh.
+   - Must see ZERO of Owner A data.
+   - Department dropdown must be empty until Owner B creates their own.
+3) Ensure settings/company profile is tenant-scoped.
+4) Ensure reports only pull tenant-scoped data.
+5) Ensure no endpoint returns global rows without tenantId filter.
+
+========================================
+G) OUTPUT REQUIRED FROM YOU
+1) List exact file paths edited.
+2) For each edited file: print first 10–15 lines to confirm correct file.
+3) Provide code patches with clear START/END markers.
+4) Provide migration steps + SQL/drizzle migration.
+5) Provide a quick “How to confirm fix” steps (Owner A vs Owner B test).
+
+END

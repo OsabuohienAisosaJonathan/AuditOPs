@@ -100,7 +100,13 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
     featureLabel: string,
     requiredPlan = "Growth"
   ): boolean => {
-    if (entitlements && !entitlements[feature]) {
+    // If still loading or no entitlements data, allow access (fail-open for better UX)
+    // Server-side enforcement is the authoritative check
+    if (isLoading || !entitlements) {
+      return true;
+    }
+    
+    if (!entitlements[feature]) {
       showLockedModal(featureLabel, requiredPlan);
       return false;
     }
