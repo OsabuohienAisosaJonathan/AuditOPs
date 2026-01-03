@@ -520,6 +520,25 @@ export const organizationSettingsApi = {
     }),
 };
 
+export interface UserSettings {
+  id?: string;
+  userId: string;
+  theme: string;
+  autoSaveEnabled: boolean;
+  autoSaveIntervalSeconds: number;
+  varianceThresholdPercent: string;
+  updatedAt?: string;
+}
+
+export const userSettingsApi = {
+  get: () => fetchApi<UserSettings>("/user-settings"),
+  update: (data: Partial<UserSettings>) =>
+    fetchApi<UserSettings>("/user-settings", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+};
+
 export const departmentsApi = {
   getAll: () => fetchApi<Department[]>("/departments"),
   getByClient: (clientId: string) => fetchApi<Department[]>(`/clients/${clientId}/departments`),

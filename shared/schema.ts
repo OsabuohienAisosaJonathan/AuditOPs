@@ -79,15 +79,29 @@ export const categories = pgTable("categories", {
   deletedBy: varchar("deleted_by").references(() => users.id),
 });
 
-// Organization settings for company profile and currency
+// Organization settings for company profile and currency (tenant-scoped)
 export const organizationSettings = pgTable("organization_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id).unique(),
   companyName: text("company_name"),
   address: text("address"),
   email: text("email"),
   phone: text("phone"),
   currency: text("currency").notNull().default("NGN"),
+  logoUrl: text("logo_url"),
+  reportFooterNote: text("report_footer_note"),
   updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// User settings for individual preferences (user-scoped)
+export const userSettings = pgTable("user_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  theme: text("theme").notNull().default("light"),
+  autoSaveEnabled: boolean("auto_save_enabled").notNull().default(true),
+  autoSaveIntervalSeconds: integer("auto_save_interval_seconds").notNull().default(60),
+  varianceThresholdPercent: decimal("variance_threshold_percent", { precision: 5, scale: 2 }).notNull().default("5.00"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -725,6 +739,7 @@ export const insertSrdTransferSchema = createInsertSchema(srdTransfers).omit({ i
   transferDate: z.coerce.date(),
 });
 export const insertOrganizationSettingsSchema = createInsertSchema(organizationSettings).omit({ id: true, updatedAt: true });
+export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, updatedAt: true });
 
 // Purchase Item Events - history/audit trail of all item purchases
 export const purchaseItemEvents = pgTable("purchase_item_events", {
@@ -930,6 +945,8 @@ export type InsertItemSerialEvent = z.infer<typeof insertItemSerialEventSchema>;
 export type ItemSerialEvent = typeof itemSerialEvents.$inferSelect;
 export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettingsSchema>;
 export type OrganizationSettings = typeof organizationSettings.$inferSelect;
+export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
+export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertPurchaseItemEvent = z.infer<typeof insertPurchaseItemEventSchema>;
 export type PurchaseItemEvent = typeof purchaseItemEvents.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;

@@ -2122,23 +2122,65 @@ export async function registerRoutes(
     }
   });
 
-  // ============== ORGANIZATION SETTINGS ==============
+  // ============== SETTINGS ==============
   
+  // Get tenant (organization) settings
   app.get("/api/organization-settings", requireAuth, async (req, res) => {
     try {
-      const settings = await storage.getOrganizationSettings();
-      res.json(settings || { currency: "NGN" });
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      const settings = await storage.getOrganizationSettings(user.organizationId);
+      res.json(settings || { currency: "NGN", organizationId: user.organizationId });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.patch("/api/organization-settings", requireSupervisorOrAbove, async (req, res) => {
+  // Update tenant (organization) settings
+  app.patch("/api/organization-settings", requireSuperAdmin, async (req, res) => {
     try {
-      const settings = await storage.upsertOrganizationSettings({
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      // Validate email format if provided
+      if (req.body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.body.email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+      
+      const settings = await storage.upsertOrganizationSettings(user.organizationId, {
         ...req.body,
         updatedBy: req.session.userId,
       });
+      res.json(settings);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get user settings
+  app.get("/api/user-settings", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getUserSettings(req.session.userId!);
+      res.json(settings || { 
+        userId: req.session.userId,
+        theme: "light",
+        autoSaveEnabled: true,
+        autoSaveIntervalSeconds: 60,
+        varianceThresholdPercent: "5.00"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update user settings
+  app.patch("/api/user-settings", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.upsertUserSettings(req.session.userId!, req.body);
       res.json(settings);
     } catch (error: any) {
       res.status(400).json({ error: error.message });

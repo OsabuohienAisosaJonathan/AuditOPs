@@ -9,25 +9,32 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { organizationSettingsApi } from "@/lib/api";
+import { organizationSettingsApi, userSettingsApi } from "@/lib/api";
 import { useCurrency } from "@/lib/currency-context";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
-import { Building2, Check, Loader2 } from "lucide-react";
+import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
 
 export default function Settings() {
   const { user } = useAuth();
   const { currency, setCurrency, options } = useCurrency();
+  const { theme: currentTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   
   const [address, setAddress] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [hasChanges, setHasChanges] = useState(false);
+  const [hasCompanyChanges, setHasCompanyChanges] = useState(false);
   
   const { data: orgSettings, isLoading } = useQuery({
     queryKey: ["organization-settings"],
     queryFn: organizationSettingsApi.get,
+  });
+  
+  const { data: userSettings, isLoading: isLoadingUserSettings } = useQuery({
+    queryKey: ["user-settings"],
+    queryFn: userSettingsApi.get,
   });
   
   useEffect(() => {
@@ -38,12 +45,12 @@ export default function Settings() {
     }
   }, [orgSettings]);
   
-  const updateMutation = useMutation({
+  const updateOrgMutation = useMutation({
     mutationFn: (data: { companyName?: string; address?: string; email?: string; phone?: string }) => 
       organizationSettingsApi.update(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["organization-settings"] });
-      setHasChanges(false);
+      setHasCompanyChanges(false);
       toast.success("Company profile updated");
     },
     onError: () => {
@@ -51,16 +58,51 @@ export default function Settings() {
     },
   });
   
-  const handleSave = () => {
-    updateMutation.mutate({ address, email, phone });
+  const updateUserSettingsMutation = useMutation({
+    mutationFn: userSettingsApi.update,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+      toast.success("Preferences saved");
+    },
+    onError: () => {
+      toast.error("Failed to save preferences");
+    },
+  });
+  
+  const handleSaveCompany = () => {
+    updateOrgMutation.mutate({ address, email, phone });
   };
   
   const handleFieldChange = (setter: (val: string) => void) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setter(e.target.value);
-    setHasChanges(true);
+    setHasCompanyChanges(true);
   };
 
+  const handleAutoSaveToggle = (checked: boolean) => {
+    updateUserSettingsMutation.mutate({ autoSaveEnabled: checked });
+  };
+
+  const handleVarianceThresholdToggle = (checked: boolean) => {
+    const threshold = checked ? "5.00" : "0.00";
+    updateUserSettingsMutation.mutate({ varianceThresholdPercent: threshold });
+  };
+
+  const handleThemeToggle = (checked: boolean) => {
+    const newTheme = checked ? "dark" : "light";
+    updateUserSettingsMutation.mutate({ theme: newTheme });
+    setTheme(newTheme);
+  };
+
+  useEffect(() => {
+    if (userSettings?.theme && userSettings.theme !== currentTheme) {
+      setTheme(userSettings.theme as "dark" | "light");
+    }
+  }, [userSettings?.theme, currentTheme, setTheme]);
+
   const isSuperAdmin = user?.role === "super_admin";
+  const autoSaveEnabled = userSettings?.autoSaveEnabled ?? true;
+  const varianceAlertsEnabled = parseFloat(userSettings?.varianceThresholdPercent || "5") > 0;
+  const isDarkMode = currentTheme === "dark";
 
   return (
     <div className="space-y-6 max-w-[1000px] mx-auto">
@@ -69,9 +111,9 @@ export default function Settings() {
           <h1 className="text-2xl font-display font-bold">Settings</h1>
           <p className="text-muted-foreground">Manage your profile and application preferences</p>
         </div>
-        {isSuperAdmin && hasChanges && (
-          <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="button-save-settings">
-            {updateMutation.isPending ? (
+        {isSuperAdmin && hasCompanyChanges && (
+          <Button onClick={handleSaveCompany} disabled={updateOrgMutation.isPending} data-testid="button-save-settings">
+            {updateOrgMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Saving...
@@ -135,6 +177,9 @@ export default function Settings() {
                         rows={2}
                         data-testid="input-company-address"
                       />
+                      {!address && (
+                        <p className="text-xs text-amber-500">Add address to complete reports</p>
+                      )}
                     </div>
                   </div>
                   <Separator />
@@ -164,7 +209,10 @@ export default function Settings() {
         
         <Card>
           <CardHeader>
-            <CardTitle>Profile</CardTitle>
+            <div className="flex items-center gap-2">
+              <User className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Profile</CardTitle>
+            </div>
             <CardDescription>Manage your public profile and role</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -198,35 +246,122 @@ export default function Settings() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Audit Preferences</CardTitle>
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Audit Preferences</CardTitle>
+            </div>
             <CardDescription>Configure default behaviors for the audit workspace</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-base">Auto-Save Workspace</Label>
-                <p className="text-sm text-muted-foreground">Automatically save progress every minute</p>
+            {isLoadingUserSettings ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-              <Switch defaultChecked />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-base">Variance Threshold Alerts</Label>
-                <p className="text-sm text-muted-foreground">Notify me when variance exceeds 5%</p>
-              </div>
-              <Switch defaultChecked />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-base">Dark Mode</Label>
-                <p className="text-sm text-muted-foreground">Enable dark appearance for low-light environments</p>
-              </div>
-              <Switch />
-            </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Auto-Save Workspace</Label>
+                    <p className="text-sm text-muted-foreground">Automatically save progress every minute</p>
+                  </div>
+                  <Switch 
+                    checked={autoSaveEnabled}
+                    onCheckedChange={handleAutoSaveToggle}
+                    disabled={updateUserSettingsMutation.isPending}
+                    data-testid="switch-auto-save"
+                  />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Variance Threshold Alerts</Label>
+                    <p className="text-sm text-muted-foreground">Notify me when variance exceeds 5%</p>
+                  </div>
+                  <Switch 
+                    checked={varianceAlertsEnabled}
+                    onCheckedChange={handleVarianceThresholdToggle}
+                    disabled={updateUserSettingsMutation.isPending}
+                    data-testid="switch-variance-alerts"
+                  />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      {isDarkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                      <Label className="text-base">Dark Mode</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Enable dark appearance for low-light environments</p>
+                  </div>
+                  <Switch 
+                    checked={isDarkMode}
+                    onCheckedChange={handleThemeToggle}
+                    disabled={updateUserSettingsMutation.isPending}
+                    data-testid="switch-dark-mode"
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
+
+        {isSuperAdmin && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Billing & Plan</CardTitle>
+              </div>
+              <CardDescription>View your subscription and billing details</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-sm">Current Plan</Label>
+                  <p className="font-medium text-lg capitalize">{orgSettings?.currency === "NGN" ? "Starter" : "Growth"}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-sm">Billing Cycle</Label>
+                  <p className="font-medium">Monthly</p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-sm">Status</Label>
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                    Active
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-sm">Next Billing Date</Label>
+                  <p className="font-medium">—</p>
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <Label className="text-muted-foreground text-sm mb-3 block">Usage</Label>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-2xl font-bold">—</p>
+                    <p className="text-sm text-muted-foreground">Clients Used</p>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-2xl font-bold">—</p>
+                    <p className="text-sm text-muted-foreground">SRD Stores</p>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-2xl font-bold">—</p>
+                    <p className="text-sm text-muted-foreground">Team Members</p>
+                  </div>
+                </div>
+              </div>
+              <Separator />
+              <div className="flex justify-end">
+                <Button variant="outline" disabled>
+                  Upgrade Plan
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

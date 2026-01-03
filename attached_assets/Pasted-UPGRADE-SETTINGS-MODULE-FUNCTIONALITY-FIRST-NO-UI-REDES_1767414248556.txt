@@ -1,0 +1,111 @@
+UPGRADE SETTINGS MODULE (FUNCTIONALITY FIRST, NO UI REDESIGN)
+
+Context:
+Settings page already exists with:
+1) Company Profile (email, phone, address, default currency)
+2) Profile (full name, username/email, role)
+3) Audit Preferences (auto-save every minute, variance threshold alerts)
+4) Dark Mode toggle
+
+Problem:
+Some settings appear cosmetic or not persistent. I need SETTINGS to be fully functional, stored correctly, and applied across the app in real-time.
+
+Rules:
+- DO NOT redesign the overall UI layout. Keep the current Settings sections/cards.
+- DO NOT remove existing settings.
+- Implement missing backend + persistence + global application of values.
+- Enforce tenant isolation: company profile + billing belong to tenantId; user profile + preferences belong to userId.
+
+A) DATA MODEL + PERSISTENCE (CRITICAL)
+1) Tenant-scoped settings (tenantId):
+   - companyName (required; used in reports + headers)
+   - email, phone, address
+   - defaultCurrency (ISO code + symbol)
+   - reportBranding: logoUrl (optional), footerNote (optional)
+2) User-scoped settings (userId):
+   - fullName
+   - username/email (read-only if auth provider controls it; otherwise editable with validation)
+   - theme (darkMode true/false)
+   - auditPreferences:
+       autoSaveEnabled (bool)
+       autoSaveIntervalSeconds (default 60)
+       varianceThresholdPercent (default 5)
+
+3) Ensure settings are saved in DB and reloaded on every login:
+   - Create or update tables if missing: tenant_settings, user_settings
+   - Add unique constraints: one row per tenantId, one row per userId
+   - Add updatedAt timestamps
+
+B) SETTINGS API (REQUIRED)
+Implement endpoints (do not break existing routes):
+1) GET /api/settings/tenant  -> returns tenant settings
+2) PUT /api/settings/tenant  -> update tenant settings
+3) GET /api/settings/user    -> returns user settings
+4) PUT /api/settings/user    -> update user settings
+
+Security:
+- All endpoints must scope by currentUser.tenantId and currentUser.id
+- No user can read/write another tenant/user settings.
+
+C) APPLY SETTINGS THROUGHOUT APP (NO MORE “STATIC” VALUES)
+1) Company Profile usage:
+   - CompanyName must appear in:
+     a) report headers
+     b) PDF exports
+     c) dashboard header (where appropriate)
+   - Email/phone/address must be pulled into report templates and printable documents.
+2) Default Currency:
+   - Must apply globally to ALL money formatting (tables, cards, reports, exports)
+   - Add a Currency selector in the app header (already requested earlier):
+       a) Shows current currency
+       b) If changed by Super Admin/Admin, it updates tenant defaultCurrency instantly and refreshes displays.
+       c) If user role is not allowed, it is read-only.
+3) Dark Mode:
+   - Must persist and apply immediately on toggle (no refresh needed).
+4) Audit Preferences:
+   - Auto-save:
+       a) If enabled, audit workspace drafts save automatically based on interval.
+       b) Must not overwrite submitted audits.
+       c) Show subtle “Last saved at …” indicator.
+   - Variance threshold alerts:
+       a) If variance exceeds threshold, show alert badge in relevant sections (reconciliation / department comparison).
+       b) Threshold percent comes from settings.
+
+D) VALIDATION + UX BEHAVIOR (FUNCTIONAL)
+1) Company Profile fields:
+   - Validate email format, phone format (allow +234, 234, 0xxxxxxxxxx)
+   - Address required for report generation warnings (if empty show “Add address to complete reports”)
+   - CompanyName required (cannot save blank)
+2) Save behavior:
+   - Every section must have:
+       a) Save button
+       b) Success toast
+       c) Error toast
+   - Changes must reflect immediately after save (update global context/state).
+3) Role display:
+   - Role is read-only (coming from RBAC). Show it but do not allow edits.
+
+E) BILLING & PLAN (ADD INSIDE SETTINGS, DO NOT BREAK SUBSCRIPTION WORK)
+Add a new Settings section called “Billing & Plan”:
+1) Show current tenant plan:
+   - planName, billingCycle, status, nextBillingDate
+2) Show usage/limits:
+   - clientsUsed/allowed
+   - SRD stores used/allowed per client
+   - feature gates list (locked/unlocked)
+3) Payments/Invoices table:
+   - date, amount, plan, period, status
+   - download invoice/receipt if exists
+4) No payment gateway required now. Just show status + records + “Upgrade” CTA.
+
+F) OUTPUT REQUIRED
+1) List exact file paths edited and show first 10–15 lines to confirm.
+2) Provide DB migration steps (additive only; do not delete existing columns).
+3) Provide a test checklist:
+   - tenant settings saved and appear in reports
+   - currency changes reflect across app instantly
+   - dark mode persists after logout/login
+   - auto-save saves drafts but not submitted audits
+   - variance threshold alert triggers correctly
+   - billing plan visible only within tenant
+END

@@ -5,7 +5,7 @@ import {
   suppliers, items, purchaseLines, stockCounts, paymentDeclarations,
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
-  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, purchaseItemEvents, subscriptions, organizations,
+  receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, userSettings, purchaseItemEvents, subscriptions, organizations,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -35,6 +35,7 @@ import {
   type SurplusHistory, type InsertSurplusHistory,
   type SrdTransfer, type InsertSrdTransfer,
   type OrganizationSettings, type InsertOrganizationSettings,
+  type UserSettings, type InsertUserSettings,
   type PurchaseItemEvent, type InsertPurchaseItemEvent,
   type Subscription, type InsertSubscription,
   type Organization, type InsertOrganization
@@ -510,13 +511,14 @@ export class DbStorage implements IStorage {
   }
 
   // Organization Settings
-  async getOrganizationSettings(): Promise<OrganizationSettings | undefined> {
-    const [settings] = await db.select().from(organizationSettings).limit(1);
+  async getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined> {
+    const [settings] = await db.select().from(organizationSettings)
+      .where(eq(organizationSettings.organizationId, organizationId));
     return settings;
   }
 
-  async upsertOrganizationSettings(data: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings> {
-    const existing = await this.getOrganizationSettings();
+  async upsertOrganizationSettings(organizationId: string, data: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings> {
+    const existing = await this.getOrganizationSettings(organizationId);
     if (existing) {
       const [updated] = await db.update(organizationSettings)
         .set({ ...data, updatedAt: new Date() })
@@ -524,7 +526,34 @@ export class DbStorage implements IStorage {
         .returning();
       return updated;
     } else {
-      const [created] = await db.insert(organizationSettings).values(data as InsertOrganizationSettings).returning();
+      const [created] = await db.insert(organizationSettings).values({
+        ...data,
+        organizationId
+      } as InsertOrganizationSettings).returning();
+      return created;
+    }
+  }
+
+  // User Settings
+  async getUserSettings(userId: string): Promise<UserSettings | undefined> {
+    const [settings] = await db.select().from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    return settings;
+  }
+
+  async upsertUserSettings(userId: string, data: Partial<InsertUserSettings>): Promise<UserSettings> {
+    const existing = await this.getUserSettings(userId);
+    if (existing) {
+      const [updated] = await db.update(userSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(userSettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(userSettings).values({
+        ...data,
+        userId
+      } as InsertUserSettings).returning();
       return created;
     }
   }
