@@ -48,14 +48,12 @@ export async function apiRequest(
     clear();
     
     if (res.status === 401) {
-      // Try to refresh session before redirecting
       const refreshed = await attemptSilentRefresh();
       if (refreshed) {
-        // Retry the request
         return apiRequest(method, url, data);
       }
       handle401Redirect();
-      return new Promise(() => {});
+      throw new Error("Session expired");
     }
     
     await throwIfResNotOk(res);
@@ -134,18 +132,16 @@ export const getQueryFn: <T>(options: {
             retryClear();
             
             if (res.status === 401) {
-              // Still 401 after refresh - redirect to login
               handle401Redirect();
-              return new Promise(() => {});
+              throw new Error("Session expired");
             }
           } catch (retryError) {
             retryClear();
             throw retryError;
           }
         } else {
-          // Refresh failed - redirect to login
           handle401Redirect();
-          return new Promise(() => {});
+          throw new Error("Session expired");
         }
       }
 

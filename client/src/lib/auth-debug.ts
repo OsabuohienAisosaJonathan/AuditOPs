@@ -13,6 +13,7 @@ export type AuthEventType =
   | "VERIFY_OK"
   | "VERIFY_FAIL"
   | "REDIRECT_LOGIN"
+  | "SESSION_EXPIRED"
   | "API_401"
   | "API_TIMEOUT"
   | "API_NETWORK_ERROR"
