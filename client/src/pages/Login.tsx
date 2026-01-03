@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Mail, Play, Eye, EyeOff } from "lucide-react";
-import logoImage from "@/assets/miauditops-logo-dark.jpeg";
+import logoImage from "@/assets/logo2.png";
 
 const isDevelopment = import.meta.env.DEV;
 
@@ -132,7 +132,7 @@ export default function Login() {
             <img 
               src={logoImage} 
               alt="MiAuditOps" 
-              className="h-16 mx-auto object-contain cursor-pointer" 
+              className="h-24 mx-auto object-contain cursor-pointer" 
             />
           </Link>
           <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>

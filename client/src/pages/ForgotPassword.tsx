@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Mail } from "lucide-react";
-import logoImage from "@/assets/miauditops-logo-dark.jpeg";
+import logoImage from "@/assets/logo2.png";
 
 export default function ForgotPassword() {
   const { toast } = useToast();
@@ -61,7 +61,7 @@ export default function ForgotPassword() {
               <img 
                 src={logoImage} 
                 alt="MiAuditOps" 
-                className="h-16 mx-auto object-contain cursor-pointer" 
+                className="h-24 mx-auto object-contain cursor-pointer" 
               />
             </Link>
             <div className="mx-auto w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
@@ -97,7 +97,7 @@ export default function ForgotPassword() {
             <img 
               src={logoImage} 
               alt="MiAuditOps" 
-              className="h-16 mx-auto object-contain cursor-pointer" 
+              className="h-24 mx-auto object-contain cursor-pointer" 
             />
           </Link>
           <h2 className="text-2xl font-bold text-foreground">Forgot your password?</h2>

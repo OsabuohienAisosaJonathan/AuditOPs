@@ -7,7 +7,7 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, Building2, Users, ArrowLeft } from "lucide-react";
-import logoImage from "@/assets/miauditops-logo-dark.jpeg";
+import logoImage from "@/assets/logo2.png";
 
 export default function Signup() {
   const [, setLocation] = useLocation();
@@ -132,7 +132,7 @@ export default function Signup() {
                 <img 
                   src={logoImage} 
                   alt="MiAuditOps" 
-                  className="h-16 mx-auto object-contain cursor-pointer" 
+                  className="h-24 mx-auto object-contain cursor-pointer" 
                 />
               </Link>
               <h1 className="text-2xl font-display font-bold text-foreground">Create your account</h1>

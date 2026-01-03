@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import logoImage from "@/assets/miauditops-logo-dark.jpeg";
+import logoImage from "@/assets/logo2.png";
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -186,7 +186,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <Link href="/" className="flex items-center">
-              <img src={logoImage} alt="MiAuditOps" className="h-14 object-contain" />
+              <img src={logoImage} alt="MiAuditOps" className="h-20 object-contain" />
             </Link>
             <div className="hidden md:flex items-center gap-6">
               <a href="#features" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors" data-testid="nav-features">Features</a>
@@ -620,7 +620,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
-              <img src={logoImage} alt="MiAuditOps" className="h-12 object-contain" />
+              <img src={logoImage} alt="MiAuditOps" className="h-[72px] object-contain" />
             </div>
             <div className="flex items-center gap-6 text-sm">
               <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
