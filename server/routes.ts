@@ -472,31 +472,93 @@ export async function registerRoutes(
       let demoUser = await storage.getUserByEmail(DEMO_EMAIL);
       
       if (!demoUser) {
-        // Create demo organization
-        const demoOrg = await storage.createOrganization({
-          name: "Demo Organization",
-        });
-
-        // Create demo user with verified email
+        // Use bootstrapOrganizationWithOwner for atomic creation of org + user + subscription
         const hashedPassword = await hash(DEMO_PASSWORD, 12);
-        demoUser = await storage.createUser({
-          username: DEMO_USERNAME,
-          email: DEMO_EMAIL,
-          password: hashedPassword,
-          fullName: DEMO_FULLNAME,
-          role: "super_admin",
-          status: "active",
-          mustChangePassword: false,
-          emailVerified: true,
-          accessScope: { global: true },
-          organizationId: demoOrg.id,
-        });
+        const { organization, user } = await storage.bootstrapOrganizationWithOwner(
+          {
+            name: "Demo Organization",
+            type: "demo",
+            email: DEMO_EMAIL,
+            currencyCode: "NGN",
+          },
+          {
+            username: DEMO_USERNAME,
+            email: DEMO_EMAIL,
+            password: hashedPassword,
+            fullName: DEMO_FULLNAME,
+            role: "super_admin",
+            status: "active",
+            mustChangePassword: false,
+            emailVerified: true,
+            accessScope: { global: true },
+          }
+        );
+
+        demoUser = user;
 
         // Create a demo client for the demo organization
         await storage.createClient({
           name: "Demo Restaurant",
-          organizationId: demoOrg.id,
+          organizationId: organization.id,
+          status: "active",
         });
+      } else if (!demoUser.organizationId) {
+        // Remediation: Demo user exists but has no organization - create new org and link user
+        const demoOrg = await storage.createOrganization({
+          name: "Demo Organization",
+          type: "demo",
+          email: DEMO_EMAIL,
+          currencyCode: "NGN",
+        });
+
+        // Create subscription for the organization
+        await storage.createSubscription({
+          organizationId: demoOrg.id,
+          planName: "starter",
+          billingPeriod: "monthly",
+          slotsPurchased: 1,
+          status: "trial",
+          startDate: new Date(),
+        });
+
+        // Link user to organization
+        await storage.updateUser(demoUser.id, {
+          organizationId: demoOrg.id,
+          organizationRole: "owner",
+        });
+
+        // Create a demo client
+        await storage.createClient({
+          name: "Demo Restaurant",
+          organizationId: demoOrg.id,
+          status: "active",
+        });
+
+        // Refresh demo user to get updated organizationId
+        demoUser = await storage.getUser(demoUser.id) || demoUser;
+      } else {
+        // Ensure demo user has subscription (handle legacy state without subscription)
+        const existingSubscription = await storage.getSubscription(demoUser.organizationId);
+        if (!existingSubscription) {
+          await storage.createSubscription({
+            organizationId: demoUser.organizationId,
+            planName: "starter",
+            billingPeriod: "monthly",
+            slotsPurchased: 1,
+            status: "trial",
+            startDate: new Date(),
+          });
+        }
+
+        // Ensure demo user has at least one client (handle partial setup scenarios)
+        const existingClients = await storage.getClients(demoUser.organizationId);
+        if (existingClients.length === 0) {
+          await storage.createClient({
+            name: "Demo Restaurant",
+            organizationId: demoUser.organizationId,
+            status: "active",
+          });
+        }
       }
 
       // Auto login the demo user

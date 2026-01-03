@@ -134,6 +134,19 @@ Email features:
 
 Note: Resend integration is configured manually (not via Replit connector). The API key is stored in Replit Secrets.
 
+### Development Preview
+For development testing, a demo login feature is available:
+- **Demo Login Endpoint**: `POST /api/auth/demo-login` (development only, blocked in production)
+- **Demo Account**: Creates a demo user (`demo@miauditops.com`) with a demo organization and client
+- **Login Page Button**: "Try Demo Account" button appears only in development mode
+- Useful for testing the full application flow without setting up real accounts
+
+### Custom Domain Configuration
+For production deployment with custom domains:
+- **COOKIE_DOMAIN**: Set to `.miauditops.com` in production to share sessions across www and non-www domains
+- **APP_URL**: Base URL for email links (e.g., `https://miauditops.com`)
+- DNS: Configure A records for both apex domain and www subdomain pointing to the same IP
+
 ### Build System
 - Development: Vite dev server with HMR
 - Production: Custom build script using esbuild for server, Vite for client
