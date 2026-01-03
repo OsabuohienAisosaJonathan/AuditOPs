@@ -916,8 +916,14 @@ export async function registerRoutes(
   // ============== DASHBOARD ==============
   app.get("/api/dashboard/summary", requireAuth, async (req, res) => {
     try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
       const { clientId, departmentId, date } = req.query;
       const filters = {
+        organizationId: user.organizationId,  // CRITICAL: Scope to user's organization
         clientId: clientId as string | undefined,
         departmentId: departmentId as string | undefined,
         date: date as string | undefined,

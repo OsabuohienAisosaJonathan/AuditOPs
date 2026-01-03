@@ -42,6 +42,7 @@ import {
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
 
 export interface DashboardFilters {
+  organizationId?: string;  // REQUIRED for tenant isolation
   clientId?: string;
   categoryId?: string;
   departmentId?: string;
@@ -1181,15 +1182,40 @@ export class DbStorage implements IStorage {
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
 
-    // Get total clients
-    const [clientsResult] = await db.select({ count: count() }).from(clients);
+    // CRITICAL: Get organization's clients for tenant isolation
+    let orgClientIds: string[] = [];
+    if (filters?.organizationId) {
+      const orgClients = await db.select({ id: clients.id }).from(clients)
+        .where(eq(clients.organizationId, filters.organizationId));
+      orgClientIds = orgClients.map(c => c.id);
+    }
+
+    // Helper to add client filter condition
+    const getOrgClientCondition = (clientIdColumn: any) => {
+      if (filters?.clientId) {
+        return eq(clientIdColumn, filters.clientId);
+      }
+      if (orgClientIds.length > 0) {
+        return sql`${clientIdColumn} = ANY(${orgClientIds})`;
+      }
+      return null;
+    };
+
+    // Get total clients (for this organization only)
+    let clientConditions: any[] = [];
+    if (filters?.organizationId) {
+      clientConditions.push(eq(clients.organizationId, filters.organizationId));
+    }
+    const [clientsResult] = clientConditions.length > 0
+      ? await db.select({ count: count() }).from(clients).where(and(...clientConditions))
+      : await db.select({ count: count() }).from(clients);
     const totalClients = clientsResult?.count || 0;
 
-    // Get total departments (with optional filters)
+    // Get total departments (with optional filters, scoped to org clients)
     let deptConditions: any[] = [];
-    if (filters?.clientId) {
-      deptConditions.push(eq(departments.clientId, filters.clientId));
-    }
+    const orgClientCond = getOrgClientCondition(departments.clientId);
+    if (orgClientCond) deptConditions.push(orgClientCond);
+    
     const [deptsResult] = deptConditions.length > 0 
       ? await db.select({ count: count() }).from(departments).where(and(...deptConditions))
       : await db.select({ count: count() }).from(departments);
@@ -1200,9 +1226,8 @@ export class DbStorage implements IStorage {
       gte(salesEntries.date, today),
       lte(salesEntries.date, endOfToday)
     ];
-    if (filters?.clientId) {
-      salesConditions.push(eq(salesEntries.clientId, filters.clientId));
-    }
+    const salesOrgCond = getOrgClientCondition(salesEntries.clientId);
+    if (salesOrgCond) salesConditions.push(salesOrgCond);
     if (filters?.departmentId) {
       salesConditions.push(eq(salesEntries.departmentId, filters.departmentId));
     }
@@ -1215,9 +1240,8 @@ export class DbStorage implements IStorage {
 
     // Get all-time sales
     let allSalesConditions: any[] = [];
-    if (filters?.clientId) {
-      allSalesConditions.push(eq(salesEntries.clientId, filters.clientId));
-    }
+    const allSalesOrgCond = getOrgClientCondition(salesEntries.clientId);
+    if (allSalesOrgCond) allSalesConditions.push(allSalesOrgCond);
     if (filters?.departmentId) {
       allSalesConditions.push(eq(salesEntries.departmentId, filters.departmentId));
     }
@@ -1231,9 +1255,8 @@ export class DbStorage implements IStorage {
       gte(purchases.invoiceDate, today),
       lte(purchases.invoiceDate, endOfToday)
     ];
-    if (filters?.clientId) {
-      purchaseConditions.push(eq(purchases.clientId, filters.clientId));
-    }
+    const purchasesOrgCond = getOrgClientCondition(purchases.clientId);
+    if (purchasesOrgCond) purchaseConditions.push(purchasesOrgCond);
     if (filters?.departmentId) {
       purchaseConditions.push(eq(purchases.departmentId, filters.departmentId));
     }
@@ -1246,9 +1269,8 @@ export class DbStorage implements IStorage {
 
     // Get all-time purchases
     let allPurchaseConditions: any[] = [];
-    if (filters?.clientId) {
-      allPurchaseConditions.push(eq(purchases.clientId, filters.clientId));
-    }
+    const allPurchasesOrgCond = getOrgClientCondition(purchases.clientId);
+    if (allPurchasesOrgCond) allPurchaseConditions.push(allPurchasesOrgCond);
     if (filters?.departmentId) {
       allPurchaseConditions.push(eq(purchases.departmentId, filters.departmentId));
     }
@@ -1257,11 +1279,10 @@ export class DbStorage implements IStorage {
       : await db.select({ total: sum(purchases.totalAmount) }).from(purchases);
     const totalPurchases = parseFloat(allPurchasesResult?.total || "0");
 
-    // Exception conditions
+    // Exception conditions (scoped to organization clients)
     let exceptionConditions: any[] = [];
-    if (filters?.clientId) {
-      exceptionConditions.push(eq(exceptions.clientId, filters.clientId));
-    }
+    const exceptionsOrgCond = getOrgClientCondition(exceptions.clientId);
+    if (exceptionsOrgCond) exceptionConditions.push(exceptionsOrgCond);
     if (filters?.departmentId) {
       exceptionConditions.push(eq(exceptions.departmentId, filters.departmentId));
     }
@@ -1276,11 +1297,10 @@ export class DbStorage implements IStorage {
     const [openExceptionsResult] = await db.select({ count: count() }).from(exceptions).where(and(...openConditions));
     const openExceptions = openExceptionsResult?.count || 0;
 
-    // Reconciliation conditions
+    // Reconciliation conditions (scoped to organization clients)
     let reconConditions: any[] = [];
-    if (filters?.clientId) {
-      reconConditions.push(eq(reconciliations.clientId, filters.clientId));
-    }
+    const reconOrgCond = getOrgClientCondition(reconciliations.clientId);
+    if (reconOrgCond) reconConditions.push(reconOrgCond);
     if (filters?.departmentId) {
       reconConditions.push(eq(reconciliations.departmentId, filters.departmentId));
     }
@@ -1296,7 +1316,7 @@ export class DbStorage implements IStorage {
     const [pendingResult] = await db.select({ count: count() }).from(reconciliations).where(and(...pendingConditions));
     const pendingReconciliations = pendingResult?.count || 0;
 
-    // Get recent exceptions
+    // Get recent exceptions (scoped to organization)
     const recentExceptions = exceptionConditions.length > 0
       ? await db.select().from(exceptions).where(and(...exceptionConditions)).orderBy(desc(exceptions.createdAt)).limit(5)
       : await db.select().from(exceptions).orderBy(desc(exceptions.createdAt)).limit(5);
