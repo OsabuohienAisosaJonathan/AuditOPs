@@ -148,7 +148,8 @@ export async function registerRoutes(
   const PgStore = connectPgSimple(session);
   
   if (process.env.NODE_ENV === "production") {
-    app.set("trust proxy", 1);
+    // Trust all proxy hops (Cloudflare → Replit) to set req.secure correctly
+    app.set("trust proxy", true);
   }
   
   // Configure session cookie domain for production to support both www and non-www
