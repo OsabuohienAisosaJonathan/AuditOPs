@@ -2,7 +2,14 @@ import { storage } from "./storage";
 import { hash } from "bcrypt";
 
 async function seed() {
-  console.log("Seeding database...");
+  // CRITICAL: Prevent seeding in production
+  if (process.env.NODE_ENV === "production") {
+    console.error("ERROR: Seed script cannot run in production environment!");
+    console.error("This script is only for development/testing purposes.");
+    process.exit(1);
+  }
+  
+  console.log("Seeding database (development only)...");
 
   // Create demo user (auditor)
   const hashedPassword = await hash("Demo123!", 10);
