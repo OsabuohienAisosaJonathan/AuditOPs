@@ -393,6 +393,57 @@ export function setQueryClientRef(client: { clear: () => void }) {
   queryClientRef = client;
 }
 
+// Silent refresh state - dedupe concurrent refresh attempts
+let refreshPromise: Promise<boolean> | null = null;
+let lastRefreshAttempt = 0;
+const REFRESH_COOLDOWN_MS = 5000; // Prevent refresh spam
+
+// Attempt to silently refresh the session
+export async function attemptSilentRefresh(): Promise<boolean> {
+  // If a refresh is already in progress, wait for it
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+  
+  // Prevent refresh spam
+  const now = Date.now();
+  if (now - lastRefreshAttempt < REFRESH_COOLDOWN_MS) {
+    return false;
+  }
+  lastRefreshAttempt = now;
+  
+  // Create a new refresh promise (dedupe concurrent calls)
+  refreshPromise = (async () => {
+    try {
+      console.debug("[Auth] Attempting silent session refresh...");
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.debug("[Auth] Session refreshed successfully", data.expiresAt);
+        return true;
+      } else {
+        const error = await response.json().catch(() => ({}));
+        console.debug("[Auth] Session refresh failed:", error.code || response.status);
+        return false;
+      }
+    } catch (error) {
+      console.debug("[Auth] Session refresh error:", error);
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  
+  return refreshPromise;
+}
+
 export function handle401Redirect() {
   if (isRedirecting) return;
   
@@ -412,9 +463,11 @@ export function handle401Redirect() {
 // Reset redirect flag (useful after logout)
 export function resetRedirectState() {
   isRedirecting = false;
+  refreshPromise = null;
+  lastRefreshAttempt = 0;
 }
 
-async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+async function fetchApi<T>(url: string, options?: RequestInit, isRetry = false): Promise<T> {
   const requestId = generateRequestId();
   const { controller, clear, isTimedOut } = createTimeoutController();
   const startTime = Date.now();
@@ -444,6 +497,17 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 
       switch (response.status) {
         case 401:
+          // Don't try to refresh if this is already a retry or if we're on the refresh endpoint
+          if (!isRetry && !url.includes("/auth/refresh")) {
+            // Attempt silent refresh
+            const refreshed = await attemptSilentRefresh();
+            if (refreshed) {
+              // Retry the original request
+              console.debug(`[API] Retrying request after session refresh: ${url}`);
+              return fetchApi<T>(url, options, true);
+            }
+          }
+          // Refresh failed or this is a retry - redirect to login
           handle401Redirect();
           return new Promise(() => {}) as Promise<T>;
         case 403:

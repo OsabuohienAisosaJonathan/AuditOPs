@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { handle401Redirect, setQueryClientRef, ApiError } from "./api";
+import { handle401Redirect, setQueryClientRef, attemptSilentRefresh, ApiError } from "./api";
 
 const QUERY_TIMEOUT_MS = 12000; // 12 second timeout (matches api.ts)
 
@@ -48,6 +48,12 @@ export async function apiRequest(
     clear();
     
     if (res.status === 401) {
+      // Try to refresh session before redirecting
+      const refreshed = await attemptSilentRefresh();
+      if (refreshed) {
+        // Retry the request
+        return apiRequest(method, url, data);
+      }
       handle401Redirect();
       return new Promise(() => {});
     }
@@ -69,6 +75,22 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
+
+// Helper to make a single fetch attempt
+async function makeFetchAttempt(
+  queryKeyStr: string,
+  requestId: string,
+  controller: AbortController
+): Promise<Response> {
+  return fetch(queryKeyStr, {
+    credentials: "include",
+    signal: controller.signal,
+    headers: {
+      "X-Request-Id": requestId,
+    },
+  });
+}
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
@@ -87,13 +109,7 @@ export const getQueryFn: <T>(options: {
     }
     
     try {
-      const res = await fetch(queryKeyStr as string, {
-        credentials: "include",
-        signal: controller.signal,
-        headers: {
-          "X-Request-Id": requestId,
-        },
-      });
+      let res = await makeFetchAttempt(queryKeyStr, requestId, controller);
       
       clear();
       
@@ -106,8 +122,31 @@ export const getQueryFn: <T>(options: {
         if (unauthorizedBehavior === "returnNull") {
           return null;
         }
-        handle401Redirect();
-        return new Promise(() => {});
+        
+        // Try to refresh session before redirecting
+        const refreshed = await attemptSilentRefresh();
+        if (refreshed) {
+          // Retry the request with a new controller
+          console.debug(`[Query] Retrying request after session refresh: ${queryKeyStr}`);
+          const { controller: retryController, clear: retryClear, isTimedOut: retryTimedOut } = createTimeoutController();
+          try {
+            res = await makeFetchAttempt(queryKeyStr, requestId + "-retry", retryController);
+            retryClear();
+            
+            if (res.status === 401) {
+              // Still 401 after refresh - redirect to login
+              handle401Redirect();
+              return new Promise(() => {});
+            }
+          } catch (retryError) {
+            retryClear();
+            throw retryError;
+          }
+        } else {
+          // Refresh failed - redirect to login
+          handle401Redirect();
+          return new Promise(() => {});
+        }
       }
 
       await throwIfResNotOk(res);

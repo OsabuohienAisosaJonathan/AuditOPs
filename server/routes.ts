@@ -156,6 +156,11 @@ export async function registerRoutes(
     ? process.env.COOKIE_DOMAIN 
     : undefined;
   
+  // Session configuration with sliding expiry
+  const SESSION_IDLE_MAX_AGE = 2 * 60 * 60 * 1000; // 2 hours idle timeout
+  const SESSION_ABSOLUTE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days absolute max
+  const SESSION_REFRESH_THRESHOLD = 10 * 60 * 1000; // Refresh if session expires in less than 10 minutes
+  
   app.use(
     session({
       store: new PgStore({
@@ -164,18 +169,39 @@ export async function registerRoutes(
         createTableIfMissing: true,
       }),
       secret: process.env.SESSION_SECRET || "audit-ops-secret-key-change-in-production",
-      resave: false,
+      resave: true, // Allow resave for sliding sessions
       saveUninitialized: false,
       proxy: process.env.NODE_ENV === "production",
+      rolling: true, // Enable sliding sessions - extends expiry on each request
       cookie: {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 24 * 60 * 60 * 1000,
+        maxAge: SESSION_IDLE_MAX_AGE,
         domain: cookieDomain,
       },
     })
   );
+  
+  // Sliding session middleware - extends session on authenticated requests
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.session?.userId && req.session.cookie) {
+      // Check if session was created, enforce absolute max age
+      const sessionCreatedAt = (req.session as any).createdAt;
+      if (sessionCreatedAt) {
+        const sessionAge = Date.now() - sessionCreatedAt;
+        if (sessionAge > SESSION_ABSOLUTE_MAX_AGE) {
+          // Session exceeded absolute max age, destroy it
+          req.session.destroy(() => {});
+          return res.status(401).json({ error: "Session expired", code: "SESSION_EXPIRED" });
+        }
+      }
+      
+      // Extend session expiry (rolling: true handles this, but we ensure it here)
+      req.session.touch();
+    }
+    next();
+  });
 
   // Request correlation ID middleware for debugging
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -518,6 +544,7 @@ export async function registerRoutes(
 
       req.session.userId = user.id;
       req.session.role = user.role;
+      (req.session as any).createdAt = Date.now(); // Track session creation for absolute max age
       
       await storage.createAuditLog({
         userId: user.id,
@@ -650,6 +677,7 @@ export async function registerRoutes(
       // Auto login the demo user
       req.session.userId = demoUser.id;
       req.session.role = demoUser.role;
+      (req.session as any).createdAt = Date.now(); // Track session creation for absolute max age
       
       await storage.updateUser(demoUser.id, {
         lastLoginAt: new Date(),
@@ -717,6 +745,64 @@ export async function registerRoutes(
     req.session.destroy(() => {
       res.json({ success: true });
     });
+  });
+
+  // Session refresh endpoint - explicitly extends session expiry
+  app.post("/api/auth/refresh", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ error: "No active session", code: "NO_SESSION" });
+      }
+      
+      // Verify user still exists and is active
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        req.session.destroy(() => {});
+        return res.status(401).json({ error: "User not found", code: "USER_NOT_FOUND" });
+      }
+      
+      if (user.status !== "active") {
+        req.session.destroy(() => {});
+        return res.status(401).json({ error: "Account is not active", code: "ACCOUNT_INACTIVE" });
+      }
+      
+      // Check absolute max age
+      const sessionCreatedAt = (req.session as any).createdAt;
+      if (sessionCreatedAt) {
+        const sessionAge = Date.now() - sessionCreatedAt;
+        if (sessionAge > SESSION_ABSOLUTE_MAX_AGE) {
+          req.session.destroy(() => {});
+          return res.status(401).json({ error: "Session expired", code: "SESSION_EXPIRED" });
+        }
+      }
+      
+      // Extend the session by touching it
+      req.session.touch();
+      
+      // Save session to persist the extended expiry
+      req.session.save((err) => {
+        if (err) {
+          console.error("[Auth] Session save error during refresh:", err);
+          return res.status(500).json({ error: "Failed to refresh session" });
+        }
+        
+        // Return session info
+        res.json({
+          success: true,
+          expiresAt: req.session.cookie.expires?.toISOString(),
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            fullName: user.fullName,
+            role: user.role,
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error("[Auth] Refresh error:", error);
+      res.status(500).json({ error: "Failed to refresh session" });
+    }
   });
 
   // ============== REGISTRATION & EMAIL VERIFICATION ==============
