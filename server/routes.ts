@@ -725,8 +725,8 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Token and new password are required" });
       }
 
-      if (!isStrongPassword(password)) {
-        return res.status(400).json({ error: "Password must be at least 8 characters with uppercase, lowercase, and numbers" });
+      if (password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
       }
 
       // Find user by reset token
@@ -745,7 +745,6 @@ export async function registerRoutes(
       const hashedPassword = await hash(password, 12);
 
       // Update user password and clear reset token
-      // Also mark email as verified since they proved ownership via email link
       await storage.updateUser(user.id, {
         password: hashedPassword,
         passwordResetToken: null,
@@ -753,9 +752,6 @@ export async function registerRoutes(
         mustChangePassword: false,
         loginAttempts: 0,
         lockedUntil: null,
-        emailVerified: true,
-        verificationToken: null,
-        verificationExpiry: null,
       });
 
       await storage.createAuditLog({
