@@ -1,0 +1,58 @@
+CRITICAL SECURITY FIX: STOP CROSS-ACCOUNT CLIENT DATA LEAK (TENANT ISOLATION)
+
+Issue:
+Clients created under one owner/account (including dev-created clients) are visible on another owner’s production dashboard. This is a multi-tenancy isolation failure.
+
+RULE:
+A user must ONLY see data that belongs to their Tenant/Organization. No exceptions.
+
+DO NOT redesign UI. DO NOT rebuild app. Do NOT touch reports. Fix only tenant isolation + data leak.
+
+A) CONFIRM ROOT CAUSE (FAST)
+1) Confirm whether multiple deployments or owners share the same DATABASE_URL.
+   - Print DB host/name in logs for dev vs prod (no password).
+2) If they share, split immediately: production must have its own DATABASE_URL.
+
+B) ENFORCE TENANT MODEL (IF NOT FULLY ENFORCED)
+1) Ensure there is a Tenant/Organization table (tenants).
+2) Ensure each user has tenantId (required).
+3) Add tenantId to ALL business tables that must be isolated, at minimum:
+   - clients
+   - clientDepartments
+   - clientCategories
+   - SRDs (inventory departments/stores)
+   - items
+   - purchases/GRN
+   - sales captures / declared payments
+   - stock movements
+   - counts
+   - exceptions/receivables/surplus
+(If some already have tenantId, keep them. Do NOT delete columns.)
+
+C) SCOPED QUERIES (THE REAL FIX)
+1) Update every “list/get” endpoint to filter by tenantId using the logged-in user’s tenantId:
+   - listClients MUST be: WHERE tenantId = currentUser.tenantId
+   - dashboard client dropdown MUST use the same filter
+   - any search/list endpoints MUST include tenant filter
+2) Update every “create” endpoint to set tenantId automatically from currentUser.tenantId (never trust client input).
+
+D) DB CONSTRAINTS (PREVENT FUTURE LEAKS)
+1) Add indexes on tenantId for the core tables.
+2) Add uniqueness constraints where needed WITH tenantId:
+   - e.g. client name unique per tenant (tenantId + clientName)
+3) Do NOT allow tenantId NULL for new records.
+
+E) BACKFILL EXISTING DATA SAFELY (NO DATA LOSS)
+1) For existing records missing tenantId:
+   - set tenantId using createdBy user’s tenantId where possible
+2) If createdBy is missing, mark records as “orphaned” and assign to a “SYSTEM/DEMO” tenant (not visible to normal tenants).
+3) Add an admin-only tool to reassign orphaned records if needed.
+
+F) OUTPUT REQUIRED
+1) List exact file paths changed + show first 10–15 lines for each file.
+2) Show migration steps (add columns/indexes safely).
+3) Provide test checklist:
+   - user A cannot see user B clients
+   - dashboard client dropdown shows only tenant clients
+   - creating a client auto-stamps tenantId
+END

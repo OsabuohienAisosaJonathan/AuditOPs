@@ -202,15 +202,30 @@ export async function registerRoutes(
       }
       
       const user = await storage.getUser(req.session.userId);
-      if (user?.role === "super_admin") {
-        return next();
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
       }
       
       const clientId = req.params[clientIdParam] || req.body.clientId || req.query.clientId;
       if (!clientId) {
+        // No specific client requested, allow through
+        (req as any).userOrganizationId = user.organizationId;
         return next();
       }
       
+      // CRITICAL: Always verify client belongs to user's organization (tenant isolation)
+      const client = await storage.getClientWithOrgCheck(clientId as string, user.organizationId);
+      if (!client) {
+        return res.status(403).json({ error: "You do not have access to this client" });
+      }
+      
+      // Super admin within same org has full access
+      if (user.role === "super_admin") {
+        (req as any).userOrganizationId = user.organizationId;
+        return next();
+      }
+      
+      // Check fine-grained user-client access for non-super_admin users
       const access = await storage.getUserClientAccess(req.session.userId, clientId as string);
       
       if (!access) {
@@ -228,6 +243,7 @@ export async function registerRoutes(
       }
       
       (req as any).clientAccess = access;
+      (req as any).userOrganizationId = user.organizationId;
       next();
     };
   };
@@ -1830,16 +1846,21 @@ export async function registerRoutes(
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
-      const clients = await storage.getClients();
-      
-      if (user?.role !== "super_admin" && user?.accessScope && !user.accessScope.global) {
-        const filteredClients = clients.filter(c => 
-          user.accessScope?.clientIds?.includes(c.id)
-        );
-        return res.json(filteredClients);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
       }
       
-      res.json(clients);
+      // CRITICAL: Filter clients by user's organization for tenant isolation
+      let allClients = await storage.getClients(user.organizationId);
+      
+      // Further filter by accessScope if user doesn't have global access
+      if (user.role !== "super_admin" && user.accessScope && !user.accessScope.global) {
+        allClients = allClients.filter(c => 
+          user.accessScope?.clientIds?.includes(c.id)
+        );
+      }
+      
+      res.json(allClients);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1847,7 +1868,13 @@ export async function registerRoutes(
 
   app.get("/api/clients/:id", requireAuth, async (req, res) => {
     try {
-      const client = await storage.getClient(req.params.id);
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      // CRITICAL: Only return client if it belongs to user's organization
+      const client = await storage.getClientWithOrgCheck(req.params.id, user.organizationId);
       if (!client) {
         return res.status(404).json({ error: "Client not found" });
       }
@@ -1909,6 +1936,17 @@ export async function registerRoutes(
 
   app.patch("/api/clients/:id", requireSuperAdmin, async (req, res) => {
     try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      // CRITICAL: Verify client belongs to user's organization
+      const existingClient = await storage.getClientWithOrgCheck(req.params.id, user.organizationId);
+      if (!existingClient) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+      
       // Normalize name if being updated
       const updateData = { ...req.body };
       if (updateData.name) {
@@ -1917,6 +1955,8 @@ export async function registerRoutes(
         }
         updateData.name = updateData.name.trim().toUpperCase().replace(/\s+/g, ' ');
       }
+      // Prevent changing organizationId
+      delete updateData.organizationId;
       
       const client = await storage.updateClient(req.params.id, updateData);
       if (!client) {
@@ -1930,6 +1970,17 @@ export async function registerRoutes(
 
   app.delete("/api/clients/:id", requireSuperAdmin, async (req, res) => {
     try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      // CRITICAL: Verify client belongs to user's organization
+      const existingClient = await storage.getClientWithOrgCheck(req.params.id, user.organizationId);
+      if (!existingClient) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+      
       await storage.deleteClient(req.params.id);
       
       await storage.createAuditLog({
@@ -1937,7 +1988,7 @@ export async function registerRoutes(
         action: "Deleted Client",
         entity: "Client",
         entityId: req.params.id,
-        details: `Client deleted`,
+        details: `Client deleted: ${existingClient.name}`,
         ipAddress: req.ip || "Unknown",
       });
 

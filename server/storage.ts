@@ -78,8 +78,9 @@ export interface IStorage {
   deleteUser(id: string): Promise<boolean>;
 
   // Clients
-  getClients(): Promise<Client[]>;
+  getClients(organizationId?: string): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
+  getClientWithOrgCheck(id: string, organizationId: string): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
   deleteClient(id: string): Promise<boolean>;
@@ -429,12 +430,23 @@ export class DbStorage implements IStorage {
   }
 
   // Clients
-  async getClients(): Promise<Client[]> {
+  async getClients(organizationId?: string): Promise<Client[]> {
+    if (organizationId) {
+      return db.select().from(clients)
+        .where(eq(clients.organizationId, organizationId))
+        .orderBy(desc(clients.createdAt));
+    }
     return db.select().from(clients).orderBy(desc(clients.createdAt));
   }
 
   async getClient(id: string): Promise<Client | undefined> {
     const [client] = await db.select().from(clients).where(eq(clients.id, id));
+    return client;
+  }
+
+  async getClientWithOrgCheck(id: string, organizationId: string): Promise<Client | undefined> {
+    const [client] = await db.select().from(clients)
+      .where(and(eq(clients.id, id), eq(clients.organizationId, organizationId)));
     return client;
   }
 
