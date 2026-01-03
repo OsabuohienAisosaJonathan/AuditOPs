@@ -2187,6 +2187,136 @@ export async function registerRoutes(
     }
   });
 
+  // ============== NOTIFICATIONS ==============
+
+  // Get notifications for current user
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 20;
+      const notifications = await storage.getNotifications(user.organizationId, user.id, limit);
+      const unreadCount = await storage.getUnreadNotificationCount(user.organizationId, user.id);
+      
+      res.json({ notifications, unreadCount });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Mark notification as read
+  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      await storage.markNotificationRead(req.params.id, user.organizationId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      await storage.markAllNotificationsRead(user.organizationId, user.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== DATA EXPORTS ==============
+
+  // Get export history
+  app.get("/api/exports", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const exports = await storage.getDataExports(user.organizationId);
+      res.json(exports);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create new export
+  app.post("/api/exports", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const { format, dataTypes, dateRangeStart, dateRangeEnd } = req.body;
+      
+      if (!format || !dataTypes || !Array.isArray(dataTypes) || dataTypes.length === 0) {
+        return res.status(400).json({ error: "Format and at least one data type are required" });
+      }
+      
+      // Create export record
+      const exportRecord = await storage.createDataExport({
+        organizationId: user.organizationId,
+        createdBy: user.id,
+        format,
+        dataTypes,
+        dateRangeStart: dateRangeStart || null,
+        dateRangeEnd: dateRangeEnd || null,
+        status: "pending",
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+      
+      // TODO: Start background export job (for now, just mark as completed with placeholder)
+      // In production, this would queue a background job
+      
+      res.json({ 
+        success: true, 
+        message: "Export started. You will be notified when it's ready.",
+        export: exportRecord 
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Download export file
+  app.get("/api/exports/:id/download", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const exportRecord = await storage.getDataExport(req.params.id, user.organizationId);
+      if (!exportRecord) {
+        return res.status(404).json({ error: "Export not found" });
+      }
+      
+      if (exportRecord.status !== "completed" || !exportRecord.filePath) {
+        return res.status(400).json({ error: "Export is not ready for download" });
+      }
+      
+      // TODO: Stream file from storage
+      res.status(501).json({ error: "Export download not yet implemented" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============== DEPARTMENTS ==============
   
   // Get departments for a client

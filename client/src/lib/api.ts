@@ -340,17 +340,29 @@ export interface DashboardSummary {
 }
 
 const API_BASE = "/api";
+const API_TIMEOUT_MS = 10000; // 10 second timeout
 
 export class ApiError extends Error {
   code?: string;
   email?: string;
+  isTimeout?: boolean;
   
-  constructor(public status: number, message: string, options?: { code?: string; email?: string }) {
+  constructor(public status: number, message: string, options?: { code?: string; email?: string; isTimeout?: boolean }) {
     super(message);
     this.name = "ApiError";
     this.code = options?.code;
     this.email = options?.email;
+    this.isTimeout = options?.isTimeout;
   }
+}
+
+function createTimeoutController(timeoutMs: number = API_TIMEOUT_MS): { controller: AbortController; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    controller,
+    clear: () => clearTimeout(timeoutId),
+  };
 }
 
 const PUBLIC_PATHS = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
@@ -381,15 +393,26 @@ export function handle401Redirect() {
 }
 
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+  const { controller, clear } = createTimeoutController();
+  const startTime = Date.now();
+  
   try {
     const response = await fetch(`${API_BASE}${url}`, {
       ...options,
       credentials: "include",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
       },
     });
+    
+    clear(); // Clear timeout on successful response
+    
+    const duration = Date.now() - startTime;
+    if (duration > 3000) {
+      console.warn(`[API] Slow request: ${url} took ${duration}ms`);
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: "Request failed" }));
@@ -429,13 +452,26 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
     }
     return {} as T;
   } catch (error) {
+    clear(); // Clear timeout on error
+    
     if (error instanceof ApiError) {
       throw error;
     }
+    
+    // Handle timeout/abort errors
+    if (error instanceof DOMException && error.name === "AbortError") {
+      const timeoutMsg = "Request timed out. Please try again.";
+      toast.error(timeoutMsg);
+      console.error(`[API] Timeout: ${url} exceeded ${API_TIMEOUT_MS}ms`);
+      throw new ApiError(0, timeoutMsg, { isTimeout: true });
+    }
+    
     if (error instanceof TypeError && error.message.includes("fetch")) {
       toast.error("Network error, please check your connection");
       throw new ApiError(0, "Network error, please check your connection");
     }
+    
+    console.error(`[API] Unexpected error for ${url}:`, error);
     throw error;
   }
 }
@@ -537,6 +573,68 @@ export const userSettingsApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+};
+
+// Notification types
+export interface Notification {
+  id: string;
+  organizationId: string;
+  userId: string | null;
+  type: string;
+  title: string;
+  message: string;
+  refType: string | null;
+  refId: string | null;
+  isRead: boolean;
+  emailSent: boolean;
+  emailSentAt: string | null;
+  emailError: string | null;
+  metadata: any;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  notifications: Notification[];
+  unreadCount: number;
+}
+
+export const notificationsApi = {
+  getAll: (limit?: number) => 
+    fetchApi<NotificationsResponse>(`/notifications${limit ? `?limit=${limit}` : ""}`),
+  markRead: (id: string) =>
+    fetchApi<{ success: boolean }>(`/notifications/${id}/read`, { method: "PATCH" }),
+  markAllRead: () =>
+    fetchApi<{ success: boolean }>("/notifications/mark-all-read", { method: "POST" }),
+};
+
+// Data Export types
+export interface DataExport {
+  id: string;
+  organizationId: string;
+  createdBy: string;
+  format: string;
+  status: string;
+  filename: string | null;
+  filePath: string | null;
+  fileSize: number | null;
+  dataTypes: string[];
+  dateRangeStart: string | null;
+  dateRangeEnd: string | null;
+  recordCount: number | null;
+  error: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export const exportsApi = {
+  getAll: () => fetchApi<DataExport[]>("/exports"),
+  create: (data: { format: string; dataTypes: string[]; dateRangeStart?: string; dateRangeEnd?: string }) =>
+    fetchApi<{ success: boolean; message: string; export: DataExport }>("/exports", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  download: (id: string) => `/api/exports/${id}/download`,
 };
 
 export const departmentsApi = {

@@ -2,8 +2,9 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { useLocation, Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Bell, Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight, Layers } from "lucide-react";
+import { Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
+import { NotificationsDropdown } from "@/components/NotificationsDropdown";
 import logoImage from "@/assets/miauditops-logo.jpeg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -251,10 +252,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
                 <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                 <span className="sr-only">Toggle theme</span>
               </Button>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">3</span>
-              </Button>
+              <NotificationsDropdown />
               
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

@@ -6,6 +6,7 @@ import {
   userClientAccess, auditContexts, audits, auditReissuePermissions, auditChangeLog,
   storeIssues, storeIssueLines, storeStock, storeNames, inventoryDepartments, inventoryDepartmentCategories, goodsReceivedNotes,
   receivables, receivableHistory, surpluses, surplusHistory, srdTransfers, organizationSettings, userSettings, purchaseItemEvents, subscriptions, organizations,
+  notifications, dataExports,
   type User, type InsertUser, type Client, type InsertClient,
   type Category, type InsertCategory, type Department, type InsertDepartment,
   type SalesEntry, type InsertSalesEntry, type Purchase, type InsertPurchase,
@@ -36,11 +37,13 @@ import {
   type SrdTransfer, type InsertSrdTransfer,
   type OrganizationSettings, type InsertOrganizationSettings,
   type UserSettings, type InsertUserSettings,
+  type Notification, type InsertNotification,
+  type DataExport, type InsertDataExport,
   type PurchaseItemEvent, type InsertPurchaseItemEvent,
   type Subscription, type InsertSubscription,
   type Organization, type InsertOrganization
 } from "@shared/schema";
-import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct, inArray } from "drizzle-orm";
 
 export interface DashboardFilters {
   organizationId?: string;  // REQUIRED for tenant isolation
@@ -406,6 +409,16 @@ export class DbStorage implements IStorage {
     return db.select().from(users).orderBy(desc(users.createdAt));
   }
 
+  async getUsersByOrganization(organizationId: string, filters?: { roles?: string[] }): Promise<User[]> {
+    const conditions = [eq(users.organizationId, organizationId)];
+    
+    if (filters?.roles && filters.roles.length > 0) {
+      conditions.push(inArray(users.role, filters.roles));
+    }
+
+    return db.select().from(users).where(and(...conditions)).orderBy(desc(users.createdAt));
+  }
+
   async getUserCount(): Promise<number> {
     const result = await db.select({ count: count() }).from(users);
     return result[0]?.count || 0;
@@ -556,6 +569,90 @@ export class DbStorage implements IStorage {
       } as InsertUserSettings).returning();
       return created;
     }
+  }
+
+  // Notifications
+  async getNotifications(organizationId: string, userId?: string, limit: number = 20): Promise<Notification[]> {
+    const conditions = [eq(notifications.organizationId, organizationId)];
+    if (userId) {
+      conditions.push(or(eq(notifications.userId, userId), sql`${notifications.userId} IS NULL`)!);
+    }
+    return db.select().from(notifications)
+      .where(and(...conditions))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async getUnreadNotificationCount(organizationId: string, userId?: string): Promise<number> {
+    const conditions = [
+      eq(notifications.organizationId, organizationId),
+      eq(notifications.isRead, false)
+    ];
+    if (userId) {
+      conditions.push(or(eq(notifications.userId, userId), sql`${notifications.userId} IS NULL`)!);
+    }
+    const [result] = await db.select({ count: count() }).from(notifications)
+      .where(and(...conditions));
+    return result?.count || 0;
+  }
+
+  async createNotification(data: InsertNotification): Promise<Notification> {
+    const [notification] = await db.insert(notifications).values(data).returning();
+    return notification;
+  }
+
+  async markNotificationRead(id: string, organizationId: string): Promise<boolean> {
+    const result = await db.update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.id, id), eq(notifications.organizationId, organizationId)));
+    return true;
+  }
+
+  async markAllNotificationsRead(organizationId: string, userId?: string): Promise<boolean> {
+    const conditions = [eq(notifications.organizationId, organizationId)];
+    if (userId) {
+      conditions.push(or(eq(notifications.userId, userId), sql`${notifications.userId} IS NULL`)!);
+    }
+    await db.update(notifications)
+      .set({ isRead: true })
+      .where(and(...conditions));
+    return true;
+  }
+
+  async updateNotificationEmailStatus(id: string, sent: boolean, error?: string): Promise<void> {
+    await db.update(notifications)
+      .set({ 
+        emailSent: sent, 
+        emailSentAt: sent ? new Date() : undefined,
+        emailError: error 
+      })
+      .where(eq(notifications.id, id));
+  }
+
+  // Data Exports
+  async getDataExports(organizationId: string): Promise<DataExport[]> {
+    return db.select().from(dataExports)
+      .where(eq(dataExports.organizationId, organizationId))
+      .orderBy(desc(dataExports.createdAt));
+  }
+
+  async getDataExport(id: string, organizationId: string): Promise<DataExport | undefined> {
+    const [result] = await db.select().from(dataExports)
+      .where(and(eq(dataExports.id, id), eq(dataExports.organizationId, organizationId)));
+    return result;
+  }
+
+  async createDataExport(data: InsertDataExport): Promise<DataExport> {
+    const [result] = await db.insert(dataExports).values(data).returning();
+    return result;
+  }
+
+  async updateDataExport(id: string, data: Partial<InsertDataExport>): Promise<DataExport> {
+    const [result] = await db.update(dataExports)
+      .set(data)
+      .where(eq(dataExports.id, id))
+      .returning();
+    return result;
   }
 
   // Departments

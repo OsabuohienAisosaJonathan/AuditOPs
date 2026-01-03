@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, decimal, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, decimal, jsonb, boolean, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -102,7 +102,49 @@ export const userSettings = pgTable("user_settings", {
   autoSaveEnabled: boolean("auto_save_enabled").notNull().default(true),
   autoSaveIntervalSeconds: integer("auto_save_interval_seconds").notNull().default(60),
   varianceThresholdPercent: decimal("variance_threshold_percent", { precision: 5, scale: 2 }).notNull().default("5.00"),
+  emailNotificationsEnabled: boolean("email_notifications_enabled").notNull().default(true),
+  exceptionAlertsEnabled: boolean("exception_alerts_enabled").notNull().default(true),
+  varianceAlertsEnabled: boolean("variance_alerts_enabled").notNull().default(true),
+  dailyDigestEnabled: boolean("daily_digest_enabled").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Notifications for in-app and email alerts
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // 'exception', 'variance', 'system', 'export'
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  refType: text("ref_type"), // 'exception', 'reconciliation', 'export', etc.
+  refId: varchar("ref_id"),
+  isRead: boolean("is_read").notNull().default(false),
+  emailSent: boolean("email_sent").notNull().default(false),
+  emailSentAt: timestamp("email_sent_at"),
+  emailError: text("email_error"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Data exports for tenant backup/export functionality
+export const dataExports = pgTable("data_exports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  format: text("format").notNull(), // 'csv', 'excel', 'json'
+  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'completed', 'failed'
+  filename: text("filename"),
+  filePath: text("file_path"),
+  fileSize: integer("file_size"),
+  dataTypes: text("data_types").array().notNull(), // ['clients', 'departments', 'items', etc.]
+  dateRangeStart: date("date_range_start"),
+  dateRangeEnd: date("date_range_end"),
+  recordCount: integer("record_count"),
+  error: text("error"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
 });
 
 // Departments are the core operational unit - all transactions and reconciliations tie to departments
@@ -740,6 +782,8 @@ export const insertSrdTransferSchema = createInsertSchema(srdTransfers).omit({ i
 });
 export const insertOrganizationSettingsSchema = createInsertSchema(organizationSettings).omit({ id: true, updatedAt: true });
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, updatedAt: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertDataExportSchema = createInsertSchema(dataExports).omit({ id: true, createdAt: true });
 
 // Purchase Item Events - history/audit trail of all item purchases
 export const purchaseItemEvents = pgTable("purchase_item_events", {
@@ -947,6 +991,10 @@ export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettin
 export type OrganizationSettings = typeof organizationSettings.$inferSelect;
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
 export type UserSettings = typeof userSettings.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertDataExport = z.infer<typeof insertDataExportSchema>;
+export type DataExport = typeof dataExports.$inferSelect;
 export type InsertPurchaseItemEvent = z.infer<typeof insertPurchaseItemEventSchema>;
 export type PurchaseItemEvent = typeof purchaseItemEvents.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;

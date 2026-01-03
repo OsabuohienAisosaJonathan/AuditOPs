@@ -13,7 +13,7 @@ import { organizationSettingsApi, userSettingsApi } from "@/lib/api";
 import { useCurrency } from "@/lib/currency-context";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
-import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun } from "lucide-react";
+import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun, Bell, Download, FileText, Clock } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 
 export default function Settings() {
@@ -358,6 +358,111 @@ export default function Settings() {
                 <Button variant="outline" disabled>
                   Upgrade Plan
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Notification Preferences</CardTitle>
+            </div>
+            <CardDescription>Control how and when you receive alerts</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {isLoadingUserSettings ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Email Notifications</Label>
+                    <p className="text-sm text-muted-foreground">Receive important alerts via email</p>
+                  </div>
+                  <Switch 
+                    checked={userSettings?.emailNotificationsEnabled ?? true}
+                    onCheckedChange={(checked) => updateUserSettingsMutation.mutate({ emailNotificationsEnabled: checked })}
+                    disabled={updateUserSettingsMutation.isPending}
+                    data-testid="switch-email-notifications"
+                  />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Exception Alerts</Label>
+                    <p className="text-sm text-muted-foreground">Get notified when new exceptions are created</p>
+                  </div>
+                  <Switch 
+                    checked={userSettings?.exceptionAlertsEnabled ?? true}
+                    onCheckedChange={(checked) => updateUserSettingsMutation.mutate({ exceptionAlertsEnabled: checked })}
+                    disabled={updateUserSettingsMutation.isPending}
+                    data-testid="switch-exception-alerts"
+                  />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Daily Digest</Label>
+                    <p className="text-sm text-muted-foreground">Receive a summary of daily audit activity</p>
+                  </div>
+                  <Switch 
+                    checked={userSettings?.dailyDigestEnabled ?? false}
+                    onCheckedChange={(checked) => updateUserSettingsMutation.mutate({ dailyDigestEnabled: checked })}
+                    disabled={updateUserSettingsMutation.isPending}
+                    data-testid="switch-daily-digest"
+                  />
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {isSuperAdmin && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Download className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Data Export</CardTitle>
+              </div>
+              <CardDescription>Export your audit data for backup or analysis</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="p-4 border rounded-lg">
+                  <div className="flex items-center gap-3 mb-2">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium">Full Data Export</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Export all clients, items, inventory, reconciliations, and exceptions.
+                  </p>
+                  <Button variant="outline" size="sm" disabled data-testid="button-export-full">
+                    <Download className="mr-2 h-4 w-4" />
+                    Export All (Coming Soon)
+                  </Button>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium">Date Range Export</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Export data from a specific time period.
+                  </p>
+                  <Button variant="outline" size="sm" disabled data-testid="button-export-range">
+                    <Download className="mr-2 h-4 w-4" />
+                    Custom Export (Coming Soon)
+                  </Button>
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <Label className="text-muted-foreground text-sm mb-3 block">Recent Exports</Label>
+                <p className="text-sm text-muted-foreground italic">No exports yet. Start an export above.</p>
               </div>
             </CardContent>
           </Card>

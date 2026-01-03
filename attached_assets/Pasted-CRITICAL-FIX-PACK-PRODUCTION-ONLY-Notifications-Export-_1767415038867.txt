@@ -1,0 +1,152 @@
+CRITICAL FIX PACK (PRODUCTION ONLY): Notifications + Export/Backup + Stop Infinite Loading + Remove Demo/Dev Data Leak for New Owners
+
+Context:
+- User Management (roles, accounts, assignment) already exists. Do NOT rebuild it.
+- Current testing is happening on PRODUCTION.
+- Issues:
+  1) Notifications icon exists but does nothing.
+  2) Data Export & Backup exists but not working.
+  3) Dashboard/other pages keep spinning (infinite loading).
+  4) New owners are seeing departments/clients/categories that belong to another owner or old testing data. This is unacceptable. New owners must start clean and only see their own tenant data.
+
+Rules:
+- Do NOT redesign the UI layout.
+- Do NOT remove existing features.
+- Fix functionality + tenant isolation + data hygiene.
+- No dev/demo/test data must appear in production for any new owner.
+- All data MUST be tenant-scoped (tenantId) and queries filtered by currentUser.tenantId.
+
+────────────────────────────────────────
+A) STOP INFINITE LOADING (GLOBAL FIX)
+1) Create a global API client wrapper (single fetch helper) used by all pages.
+2) Requirements for every request:
+   a) Hard timeout (AbortController) 10 seconds
+   b) If response is non-OK, always return error and stop loading
+   c) Always set loading=false in UI on error or success
+3) If 401 Unauthorized:
+   - clear auth state
+   - redirect to /account/signin with message “Session expired”
+4) Add a standard “ErrorState” UI component:
+   - shows friendly error message + Retry button
+   - used by Dashboard, Clients, Inventory, Reports, etc.
+5) Add logging (console + server logs) for slow endpoints:
+   - log duration, status, route name (no secrets)
+
+Output test:
+- No page should spin indefinitely. On failure it must show error + Retry.
+
+────────────────────────────────────────
+B) FIX TENANT ISOLATION + REMOVE CROSS-OWNER DATA SHOWING
+Problem:
+- New owner header dropdown shows department/client/category that belong to another owner or old testing data.
+Fix:
+1) Ensure tenantId exists and is required for:
+   - clients
+   - departments
+   - categories
+   - SRDs / Inventory Departments
+   - items
+   - purchases/GRN
+   - sales captures / declared payments
+   - counts
+   - stock movements
+   - exceptions/receivables/surplus
+2) Every LIST/GET endpoint must filter by tenantId:
+   WHERE tenantId = currentUser.tenantId
+3) Every CREATE endpoint must stamp tenantId from currentUser.tenantId (never from request body)
+4) Backfill existing records:
+   - if a record has createdBy, set tenantId = createdBy.tenantId
+   - if cannot be resolved, mark as ORPHANED and move to a SYSTEM tenant not visible to normal users
+5) IMPORTANT PRODUCTION RULE:
+   - Disable all demo seeding in production permanently:
+     - seed scripts must NOT run when NODE_ENV=production
+     - any “default demo client/department/category” creation must be blocked in production
+6) Ensure a NEW OWNER starts clean:
+   - On first signup/tenant creation, do NOT auto-add demo clients/departments/categories in production.
+   - Only create required system defaults (e.g. default currency setting), but NO sample business data.
+
+Output test:
+- Owner A cannot see Owner B clients/departments/categories anywhere (header dropdown, client page, reports).
+- New signup on production shows empty state (no sample data) until they create their own.
+
+────────────────────────────────────────
+C) NOTIFICATIONS (EMAIL ALERTS FOR EXCEPTIONS + VARIANCE)
+Fix the non-functional Notifications icon and implement real notification behavior.
+
+1) Add Settings → Notifications (or use existing section):
+   - Toggle: Email Alerts for Exceptions (On/Off)
+   - Toggle: Email Alerts for Variance Threshold Exceeded (On/Off)
+   - Optional: “Daily Digest” toggle (Off by default)
+2) Tenant-scoped + user-scoped behavior:
+   - Tenant chooses if notifications are allowed at all.
+   - Each user can opt in/out for their own email (if tenant allows).
+3) Triggers:
+   a) When an Exception is created or updated with Outcome:
+      - notify Super Admin + assigned users (if enabled)
+   b) When Variance exceeds threshold in Department Comparison / Reconciliation:
+      - notify Super Admin + audit team assigned to that client (if enabled)
+4) Email content requirements:
+   - Tenant/Company name
+   - Client name
+   - Audit date
+   - Department
+   - Variance amount and % (for variance alerts)
+   - Link back into app to the exact record/page
+5) Non-blocking:
+   - Email sending must NEVER block saving data. Fire-and-forget with timeout.
+6) Notifications icon:
+   - Clicking icon opens a panel listing last 20 notification events:
+     title, type (Exception/Variance), time, status (sent/failed)
+   - Add “Mark all read”
+7) Add notifications table:
+   - id, tenantId, userId (nullable), type, refId, title, message, isRead, createdAt, sentStatus
+
+Output test:
+- Creating an exception generates a notification record and sends email when enabled.
+- Variance exceeding threshold generates notification.
+- Notifications icon shows feed items.
+
+────────────────────────────────────────
+D) DATA EXPORT & BACKUP (EXPORT TENANT DATA)
+Fix the existing Export/Backup so it works and exports tenant data safely.
+
+1) Settings → Data Export & Backup section:
+   - Export format: CSV + Excel + JSON (selectable)
+   - Date range selector + “All time”
+   - Data selection checklist:
+     - Clients
+     - Departments/Categories
+     - Items
+     - Purchases/GRN
+     - Sales Captures + Declared Payments
+     - SRD ledgers + Stock Counts
+     - Stock Movements
+     - Exceptions/Receivables/Surplus
+     - Reports metadata (not PDF binaries unless already stored)
+2) Export rules:
+   - MUST export only current tenantId data
+   - Must run as background job (or queued) but return immediately with “Export started”
+   - Provide export history table:
+     filename, createdAt, createdBy, status, download link
+3) Storage:
+   - Store export files in server storage or object storage with tenant folder
+   - Download requires auth + tenantId match
+4) Permissions:
+   - Only Super Admin/Admin can create exports
+   - Others can view-only export history if allowed
+
+Output test:
+- Export creates a file and download works.
+- No cross-tenant export leakage.
+
+────────────────────────────────────────
+E) OUTPUT REQUIRED (MANDATORY)
+1) Show exact file paths changed (with first 10–15 lines for each file).
+2) Show DB migrations (additive only; do NOT delete existing tables).
+3) Provide test checklist:
+   - New owner sees empty state (no demo data) on production
+   - Owner data isolation verified on Clients + header dropdown + departments + categories
+   - No page spins indefinitely; errors show with Retry
+   - Notifications feed works + emails send (when toggled on)
+   - Export produces downloadable file scoped to tenant
+END PROMPT
