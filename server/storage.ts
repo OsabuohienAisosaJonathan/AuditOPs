@@ -1188,15 +1188,36 @@ export class DbStorage implements IStorage {
       const orgClients = await db.select({ id: clients.id }).from(clients)
         .where(eq(clients.organizationId, filters.organizationId));
       orgClientIds = orgClients.map(c => c.id);
+      
+      // If organization has no clients, return zeroed metrics immediately
+      // This prevents leaking global data to new/empty organizations
+      if (orgClientIds.length === 0) {
+        const [clientsResult] = await db.select({ count: count() }).from(clients)
+          .where(eq(clients.organizationId, filters.organizationId));
+        return {
+          totalClients: clientsResult?.count || 0,
+          totalDepartments: 0,
+          totalSalesToday: 0,
+          totalPurchasesToday: 0,
+          totalSales: 0,
+          totalPurchases: 0,
+          totalExceptions: 0,
+          openExceptions: 0,
+          totalVarianceValue: 0,
+          pendingReconciliations: 0,
+          recentExceptions: [],
+          redFlags: []
+        };
+      }
     }
 
-    // Helper to add client filter condition
+    // Helper to add client filter condition using inArray for proper Drizzle support
     const getOrgClientCondition = (clientIdColumn: any) => {
       if (filters?.clientId) {
         return eq(clientIdColumn, filters.clientId);
       }
       if (orgClientIds.length > 0) {
-        return sql`${clientIdColumn} = ANY(${orgClientIds})`;
+        return sql`${clientIdColumn} IN (${sql.join(orgClientIds.map(id => sql`${id}`), sql`, `)})`;
       }
       return null;
     };
