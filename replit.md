@@ -154,7 +154,36 @@ Diagnostic endpoints and error handling for production debugging:
 - **Slow Query Logging**: Server logs warnings for requests taking >3s on dashboard/clients routes
 - **Error Boundary**: Global React ErrorBoundary catches crashes and shows fallback UI
 - **API Retry Logic**: Client-side retry with exponential backoff (2 retries, excludes 401 errors)
-- **Timeout Handling**: 15s client timeout with proper error UI and retry buttons
+- **Timeout Handling**: 12s client timeout with proper error UI and retry buttons
+
+### Offline Resilience & Caching
+The application includes offline support and data caching for improved reliability:
+
+**Network Status Detection** (`client/src/lib/network-status.tsx`):
+- `NetworkStatusProvider` wraps the app to track online/offline state
+- `useNetworkStatus()` hook provides `isOnline`, `wasOffline`, `lastOnlineAt`
+- `OfflineBanner` component shows fixed amber banner when offline
+
+**IndexedDB Caching** (`client/src/lib/cache.ts`):
+- Uses `localforage` for IndexedDB storage (NOT localStorage)
+- Cache keys include `organizationId` for multi-tenant isolation: `${organizationId}:${endpoint}:${paramsHash}`
+- 24-hour default max age for cached data
+- No auth tokens stored in cache (security)
+
+**Stale-While-Revalidate** (`client/src/lib/useCachedQuery.tsx`):
+- `useCachedQuery()` hook wraps `useQuery` with caching
+- Shows cached data immediately while fetching fresh data
+- Returns: `data`, `cachedData`, `isUsingCache`, `lastUpdated`, `cacheTimestamp`
+- `CacheStatus` component displays cache timestamp to users
+
+**Helper Functions**:
+- `safeArray(arr)`: Returns `[]` if null/undefined
+- `safeNumber(val, fallback)`: Returns fallback if invalid
+- `safeFormat(dateStr, formatFn, fallback)`: Safe date formatting
+
+**UI Components**:
+- `ErrorCard`: Amber card with retry button for error states
+- `DashboardSkeleton`, `TableSkeleton`, `ListSkeleton`: Loading states
 
 ### Build System
 - Development: Vite dev server with HMR
