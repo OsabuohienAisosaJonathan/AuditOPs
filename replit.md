@@ -147,6 +147,15 @@ For production deployment with custom domains:
 - **APP_URL**: Base URL for email links (e.g., `https://miauditops.com`)
 - DNS: Configure A records for both apex domain and www subdomain pointing to the same IP
 
+### Production Reliability
+Diagnostic endpoints and error handling for production debugging:
+- **Health Check**: `GET /api/health` - Tests database connectivity, returns timing info
+- **Session Diagnostics**: `GET /api/diag/session` - Shows auth state, organization, subscription info
+- **Slow Query Logging**: Server logs warnings for requests taking >3s on dashboard/clients routes
+- **Error Boundary**: Global React ErrorBoundary catches crashes and shows fallback UI
+- **API Retry Logic**: Client-side retry with exponential backoff (2 retries, excludes 401 errors)
+- **Timeout Handling**: 15s client timeout with proper error UI and retry buttons
+
 ### Build System
 - Development: Vite dev server with HMR
 - Production: Custom build script using esbuild for server, Vite for client

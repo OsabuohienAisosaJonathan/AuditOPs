@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree, AlertTriangle } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Building2, Trash2, Edit, ChevronDown, ChevronRight, Layers, PauseCircle, PlayCircle, FolderTree, AlertTriangle, RefreshCw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -244,10 +244,40 @@ export default function Clients() {
   }
 
   if (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const isAuthError = errorMessage.includes("401") || errorMessage.includes("Unauthorized");
+    const isTimeout = errorMessage.includes("timed out") || errorMessage.includes("timeout");
+    
     return (
-      <div className="text-center text-red-500 p-8">
-        Failed to load clients. Please try again.
-      </div>
+      <Empty className="min-h-[400px] border" data-testid="error-clients">
+        <EmptyMedia variant="icon">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyTitle>
+            {isAuthError ? "Session expired" : isTimeout ? "Request timed out" : "Failed to load clients"}
+          </EmptyTitle>
+          <EmptyDescription>
+            {isAuthError 
+              ? "Your session has expired. Please log in again."
+              : isTimeout
+              ? "The server took too long to respond. Please check your connection and try again."
+              : "We couldn't load your clients. Please try again."}
+          </EmptyDescription>
+        </EmptyHeader>
+        <div className="flex gap-3 mt-4">
+          {isAuthError ? (
+            <Button onClick={() => window.location.href = "/login"}>
+              Go to Login
+            </Button>
+          ) : (
+            <Button onClick={() => queryClient.invalidateQueries({ queryKey: ["clients"] })}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
+          )}
+        </div>
+      </Empty>
     );
   }
 

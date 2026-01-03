@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { handle401Redirect, setQueryClientRef } from "./api";
 
-const QUERY_TIMEOUT_MS = 10000; // 10 second timeout
+const QUERY_TIMEOUT_MS = 15000; // 15 second timeout (increased for production reliability)
 
 function createTimeoutController(timeoutMs: number = QUERY_TIMEOUT_MS): { controller: AbortController; clear: () => void } {
   const controller = new AbortController();
@@ -97,7 +97,15 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
-      retry: false,
+      retry: (failureCount, error) => {
+        // Don't retry on auth errors
+        if (error instanceof Error && (error.message.includes("401") || error.message.includes("Unauthorized"))) {
+          return false;
+        }
+        // Retry up to 2 times for other errors (including timeouts)
+        return failureCount < 2;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
     },
     mutations: {
       retry: false,

@@ -273,6 +273,70 @@ export async function registerRoutes(
     next();
   };
 
+  // ============== HEALTH & DIAGNOSTICS ==============
+  app.get("/api/health", async (req, res) => {
+    const startTime = Date.now();
+    try {
+      // Test database connection
+      const dbResult = await pool.query("SELECT 1 as test");
+      const dbOk = dbResult.rows.length > 0;
+      
+      res.json({
+        ok: true,
+        time: new Date().toISOString(),
+        env: process.env.NODE_ENV || "development",
+        db: dbOk ? "ok" : "fail",
+        responseTimeMs: Date.now() - startTime,
+        version: "1.0.0"
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        ok: false,
+        time: new Date().toISOString(),
+        env: process.env.NODE_ENV || "development",
+        db: "fail",
+        error: error.message,
+        responseTimeMs: Date.now() - startTime,
+        version: "1.0.0"
+      });
+    }
+  });
+
+  app.get("/api/diag/session", async (req, res) => {
+    const startTime = Date.now();
+    try {
+      if (!req.session?.userId) {
+        return res.json({
+          authed: false,
+          userId: null,
+          organizationId: null,
+          role: null,
+          sessionCookie: !!req.headers.cookie?.includes("connect.sid"),
+          responseTimeMs: Date.now() - startTime
+        });
+      }
+      
+      const user = await storage.getUser(req.session.userId);
+      const subscription = user?.organizationId ? await storage.getSubscription(user.organizationId) : null;
+      
+      res.json({
+        authed: true,
+        userId: req.session.userId,
+        organizationId: user?.organizationId || null,
+        role: user?.role || null,
+        planName: subscription?.planName || null,
+        subscriptionStatus: subscription?.status || null,
+        responseTimeMs: Date.now() - startTime
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        authed: false,
+        error: error.message,
+        responseTimeMs: Date.now() - startTime
+      });
+    }
+  });
+
   // ============== BOOTSTRAP SETUP ==============
   app.get("/api/setup/status", async (req, res) => {
     try {
@@ -1059,6 +1123,7 @@ export async function registerRoutes(
 
   // ============== DASHBOARD ==============
   app.get("/api/dashboard/summary", requireAuth, async (req, res) => {
+    const startTime = Date.now();
     try {
       const user = await storage.getUser(req.session.userId!);
       if (!user?.organizationId) {
@@ -1073,8 +1138,15 @@ export async function registerRoutes(
         date: date as string | undefined,
       };
       const summary = await storage.getDashboardSummary(filters);
+      
+      const duration = Date.now() - startTime;
+      if (duration > 3000) {
+        console.warn(`[SLOW] GET /api/dashboard/summary took ${duration}ms for org ${user.organizationId}`);
+      }
+      
       res.json(summary);
     } catch (error: any) {
+      console.error(`[ERROR] GET /api/dashboard/summary failed after ${Date.now() - startTime}ms:`, error.message);
       res.status(500).json({ error: error.message });
     }
   });
@@ -1994,6 +2066,7 @@ export async function registerRoutes(
 
   // ============== CLIENTS ==============
   app.get("/api/clients", requireAuth, async (req, res) => {
+    const startTime = Date.now();
     try {
       const user = await storage.getUser(req.session.userId!);
       if (!user?.organizationId) {
@@ -2010,8 +2083,14 @@ export async function registerRoutes(
         );
       }
       
+      const duration = Date.now() - startTime;
+      if (duration > 3000) {
+        console.warn(`[SLOW] GET /api/clients took ${duration}ms for org ${user.organizationId}`);
+      }
+      
       res.json(allClients);
     } catch (error: any) {
+      console.error(`[ERROR] GET /api/clients failed after ${Date.now() - startTime}ms:`, error.message);
       res.status(500).json({ error: error.message });
     }
   });

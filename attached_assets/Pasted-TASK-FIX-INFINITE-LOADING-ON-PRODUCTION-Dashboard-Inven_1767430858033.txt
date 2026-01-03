@@ -1,0 +1,126 @@
+TASK: FIX INFINITE LOADING ON PRODUCTION (Dashboard + Inventory) + FIX DEV WHITE-SCREEN (blank pages) — WITH PROPER TENANT/AUTH ERROR HANDLING.
+
+CONTEXT:
+- In production (miauditops.com), /dashboard and /inventory frequently spin forever (loader never stops).
+- In development, pages sometimes go blank (white screen), likely due to an uncaught client error.
+- We already have org/tenant logic; app must NEVER hang silently. All pages must either render data, show an empty state, or show a clear error + Retry.
+- DO NOT redesign SRD ledger or break existing API routes. Focus: reliability + correct loading/error handling.
+
+GOALS:
+A) Stop infinite spinners globally.
+B) Make production/development behave consistently.
+C) Ensure auth/org issues show a proper UI message (not infinite loading).
+D) Add a global fetch wrapper with timeout + AbortController.
+E) Add ErrorBoundary so dev white-screens become visible error screens.
+F) Add minimal diagnostics endpoints + logging to pinpoint failures.
+G) Confirm tenant scoping is correct (no cross-tenant leakage).
+H) Provide exact file paths, first 10–15 lines, and patch blocks with start/end markers.
+
+------------------------------------------------------------
+1) DIAGNOSE FIRST (NO GUESSING)
+1.1 Add server-side request logging for API routes involved in Dashboard & Inventory:
+- Log route, status, duration, and whether req has userId + organizationId.
+- Log errors with stack traces.
+
+1.2 Add GET /api/health that returns:
+{ ok: true, time, env: "production|development", db: "ok|fail", version }
+No secrets printed.
+
+1.3 Add GET /api/diag/session that returns:
+{ authed: boolean, userId, organizationId, role }
+This must help confirm whether production requests are authenticated and associated with org.
+
+------------------------------------------------------------
+2) FIX CLIENT-SIDE INFINITE LOADING (ROOT FIX)
+2.1 Create a single fetch utility and use it everywhere:
+- File: client/src/lib/apiClient.ts (or client/src/utils/apiClient.ts if that’s your convention)
+- Requirements:
+  a) Default timeout 12s using AbortController
+  b) Always include credentials if your auth uses cookies (credentials: "include")
+  c) Convert non-2xx into a normalized error object:
+     { status, message, code }
+  d) If status == 401: throw "UNAUTHORIZED"
+     If status == 403: throw "FORBIDDEN"
+     If status == 404: throw "NOT_FOUND"
+  e) Never hang: always resolves/rejects within timeout.
+
+2.2 Replace every direct fetch call on:
+- Dashboard page
+- Inventory Management page
+- Clients page
+with apiClient().
+
+2.3 Ensure every page has:
+try { ... } catch(e) { setError(...) } finally { setLoading(false) }
+NO EXCEPTIONS.
+
+2.4 Add visible error UI:
+- If unauthorized: show "Session expired. Please sign in again." + button to /login
+- If org missing: show "No organization found. Create/select a client to continue." + button to /clients
+- If timeout: show "Request timed out" + Retry button
+- If empty data: show an empty state card ("No items yet" / "No dashboard data yet")
+
+------------------------------------------------------------
+3) FIX DEV WHITE-SCREEN (BLANK PAGES)
+3.1 Add an ErrorBoundary wrapper around the app layout so any crash shows:
+- A friendly error screen
+- The error message + a “Reload” button
+- In dev, also console.error the stack
+
+Where to implement:
+- If Next.js App Router: wrap inside root layout (client boundary component)
+- If React Router: wrap inside AppLayout or main Router provider
+
+------------------------------------------------------------
+4) SERVER-SIDE: ENSURE APIs NEVER HANG + ALWAYS RETURN JSON
+4.1 For the API routes powering Dashboard + Inventory:
+- Add a hard timeout (e.g., 15s) on DB calls if supported, or at least ensure the handler always responds.
+- Wrap route handlers in try/catch and always send res.status(...).json({ error: "...", code: "..." })
+
+4.2 Ensure organizationId is derived from the session/user context on the server:
+- DO NOT accept organizationId from the client as the source of truth.
+- Every query must filter by organizationId to avoid data leakage.
+
+4.3 Fix any endpoint that returns 401 but the UI keeps spinning:
+- UI must stop loading and show the auth error screen.
+
+------------------------------------------------------------
+5) PRODUCTION-SPECIFIC CHECKS (THIS IS OFTEN THE CAUSE)
+5.1 Confirm production has required secrets (Publishing/Secrets):
+- DATABASE_URL (or equivalent)
+- SESSION/JWT secret
+- RESEND API key (if relevant)
+- BASE_URL or APP_URL set to https://miauditops.com if you use it for links
+
+5.2 If production uses a different DB than dev:
+- Ensure migrations ran in production
+- Ensure schema matches (tables exist)
+
+If missing/mismatch is found, fix with migration (not manual hacks).
+
+------------------------------------------------------------
+6) OUTPUT FORMAT (MANDATORY)
+6.1 List every edited file with exact path.
+6.2 For each edited file: print first 10–15 lines to confirm it’s correct.
+6.3 Provide code patches with clear markers:
+----- START PATCH: <path> -----
+...
+----- END PATCH: <path> -----
+6.4 Provide a test checklist and confirm each:
+
+TEST CHECKLIST:
+- Production: login -> /dashboard loads within 3–5s (no infinite spinner)
+- Production: /inventory loads and shows either table or empty state
+- Production: if API returns 401, user sees session-expired UI (no spinner)
+- Dev: simulate API error -> error UI displayed
+- Dev: simulate throw -> ErrorBoundary shows fallback (no blank screen)
+- Tenant isolation: a new owner sees NO previous owner clients/departments/categories
+- /api/health returns ok in both envs
+- /api/diag/session returns correct userId + organizationId after login
+
+IMPORTANT CONSTRAINTS:
+- Do NOT remove or rename existing API routes.
+- Do NOT delete existing DB tables/columns.
+- Only additive + bug fixes.
+- Fix the spinner/blank-screen issue globally.
+END.

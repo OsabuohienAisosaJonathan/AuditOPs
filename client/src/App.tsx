@@ -36,6 +36,7 @@ import AdminActivityLog from "@/pages/AdminActivityLog";
 import ClientAccess from "@/pages/ClientAccess";
 import ItemPurchases from "@/pages/ItemPurchases";
 import AppLayout from "@/components/layout/AppLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useEffect } from "react";
 
 function ProtectedRoute({ component: Component, requiredRole }: { component: React.ComponentType; requiredRole?: string }) {
@@ -137,24 +138,26 @@ function Router() {
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="system" storageKey="miemploya-theme">
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <EntitlementsProvider>
-            <ClientProvider>
-              <CurrencyProvider>
-                <LayoutProvider>
-                  <TooltipProvider>
-                    <Toaster />
-                    <Router />
-                  </TooltipProvider>
-                </LayoutProvider>
-              </CurrencyProvider>
-            </ClientProvider>
-          </EntitlementsProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="system" storageKey="miemploya-theme">
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <EntitlementsProvider>
+              <ClientProvider>
+                <CurrencyProvider>
+                  <LayoutProvider>
+                    <TooltipProvider>
+                      <Toaster />
+                      <Router />
+                    </TooltipProvider>
+                  </LayoutProvider>
+                </CurrencyProvider>
+              </ClientProvider>
+            </EntitlementsProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
