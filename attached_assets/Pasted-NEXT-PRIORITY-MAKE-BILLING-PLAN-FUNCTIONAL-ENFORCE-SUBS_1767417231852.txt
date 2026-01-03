@@ -1,0 +1,72 @@
+NEXT PRIORITY: MAKE BILLING & PLAN FUNCTIONAL + ENFORCE SUBSCRIPTION LIMITS (BACKEND FIRST)
+
+Context:
+- Settings page exists and other sections work.
+- Billing & Plan section UI exists but not functional.
+- We must enforce subscription per tenant/account:
+  Starter: max 1 client/company; per client max 4 SRD Dept Stores + 1 Main Store; locked: Purchases Register + report download, Dept Comparison (1st Hit) download, Dept Comparison (2nd Hit) page + full report download, SRD Main Store Ledger Summary report download.
+  Growth: max 3 clients/companies; per client max 7 SRD Dept Stores + 1 Main Store; locked: Dept Comparison (2nd Hit) page + full table report download, SRD Main Store Ledger Summary report download.
+  Business: max 5 clients/companies; per client max 12 SRD Dept Stores + 1 Main Store; full access.
+  Enterprise: max 10 clients/companies (or unlimited if already defined); unlimited SRD Dept Stores + 1 Main Store; full access + latest features + dedicated support flag.
+
+Rules:
+- No UI redesign. Make current pages functional.
+- Tenant-based billing (subscription belongs to tenantId, not individual user).
+- Enforcement MUST be on backend so users cannot bypass.
+
+A) BILLING & PLAN FUNCTIONALITY
+1) Create/confirm tenant_subscriptions table:
+   - tenantId (unique), planName, billingCycle, status, startDate, nextBillingDate, expiresAt, createdAt, updatedAt
+2) Create/confirm tenant_payments table:
+   - tenantId, amount, currency, periodCoveredStart, periodCoveredEnd, status, reference, createdAt
+3) Build working endpoints:
+   - GET /api/billing/plan -> current tenant subscription + entitlements + usage
+   - GET /api/billing/payments -> payment history for tenant
+   - POST /api/billing/mark-paid (Admin/Super Admin only) -> creates payment record + activates/extends plan
+4) Billing page must:
+   - show plan summary + renewal date + status
+   - show usage counters (clients used/allowed, SRD used/allowed per client)
+   - show payment history table
+   - show “Upgrade” CTA (can be placeholder, but must not break)
+
+B) ENTITLEMENTS + USAGE COMPUTATION
+1) Create a single function getTenantEntitlements(tenantId):
+   - clientsAllowed
+   - srdDeptStoresAllowedPerClient
+   - reportsAllowed flags (downloads + specific report sections)
+2) Compute usage live:
+   - clientsUsed = count(clients where tenantId)
+   - for each client, count SRD department stores created (excluding Main Store)
+   - mainStoreCount per client must be <= 1
+
+C) BACKEND ENFORCEMENT (NO BYPASS)
+1) Client creation endpoint:
+   - Block if clientsUsed >= clientsAllowed
+   - Return 403 with message: “Plan limit reached. Upgrade to add more clients.”
+2) SRD creation endpoint:
+   - Enforce per client:
+     - Main Store SRD max 1
+     - Dept Store SRD max based on plan
+3) Report download endpoints:
+   - Enforce feature locks:
+     - if locked, return 403 + clear message
+4) Department Comparison (2nd Hit) page route/data:
+   - If plan locked, deny access or show locked state (but backend must deny data).
+
+D) FRONTEND LOCKED STATES (LIGHT TOUCH)
+- If backend returns 403 with “Plan limit reached” or “Feature locked”:
+  show a modal with:
+   1) what feature is locked
+   2) current plan
+   3) Upgrade button -> Billing & Plan page
+
+E) OUTPUT REQUIRED
+- file paths changed + first 10–15 lines
+- migrations steps
+- test checklist:
+  1) Starter cannot create 2nd client
+  2) Starter cannot create >4 dept SRDs per client
+  3) Growth cannot access 2nd Hit page
+  4) Business can access all
+  5) Billing page shows correct plan + usage + payments
+END

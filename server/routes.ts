@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { getTenantEntitlements, checkClientCreationLimit, checkSrdCreationLimit, checkFeatureAccess } from "./entitlements-service";
 import { hash, compare } from "bcrypt";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -2237,6 +2238,148 @@ export async function registerRoutes(
     }
   });
 
+  // ============== BILLING & SUBSCRIPTIONS ==============
+
+  // Get current billing plan and usage
+  app.get("/api/billing/plan", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const tenantData = await getTenantEntitlements(user.organizationId);
+      const organization = await storage.getOrganization(user.organizationId);
+      
+      res.json({
+        plan: tenantData.plan,
+        status: tenantData.status,
+        startDate: tenantData.startDate,
+        endDate: tenantData.endDate,
+        isActive: tenantData.isActive,
+        entitlements: tenantData.entitlements,
+        usage: {
+          clientsUsed: tenantData.usage.clientsUsed,
+          clientsAllowed: tenantData.entitlements.maxClients,
+          totalMainStores: tenantData.usage.totalMainStores,
+          totalDeptStores: tenantData.usage.totalDeptStores,
+          srdUsageByClient: tenantData.usage.srdUsageByClient,
+          seatsUsed: tenantData.usage.seatsUsed,
+          seatsAllowed: tenantData.entitlements.maxSeats,
+        },
+        organizationName: organization?.name,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get payment history
+  app.get("/api/billing/payments", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const payments = await storage.getPayments(user.organizationId);
+      res.json(payments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Mark payment as complete (Super Admin only)
+  app.post("/api/billing/mark-paid", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const { amount, currency, periodMonths, reference, notes } = req.body;
+      
+      if (!amount || !periodMonths || periodMonths < 1) {
+        return res.status(400).json({ error: "Amount and period (in months) are required" });
+      }
+      
+      const now = new Date();
+      const subscription = await storage.getSubscription(user.organizationId);
+      
+      // Calculate period dates
+      const periodStart = subscription?.endDate && new Date(subscription.endDate) > now 
+        ? new Date(subscription.endDate) 
+        : now;
+      const periodEnd = new Date(periodStart);
+      periodEnd.setMonth(periodEnd.getMonth() + parseInt(periodMonths));
+      
+      // Create payment record
+      const payment = await storage.createPayment({
+        organizationId: user.organizationId,
+        amount: amount.toString(),
+        currency: currency || "NGN",
+        periodCoveredStart: periodStart,
+        periodCoveredEnd: periodEnd,
+        status: "completed",
+        reference: reference || null,
+        notes: notes || null,
+      });
+      
+      // Update subscription status and end date
+      if (subscription) {
+        await storage.updateSubscription(subscription.id, {
+          status: "active",
+          endDate: periodEnd,
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        payment,
+        message: `Subscription extended until ${periodEnd.toLocaleDateString()}` 
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Upgrade plan (Super Admin only)
+  app.post("/api/billing/upgrade", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const { planName } = req.body;
+      
+      const validPlans = ["starter", "growth", "business", "enterprise"];
+      if (!planName || !validPlans.includes(planName)) {
+        return res.status(400).json({ error: "Invalid plan name" });
+      }
+      
+      const subscription = await storage.getSubscription(user.organizationId);
+      
+      if (subscription) {
+        await storage.updateSubscription(subscription.id, { planName });
+        res.json({ success: true, message: `Plan upgraded to ${planName}` });
+      } else {
+        // Create new subscription if none exists
+        await storage.createSubscription({
+          organizationId: user.organizationId,
+          planName,
+          billingPeriod: "monthly",
+          slotsPurchased: 1,
+          status: "trial",
+          startDate: new Date(),
+        });
+        res.json({ success: true, message: `Subscription created with ${planName} plan` });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // ============== DATA EXPORTS ==============
 
   // Get export history
@@ -3440,6 +3583,24 @@ export async function registerRoutes(
       
       if (!INVENTORY_TYPES.includes(data.inventoryType as any)) {
         return res.status(400).json({ error: "Invalid inventory type" });
+      }
+      
+      // Get user's organization for subscription limits
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      // Check subscription limits for SRD creation
+      const isMainStore = data.inventoryType === "MAIN_STORE" || data.inventoryType === "WAREHOUSE";
+      const storeType = isMainStore ? "main_store" : "dept_store";
+      
+      const limitCheck = await checkSrdCreationLimit(user.organizationId, clientId, storeType);
+      if (!limitCheck.allowed) {
+        return res.status(403).json({ 
+          error: limitCheck.message,
+          code: "PLAN_LIMIT_REACHED"
+        });
       }
       
       if (data.inventoryType === "MAIN_STORE" || data.inventoryType === "WAREHOUSE") {

@@ -866,7 +866,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
     canUseBetaFeatures: false,
   },
   growth: {
-    maxClients: 1,
+    maxClients: 3,
     maxSrdDepartmentsPerClient: 7,
     maxMainStorePerClient: 1,
     maxSeats: 5,
@@ -875,13 +875,13 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
     canDownloadReports: true,
     canPrintReports: true,
     canAccessPurchasesRegisterPage: true,
-    canAccessSecondHitPage: true,
+    canAccessSecondHitPage: false,
     canDownloadSecondHitFullTable: false,
     canDownloadMainStoreLedgerSummary: false,
     canUseBetaFeatures: false,
   },
   business: {
-    maxClients: 1,
+    maxClients: 5,
     maxSrdDepartmentsPerClient: 12,
     maxMainStorePerClient: 1,
     maxSeats: 12,
@@ -896,7 +896,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
     canUseBetaFeatures: false,
   },
   enterprise: {
-    maxClients: 999,
+    maxClients: 10,
     maxSrdDepartmentsPerClient: 999,
     maxMainStorePerClient: 1,
     maxSeats: 999,
@@ -911,6 +911,25 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
     canUseBetaFeatures: true,
   },
 };
+
+// Payments table for tenant billing history
+export const PAYMENT_STATUSES = ["pending", "completed", "failed", "refunded"] as const;
+export type PaymentStatus = typeof PAYMENT_STATUSES[number];
+
+export const payments = pgTable("payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: text("currency").notNull().default("NGN"),
+  periodCoveredStart: timestamp("period_covered_start").notNull(),
+  periodCoveredEnd: timestamp("period_covered_end").notNull(),
+  status: text("status").notNull().default("pending"),
+  reference: text("reference"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertPaymentSchema = createInsertSchema(payments);
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -999,3 +1018,5 @@ export type InsertPurchaseItemEvent = z.infer<typeof insertPurchaseItemEventSche
 export type PurchaseItemEvent = typeof purchaseItemEvents.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type Payment = typeof payments.$inferSelect;

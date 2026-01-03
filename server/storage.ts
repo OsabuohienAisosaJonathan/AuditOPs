@@ -41,7 +41,8 @@ import {
   type DataExport, type InsertDataExport,
   type PurchaseItemEvent, type InsertPurchaseItemEvent,
   type Subscription, type InsertSubscription,
-  type Organization, type InsertOrganization
+  type Organization, type InsertOrganization,
+  type Payment, type InsertPayment, payments
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, lt, sql, or, ilike, count, sum, countDistinct, inArray } from "drizzle-orm";
 
@@ -2650,6 +2651,26 @@ export class DbStorage implements IStorage {
     const [updated] = await db.update(subscriptions)
       .set({ ...updateData, updatedAt: new Date() })
       .where(eq(subscriptions.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Payments
+  async getPayments(organizationId: string): Promise<Payment[]> {
+    return db.select().from(payments)
+      .where(eq(payments.organizationId, organizationId))
+      .orderBy(desc(payments.createdAt));
+  }
+
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    const [created] = await db.insert(payments).values(payment).returning();
+    return created;
+  }
+
+  async updatePayment(id: string, updateData: Partial<InsertPayment>): Promise<Payment | undefined> {
+    const [updated] = await db.update(payments)
+      .set(updateData)
+      .where(eq(payments.id, id))
       .returning();
     return updated;
   }
