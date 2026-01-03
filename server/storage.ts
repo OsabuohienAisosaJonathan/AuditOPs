@@ -984,6 +984,16 @@ export class DbStorage implements IStorage {
     return db.select().from(purchases).orderBy(desc(purchases.createdAt));
   }
 
+  async getPurchasesByOrganization(organizationId: string): Promise<Purchase[]> {
+    const result = await db
+      .select({ purchase: purchases })
+      .from(purchases)
+      .innerJoin(clients, eq(purchases.clientId, clients.id))
+      .where(eq(clients.organizationId, organizationId))
+      .orderBy(desc(purchases.createdAt));
+    return result.map(r => r.purchase);
+  }
+
   async getPurchase(id: string): Promise<Purchase | undefined> {
     const [purchase] = await db.select().from(purchases).where(eq(purchases.id, id));
     return purchase;
@@ -1105,6 +1115,16 @@ export class DbStorage implements IStorage {
     return db.select().from(reconciliations).orderBy(desc(reconciliations.createdAt));
   }
 
+  async getReconciliationsByOrganization(organizationId: string): Promise<Reconciliation[]> {
+    const result = await db
+      .select({ reconciliation: reconciliations })
+      .from(reconciliations)
+      .innerJoin(clients, eq(reconciliations.clientId, clients.id))
+      .where(eq(clients.organizationId, organizationId))
+      .orderBy(desc(reconciliations.createdAt));
+    return result.map(r => r.reconciliation);
+  }
+
   async getReconciliation(id: string): Promise<Reconciliation | undefined> {
     const [reconciliation] = await db.select().from(reconciliations).where(eq(reconciliations.id, id));
     return reconciliation;
@@ -1126,7 +1146,7 @@ export class DbStorage implements IStorage {
   }
 
   // Exceptions
-  async getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string; includeDeleted?: boolean }): Promise<Exception[]> {
+  async getExceptions(filters?: { clientId?: string; departmentId?: string; status?: string; severity?: string; includeDeleted?: boolean; organizationId?: string }): Promise<Exception[]> {
     const conditions = [];
     
     // By default, exclude deleted exceptions
@@ -1145,6 +1165,17 @@ export class DbStorage implements IStorage {
     }
     if (filters?.severity) {
       conditions.push(eq(exceptions.severity, filters.severity));
+    }
+    
+    // If organizationId provided, filter by organization through client join
+    if (filters?.organizationId) {
+      const result = await db
+        .select({ exception: exceptions })
+        .from(exceptions)
+        .innerJoin(clients, eq(exceptions.clientId, clients.id))
+        .where(and(eq(clients.organizationId, filters.organizationId), ...conditions))
+        .orderBy(desc(exceptions.createdAt));
+      return result.map(r => r.exception);
     }
     
     if (conditions.length > 0) {

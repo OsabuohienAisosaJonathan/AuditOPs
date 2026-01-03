@@ -2719,7 +2719,7 @@ export async function registerRoutes(
   });
 
   // ============== SUPPLIERS ==============
-  app.get("/api/suppliers", requireAuth, async (req, res) => {
+  app.get("/api/suppliers", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.query;
       if (!clientId) {
@@ -2796,7 +2796,7 @@ export async function registerRoutes(
   });
 
   // ============== ITEMS ==============
-  app.get("/api/items", requireAuth, async (req, res) => {
+  app.get("/api/items", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId } = req.query;
       if (!clientId) {
@@ -4341,7 +4341,7 @@ export async function registerRoutes(
   });
 
   // ============== SALES ENTRIES ==============
-  app.get("/api/sales-entries", requireAuth, async (req, res) => {
+  app.get("/api/sales-entries", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId, departmentId, date, startDate, endDate } = req.query;
       
@@ -4380,7 +4380,7 @@ export async function registerRoutes(
   });
 
   // Sales summary endpoint - supports clientId+date with optional departmentId filter
-  app.get("/api/sales-entries/summary", requireAuth, async (req, res) => {
+  app.get("/api/sales-entries/summary", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId, departmentId, date } = req.query;
       
@@ -4435,6 +4435,16 @@ export async function registerRoutes(
       if (!entry) {
         return res.status(404).json({ error: "Sales entry not found" });
       }
+      
+      // Verify organization access via client
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && entry.clientId) {
+        const client = await storage.getClientWithOrgCheck(entry.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       res.json(entry);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4553,13 +4563,27 @@ export async function registerRoutes(
   app.get("/api/purchases", requireAuth, async (req, res) => {
     try {
       const { outletId } = req.query;
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
       
       if (outletId) {
+        // Verify outlet belongs to user's organization
+        const outlet = await storage.getOutlet(outletId as string);
+        if (!outlet) {
+          return res.status(404).json({ error: "Outlet not found" });
+        }
+        const client = await storage.getClientWithOrgCheck(outlet.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this outlet" });
+        }
         const purchases = await storage.getPurchases(outletId as string);
         return res.json(purchases);
       }
       
-      const purchases = await storage.getAllPurchases();
+      // Get all purchases for user's organization
+      const purchases = await storage.getPurchasesByOrganization(user.organizationId);
       res.json(purchases);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4581,6 +4605,16 @@ export async function registerRoutes(
       if (!purchase) {
         return res.status(404).json({ error: "Purchase not found" });
       }
+      
+      // Verify organization access via client
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && purchase.clientId) {
+        const client = await storage.getClientWithOrgCheck(purchase.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       res.json(purchase);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4589,6 +4623,20 @@ export async function registerRoutes(
 
   app.get("/api/purchases/:id/lines", requireAuth, async (req, res) => {
     try {
+      // First verify purchase access
+      const purchase = await storage.getPurchase(req.params.id);
+      if (!purchase) {
+        return res.status(404).json({ error: "Purchase not found" });
+      }
+      
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && purchase.clientId) {
+        const client = await storage.getClientWithOrgCheck(purchase.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       const lines = await storage.getPurchaseLines(req.params.id);
       res.json(lines);
     } catch (error: any) {
@@ -4664,7 +4712,7 @@ export async function registerRoutes(
   });
 
   // ============== STOCK MOVEMENTS ==============
-  app.get("/api/stock-movements", requireAuth, async (req, res) => {
+  app.get("/api/stock-movements", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId, departmentId } = req.query;
       
@@ -4725,6 +4773,16 @@ export async function registerRoutes(
       if (!movement) {
         return res.status(404).json({ error: "Stock movement not found" });
       }
+      
+      // Verify organization access via client
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && movement.clientId) {
+        const client = await storage.getClientWithOrgCheck(movement.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       res.json(movement);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -5140,9 +5198,10 @@ export async function registerRoutes(
   });
 
   // ============== RECONCILIATIONS ==============
-  app.get("/api/reconciliations", requireAuth, async (req, res) => {
+  app.get("/api/reconciliations", requireAuth, requireClientAccess(), async (req, res) => {
     try {
-      const { departmentId, date } = req.query;
+      const { departmentId, date, clientId } = req.query;
+      const user = await storage.getUser(req.session.userId!);
       
       if (departmentId) {
         const reconciliations = await storage.getReconciliations(
@@ -5152,8 +5211,19 @@ export async function registerRoutes(
         return res.json(reconciliations);
       }
       
-      const reconciliations = await storage.getAllReconciliations();
-      res.json(reconciliations);
+      // If clientId provided, filter by client (already validated by middleware)
+      if (clientId) {
+        const reconciliations = await storage.getReconciliationsByClient(clientId as string);
+        return res.json(reconciliations);
+      }
+      
+      // Only return reconciliations for user's organization
+      if (user?.organizationId) {
+        const reconciliations = await storage.getReconciliationsByOrganization(user.organizationId);
+        return res.json(reconciliations);
+      }
+      
+      res.json([]);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -5178,6 +5248,16 @@ export async function registerRoutes(
       if (!reconciliation) {
         return res.status(404).json({ error: "Reconciliation not found" });
       }
+      
+      // Verify organization access via client
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && reconciliation.clientId) {
+        const client = await storage.getClientWithOrgCheck(reconciliation.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       res.json(reconciliation);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -5343,15 +5423,18 @@ export async function registerRoutes(
   });
 
   // ============== EXCEPTIONS ==============
-  app.get("/api/exceptions", requireAuth, async (req, res) => {
+  app.get("/api/exceptions", requireAuth, requireClientAccess(), async (req, res) => {
     try {
       const { clientId, departmentId, status, severity, includeDeleted } = req.query;
+      const user = await storage.getUser(req.session.userId!);
+      
       const exceptions = await storage.getExceptions({
         clientId: clientId as string | undefined,
         departmentId: departmentId as string | undefined,
         status: status as string | undefined,
         severity: severity as string | undefined,
         includeDeleted: includeDeleted === "true",
+        organizationId: user?.organizationId,
       });
       res.json(exceptions);
     } catch (error: any) {
@@ -5365,6 +5448,16 @@ export async function registerRoutes(
       if (!exception) {
         return res.status(404).json({ error: "Exception not found" });
       }
+      
+      // Verify organization access via client
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && exception.clientId) {
+        const client = await storage.getClientWithOrgCheck(exception.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       res.json(exception);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -5378,6 +5471,16 @@ export async function registerRoutes(
       if (!result) {
         return res.status(404).json({ error: "Exception not found" });
       }
+      
+      // Verify organization access via client
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.organizationId && result.exception.clientId) {
+        const client = await storage.getClientWithOrgCheck(result.exception.clientId, user.organizationId);
+        if (!client) {
+          return res.status(403).json({ error: "You do not have access to this resource" });
+        }
+      }
+      
       res.json(result);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
