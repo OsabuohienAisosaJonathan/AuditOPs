@@ -650,10 +650,17 @@ export async function registerRoutes(
         
         // Log successful login with cookie info
         const setCookieHeader = res.getHeader('Set-Cookie');
+        const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
+        
+        // Log the actual Set-Cookie header for debugging
+        console.log(`[LOGIN SET-COOKIE] ${setCookieStr.substring(0, 200)}...`);
+        
         logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
           userId: user.id,
           sessionId: req.sessionID,
           setCookiePresent: !!setCookieHeader,
+          setCookieHasSecure: setCookieStr.includes('Secure'),
+          setCookieHasDomain: setCookieStr.includes('Domain'),
           cookieSecure: req.session.cookie.secure,
           cookieDomain: req.session.cookie.domain || 'not set',
           cookieSameSite: req.session.cookie.sameSite,
@@ -1223,12 +1230,25 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/auth/me", requireAuth, async (req, res) => {
+  app.get("/api/auth/me", async (req, res) => {
+    const requestId = (req as any).requestId || 'unknown';
+    
+    // Log detailed session diagnostics for /api/auth/me
+    console.log(`[AUTH /api/auth/me] Request: requestId=${requestId}, host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, sessionUserId=${req.session?.userId || 'none'}, cookieSecure=${req.session?.cookie?.secure}`);
+    
+    if (!req.session?.userId) {
+      console.log(`[AUTH /api/auth/me] No session userId - returning 401. Cookies present: ${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
     try {
       const user = await storage.getUser(req.session.userId!);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
+      
+      console.log(`[AUTH /api/auth/me] Success: userId=${user.id}, org=${user.organizationId}`);
+      
       res.json({ 
         id: user.id, 
         username: user.username, 
