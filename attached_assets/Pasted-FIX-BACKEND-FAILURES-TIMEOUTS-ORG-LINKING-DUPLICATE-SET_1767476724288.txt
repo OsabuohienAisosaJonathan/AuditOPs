@@ -1,0 +1,79 @@
+FIX BACKEND FAILURES (TIMEOUTS + ORG LINKING + DUPLICATE SETTINGS) + STOP INFINITE SPINNERS
+
+Context:
+Production is timing out, dashboard/clients keep spinning/blank, and sometimes users can’t login. We already added subscription + org logic, so the app MUST be multi-tenant safe and fast.
+Do NOT redesign UI. Fix backend correctness + performance + error handling.
+
+A) HEALTH CHECK ENDPOINT
+1) Add GET /api/health that returns JSON:
+{
+  ok: true,
+  serverTime: ISO_STRING,
+  db: { ok: true/false, latencyMs: number },
+  env: { DATABASE_URL: true/false, RESEND_API_KEY: true/false, FROM_EMAIL: true/false, APP_URL: true/false }
+}
+- Do not print secrets; only booleans.
+
+B) SERVER REQUEST TIMING + ERROR LOGGING
+1) Add middleware for ALL /api routes:
+- log: method, path, status, durationMs
+- if durationMs > 2000 log "SLOW_ROUTE"
+- on error: log stack + route info
+2) Ensure logs show which request is hanging.
+
+C) ORGANIZATION (TENANT) CREATION + LINKING MUST ALWAYS HAPPEN
+1) On signup completion (after email verified OR on first successful login):
+- Ensure user has an organizationId.
+- If missing, create an organization (default name from signup firm/company name or user name).
+- Link user to that organization.
+2) This must be transactional (all or nothing). No partial state.
+3) If org missing, return a clear 409 with message: "OrgMissing" (only if creation fails).
+4) Every protected query MUST filter by organizationId (no cross-tenant leaks).
+
+D) FIX organization_settings UNIQUE CONSTRAINT + DUPLICATION ONCE AND FOR ALL
+1) Ensure organization_settings has exactly ONE row per organizationId.
+2) Implement UPSERT everywhere settings are saved:
+INSERT ... ON CONFLICT (organization_id) DO UPDATE ...
+3) Add a cleanup migration:
+- If duplicates exist, keep the most recent row, delete the rest, then add unique constraint safely.
+4) If deploy UI asks about deleting data, we should NOT delete all. We should run the cleanup + then add constraint.
+
+E) DATABASE INDEXES (PERFORMANCE)
+Add indexes if missing:
+- users.email
+- memberships.user_id (or users.organization_id depending on schema)
+- organization_settings.organization_id
+- clients.organization_id
+- departments.organization_id
+- categories.organization_id
+These must match your actual table names.
+
+F) API TIMEOUT PROTECTION (SERVER)
+1) Add a safe server-side request timeout (e.g., 20s) so hung requests return JSON error:
+{ error: "timeout", message: "Request took too long" }
+2) Ensure DB queries use pooled connections.
+
+G) FRONTEND: NEVER INFINITE SPIN / NEVER BLANK
+1) All pages must handle:
+- loading state
+- error state with message + Retry button
+- empty state
+2) Ensure loading=false in finally for ALL fetch flows.
+3) If 401 happens:
+- redirect to /account/signin cleanly (no crash)
+- show message: "Session expired, please sign in."
+
+OUTPUT REQUIRED
+1) List exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide code patches with START/END markers.
+4) Provide migration/DB steps with clear order:
+   - cleanup duplicates
+   - add unique constraint
+   - add indexes
+5) Provide a production test checklist + results:
+   - /api/health returns ok with db latency
+   - signup -> verify -> login works
+   - dashboard loads <3s
+   - clients loads <3s
+   - no cross-tena
