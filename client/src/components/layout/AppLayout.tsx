@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Building2, LogOut, Check, ChevronsUpDown, Sun, Moon, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { NotificationsDropdown } from "@/components/NotificationsDropdown";
-import logoImage from "@/assets/miauditops-logo.jpeg";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { useState, useEffect } from "react";
@@ -22,10 +21,7 @@ import { useEntitlements } from "@/lib/entitlements-context";
 import { Lock } from "lucide-react";
 import { HorizontalNav } from "./HorizontalNav";
 import { useLayout } from "@/lib/layout-context";
-
-import logo2 from "@assets/logo2.png";
-
-import Simple_Profile_Photo_Instagram_Post from "@assets/Simple Profile Photo Instagram Post.png";
+import logoImage from "@/assets/logo.png";
 
 const getRoleBadge = (role: string) => {
   switch (role) {
@@ -322,14 +318,13 @@ function AppSidebar({ location, user, onLogout }: { location: string; user: any;
   
   return (
     <Sidebar className="border-r border-border/40">
-      <SidebarHeader className="border-b border-border/40 px-4 py-4">
-        <Link href="/dashboard" className="flex items-center gap-3">
+      <SidebarHeader className="border-b border-border/40 px-4 py-3">
+        <Link href="/dashboard" className="flex items-center">
           <img 
-            src={Simple_Profile_Photo_Instagram_Post}
+            src={logoImage}
             alt="MiAuditOps" 
-            className="h-24 w-auto max-w-[120px] object-contain"
+            className="h-10 w-auto object-contain"
           />
-          <span className="font-display font-bold text-xl text-white">MiAuditOps</span>
         </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">

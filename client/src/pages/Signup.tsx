@@ -7,7 +7,7 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, Building2, Users, ArrowLeft } from "lucide-react";
-import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
+import logoImage from "@/assets/logo.png";
 
 export default function Signup() {
   const [, setLocation] = useLocation();
@@ -112,12 +112,12 @@ export default function Signup() {
   };
 
   return (
-    <div className="public-dark min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background">
       <div className="p-4">
         <Button 
           variant="ghost" 
           onClick={() => setLocation("/")}
-          className="gap-2 text-muted-foreground hover:text-foreground hover:bg-white/10"
+          className="gap-2 text-muted-foreground hover:text-foreground"
           data-testid="button-back-home"
         >
           <ArrowLeft className="h-4 w-4" /> Back to Home
@@ -130,9 +130,9 @@ export default function Signup() {
             <div className="text-center space-y-2 mb-8">
               <Link href="/">
                 <img 
-                  src={logoDarkImage} 
+                  src={logoImage} 
                   alt="MiAuditOps" 
-                  className="h-24 mx-auto object-contain cursor-pointer" 
+                  className="h-16 mx-auto object-contain cursor-pointer" 
                 />
               </Link>
               <h1 className="text-2xl font-display font-bold text-foreground">Create your account</h1>

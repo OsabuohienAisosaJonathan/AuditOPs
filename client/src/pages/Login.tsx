@@ -6,8 +6,8 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, Mail, Play } from "lucide-react";
-import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
+import { RefreshCw, Mail, Play, Eye, EyeOff } from "lucide-react";
+import logoImage from "@/assets/logo.png";
 
 const isDevelopment = import.meta.env.DEV;
 
@@ -19,6 +19,7 @@ export default function Login() {
   const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleDemoLogin = async () => {
     setIsDemoLoading(true);
@@ -124,14 +125,14 @@ export default function Login() {
   };
 
   return (
-    <div className="public-dark flex min-h-screen items-center justify-center p-4 bg-background">
+    <div className="flex min-h-screen items-center justify-center p-4 bg-background">
       <div className="w-full max-w-md space-y-8 p-8 rounded-xl border border-border shadow-lg bg-card">
         <div className="text-center space-y-2">
           <Link href="/" className="block mx-auto mb-4">
             <img 
-              src={logoDarkImage} 
+              src={logoImage} 
               alt="MiAuditOps" 
-              className="h-24 mx-auto object-contain cursor-pointer" 
+              className="h-16 mx-auto object-contain cursor-pointer" 
             />
           </Link>
           <p className="text-sm text-muted-foreground">Enter your credentials to access the workspace</p>
@@ -160,14 +161,24 @@ export default function Login() {
                 Forgot password?
               </Link>
             </div>
-            <Input 
-              id="password" 
-              name="password"
-              type="password" 
-              className="h-10"
-              required
-              data-testid="input-password"
-            />
+            <div className="relative">
+              <Input 
+                id="password" 
+                name="password"
+                type={showPassword ? "text" : "password"}
+                className="h-10 pr-10"
+                required
+                data-testid="input-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-toggle-password"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           
           <div className="flex items-center space-x-2">
@@ -204,7 +215,7 @@ export default function Login() {
             <Button 
               type="button"
               variant="outline"
-              className="w-full h-10 font-medium gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/10" 
+              className="w-full h-10 font-medium gap-2 border-dashed border-primary text-primary hover:bg-primary/10" 
               disabled={isDemoLoading}
               onClick={handleDemoLogin}
               data-testid="button-demo-login"

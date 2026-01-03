@@ -26,12 +26,8 @@ import {
   Lock
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
 import { useToast } from "@/hooks/use-toast";
-
-import logo_1 from "@assets/logo 1.png";
-
-import Simple_Profile_Photo_Instagram_Post__1_ from "@assets/Simple Profile Photo Instagram Post (1).png";
+import logoImage from "@/assets/logo.png";
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -185,24 +181,24 @@ export default function Home() {
   ];
 
   return (
-    <div className="public-dark min-h-screen bg-background">
-      <nav className="sticky top-0 z-50 bg-black border-b border-border">
+    <div className="min-h-screen bg-white">
+      <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+          <div className="flex justify-between items-center h-20">
             <Link href="/" className="flex items-center">
-              <img src={Simple_Profile_Photo_Instagram_Post__1_} alt="MiAuditOps" className="h-10 object-contain" />
+              <img src={logoImage} alt="MiAuditOps" className="h-14 object-contain" />
             </Link>
             <div className="hidden md:flex items-center gap-6">
-              <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-features">Features</a>
-              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-pricing">Pricing</a>
-              <a href="#about" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-about">About</a>
-              <a href="#contact" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="nav-contact">Contact</a>
+              <a href="#features" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors" data-testid="nav-features">Features</a>
+              <a href="#pricing" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors" data-testid="nav-pricing">Pricing</a>
+              <a href="#about" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors" data-testid="nav-about">About</a>
+              <a href="#contact" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors" data-testid="nav-contact">Contact</a>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={() => setLocation("/login")} className="text-muted-foreground hover:text-foreground hover:bg-white/10" data-testid="nav-signin">
+              <Button variant="outline" onClick={() => setLocation("/login")} className="text-gray-700 border-gray-300 hover:bg-gray-50" data-testid="nav-signin">
                 Sign In
               </Button>
-              <Button onClick={() => setLocation("/signup")} className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" data-testid="nav-signup">
+              <Button onClick={() => setLocation("/signup")} className="bg-primary text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg" data-testid="nav-signup">
                 Get Started
               </Button>
             </div>
@@ -624,7 +620,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
-              <img src={logoDarkImage} alt="MiAuditOps" className="h-10 object-contain" />
+              <img src={logoImage} alt="MiAuditOps" className="h-12 object-contain" />
             </div>
             <div className="flex items-center gap-6 text-sm">
               <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
