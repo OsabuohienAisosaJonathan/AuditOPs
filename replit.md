@@ -105,6 +105,23 @@ The department system supports flexible inheritance:
 - Scope-based access control (users can be limited to specific clients/outlets)
 - **Email verification** required for new registrations
 
+### Multi-Tenant Data Isolation
+**CRITICAL SECURITY PATTERN**: All data access is scoped by organization to prevent cross-account data leaks.
+
+Key enforcement points:
+- **`requireClientAccess` middleware**: Verifies client belongs to user's organization BEFORE checking fine-grained access
+- **`getClients(organizationId)` storage method**: Filters clients by organization
+- **`getClientWithOrgCheck(id, organizationId)`**: Verifies client ownership on read
+- **Dashboard queries**: All aggregations filter by organization's client IDs
+
+Pattern for new endpoints:
+1. Get user from session: `storage.getUser(req.session.userId)`
+2. Verify organizationId exists: `if (!user?.organizationId) return 400`
+3. Pass organizationId to storage methods
+4. Storage methods filter by organizationId (directly or via client lookup)
+
+Empty organizations get zeroed metrics (never global data fallback).
+
 ### Email Configuration
 Email sending is powered by Resend (https://resend.com). Required environment variables:
 - `RESEND_API_KEY` (secret): Your Resend API key for sending transactional emails
