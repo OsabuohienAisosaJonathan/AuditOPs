@@ -11,9 +11,6 @@ import { LayoutProvider } from "@/lib/layout-context";
 import { EntitlementsProvider } from "@/lib/entitlements-context";
 import { NetworkStatusProvider } from "@/lib/network-status";
 import { OfflineBanner } from "@/components/OfflineBanner";
-import { SessionExpiredProvider, useSessionExpired } from "@/lib/session-expired-context";
-import { AuthExpiredOverlay } from "@/components/AuthExpiredOverlay";
-import { setSessionExpiredCallback, clearSessionExpiredCallback } from "@/lib/api";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
@@ -44,27 +41,17 @@ import AppLayout from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useEffect } from "react";
 
-function SessionExpiredBridge() {
-  const { setSessionExpired } = useSessionExpired();
-  
-  useEffect(() => {
-    setSessionExpiredCallback(setSessionExpired);
-    return () => clearSessionExpiredCallback();
-  }, [setSessionExpired]);
-  
-  return null;
-}
-
 function ProtectedRoute({ component: Component, requiredRole }: { component: React.ComponentType; requiredRole?: string }) {
   const { user, isLoading, authError, clearAuthError } = useAuth();
-  const { isSessionExpired, setSessionExpired } = useSessionExpired();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!isLoading && !user && !authError && !isSessionExpired) {
-      setSessionExpired();
+    // Only redirect to login if we're done loading, no user, and no auth error
+    // (auth errors like timeout should show error UI, not redirect)
+    if (!isLoading && !user && !authError) {
+      setLocation("/login");
     }
-  }, [user, isLoading, authError, isSessionExpired, setSessionExpired]);
+  }, [user, isLoading, authError, setLocation]);
 
   // Show skeleton while checking session
   if (isLoading) {
@@ -204,25 +191,21 @@ function App() {
       <ThemeProvider defaultTheme="system" storageKey="miemploya-theme">
         <QueryClientProvider client={queryClient}>
           <NetworkStatusProvider>
-            <SessionExpiredProvider>
-              <AuthProvider>
-                <SessionExpiredBridge />
-                <EntitlementsProvider>
-                  <ClientProvider>
-                    <CurrencyProvider>
-                      <LayoutProvider>
-                        <TooltipProvider>
-                          <OfflineBanner />
-                          <AuthExpiredOverlay />
-                          <Toaster />
-                          <Router />
-                        </TooltipProvider>
-                      </LayoutProvider>
-                    </CurrencyProvider>
-                  </ClientProvider>
-                </EntitlementsProvider>
-              </AuthProvider>
-            </SessionExpiredProvider>
+            <AuthProvider>
+              <EntitlementsProvider>
+                <ClientProvider>
+                  <CurrencyProvider>
+                    <LayoutProvider>
+                      <TooltipProvider>
+                        <OfflineBanner />
+                        <Toaster />
+                        <Router />
+                      </TooltipProvider>
+                    </LayoutProvider>
+                  </CurrencyProvider>
+                </ClientProvider>
+              </EntitlementsProvider>
+            </AuthProvider>
           </NetworkStatusProvider>
         </QueryClientProvider>
       </ThemeProvider>

@@ -2,14 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useLocation, Link, useSearch } from "wouter";
-import { useState, useMemo } from "react";
+import { useLocation, Link } from "wouter";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Mail, Play, Eye, EyeOff, Activity } from "lucide-react";
 import logoImage from "@/assets/logo2.png";
 import { logAuthEvent } from "@/lib/auth-debug";
-import { clearStoredReturnUrl, getStoredReturnUrl } from "@/lib/session-expired-context";
 
 const isDevelopment = import.meta.env.DEV;
 
@@ -23,7 +22,6 @@ interface HealthCheckResult {
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const search = useSearch();
   const { toast } = useToast();
   const { login, refreshUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
@@ -34,13 +32,6 @@ export default function Login() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [healthResult, setHealthResult] = useState<HealthCheckResult | null>(null);
-
-  const returnUrl = useMemo(() => {
-    const params = new URLSearchParams(search);
-    const urlParam = params.get("returnUrl");
-    const storedUrl = getStoredReturnUrl();
-    return urlParam || storedUrl || "/dashboard";
-  }, [search]);
 
   const checkServerHealth = async () => {
     setIsCheckingHealth(true);
@@ -92,12 +83,11 @@ export default function Login() {
       
       if (response.ok) {
         await refreshUser();
-        clearStoredReturnUrl();
         toast({
           title: "Demo Mode",
           description: "Logged in as demo user for preview testing",
         });
-        setLocation(returnUrl);
+        setLocation("/dashboard");
       } else {
         toast({
           variant: "destructive",
@@ -166,12 +156,11 @@ export default function Login() {
 
     try {
       const user = await login(username, password);
-      clearStoredReturnUrl();
       toast({
         title: "Welcome back!",
         description: `Signed in as ${user.fullName}`,
       });
-      setLocation(returnUrl);
+      setLocation("/dashboard");
     } catch (error: any) {
       if (error.code === "EMAIL_NOT_VERIFIED" && error.email) {
         setUnverifiedEmail(error.email);

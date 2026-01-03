@@ -395,26 +395,6 @@ export function setQueryClientRef(client: { clear: () => void }) {
   queryClientRef = client;
 }
 
-// Callback for setting session expired state (set by SessionExpiredProvider)
-let onSessionExpiredCallback: ((returnUrl?: string) => void) | null = null;
-
-export function setSessionExpiredCallback(callback: (returnUrl?: string) => void) {
-  onSessionExpiredCallback = callback;
-}
-
-export function clearSessionExpiredCallback() {
-  onSessionExpiredCallback = null;
-}
-
-// Check if auto-redirect is disabled (for debugging production issues)
-function isAutoRedirectDisabled(): boolean {
-  if (typeof window !== "undefined") {
-    return sessionStorage.getItem("DISABLE_AUTO_LOGIN_REDIRECT") === "true" ||
-           localStorage.getItem("DISABLE_AUTO_LOGIN_REDIRECT") === "true";
-  }
-  return false;
-}
-
 // Silent refresh state - dedupe concurrent refresh attempts
 let refreshPromise: Promise<boolean> | null = null;
 let lastRefreshAttempt = 0;
@@ -495,30 +475,13 @@ export function handle401Redirect() {
   const currentPath = window.location.pathname;
   if (!PUBLIC_PATHS.includes(currentPath)) {
     isRedirecting = true;
-    const autoRedirectOff = isAutoRedirectDisabled();
-    logAuthEvent("SESSION_EXPIRED", { message: `Session expired at ${currentPath}. autoRedirect=${!autoRedirectOff}` });
+    logAuthEvent("REDIRECT_LOGIN", { message: `Redirecting from ${currentPath}` });
     
     if (queryClientRef) {
       queryClientRef.clear();
     }
     
     toast.error("Session expired, please log in again");
-    
-    // Use callback to show overlay instead of direct redirect
-    if (onSessionExpiredCallback) {
-      onSessionExpiredCallback(currentPath + window.location.search);
-      isRedirecting = false;
-      return;
-    }
-    
-    // Fallback: If auto-redirect is disabled, don't redirect - just log
-    if (isAutoRedirectDisabled()) {
-      console.warn("[Auth] Auto-redirect disabled. Set DISABLE_AUTO_LOGIN_REDIRECT=false to re-enable.");
-      isRedirecting = false;
-      return;
-    }
-    
-    // Last resort fallback: direct redirect (should rarely happen if overlay is set up)
     window.location.href = "/login";
   }
 }
