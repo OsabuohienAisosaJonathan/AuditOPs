@@ -372,34 +372,58 @@ export async function registerRoutes(
 
   app.get("/api/diag/session", async (req, res) => {
     const startTime = Date.now();
+    const requestId = (req as any).requestId || 'unknown';
+    
+    // Log session diagnostic request
+    console.log(`[SESSION DIAGNOSTIC] Request: requestId=${requestId}, host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, cookieNames=${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
+    
     try {
       if (!req.session?.userId) {
-        return res.json({
+        const response = {
           authed: false,
           userId: null,
           organizationId: null,
           role: null,
           sessionCookie: !!req.headers.cookie?.includes("connect.sid"),
+          requestId,
+          host: req.headers.host,
+          protocol: req.protocol,
+          secure: req.secure,
+          xForwardedProto: req.headers['x-forwarded-proto'] || 'not set',
+          cookieDomain: process.env.COOKIE_DOMAIN || 'not set',
+          trustProxy: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled',
           responseTimeMs: Date.now() - startTime
-        });
+        };
+        console.log(`[SESSION DIAGNOSTIC] Response (not authed):`, JSON.stringify(response));
+        return res.json(response);
       }
       
       const user = await storage.getUser(req.session.userId);
       const subscription = user?.organizationId ? await storage.getSubscription(user.organizationId) : null;
       
-      res.json({
+      const response = {
         authed: true,
         userId: req.session.userId,
         organizationId: user?.organizationId || null,
         role: user?.role || null,
         planName: subscription?.planName || null,
         subscriptionStatus: subscription?.status || null,
+        requestId,
+        host: req.headers.host,
+        protocol: req.protocol,
+        secure: req.secure,
+        xForwardedProto: req.headers['x-forwarded-proto'] || 'not set',
+        cookieDomain: process.env.COOKIE_DOMAIN || 'not set',
+        sessionId: req.sessionID?.substring(0, 8) + '...',
         responseTimeMs: Date.now() - startTime
-      });
+      };
+      console.log(`[SESSION DIAGNOSTIC] Response (authed):`, JSON.stringify(response));
+      res.json(response);
     } catch (error: any) {
       res.status(500).json({
         authed: false,
         error: error.message,
+        requestId,
         responseTimeMs: Date.now() - startTime
       });
     }
@@ -488,10 +512,39 @@ export async function registerRoutes(
   });
 
   // ============== AUTH ROUTES ==============
+  
+  // Auth flow diagnostic logging helper
+  function logAuthDiagnostic(req: Request, res: Response, event: string, details: Record<string, any>) {
+    const requestId = (req as any).requestId || 'unknown';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const diagnosticData = {
+      event,
+      requestId,
+      host: req.headers.host,
+      origin: req.headers.origin,
+      protocol: req.protocol,
+      secure: req.secure,
+      xForwardedProto: req.headers['x-forwarded-proto'],
+      xForwardedFor: req.headers['x-forwarded-for'],
+      hasCookieHeader: !!req.headers.cookie,
+      cookieNames: req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none',
+      sessionExists: !!req.session,
+      sessionUserId: req.session?.userId || null,
+      isProduction,
+      trustProxy: isProduction ? 'enabled' : 'disabled',
+      cookieDomain: process.env.COOKIE_DOMAIN || 'not set',
+      ...details,
+    };
+    console.log(`[AUTH DIAGNOSTIC] ${event}:`, JSON.stringify(diagnosticData, null, 2));
+  }
+  
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = req.body;
       const identifier = username || req.ip;
+      
+      // Log incoming request diagnostics
+      logAuthDiagnostic(req, res, 'LOGIN_ATTEMPT', { username });
       
       const rateLimit = checkRateLimit(identifier);
       if (!rateLimit.allowed) {
@@ -566,24 +619,48 @@ export async function registerRoutes(
       req.session.role = user.role;
       (req.session as any).createdAt = Date.now(); // Track session creation for absolute max age
       
-      await storage.createAuditLog({
-        userId: user.id,
-        action: "Login",
-        entity: "Session",
-        details: "Successful login via web",
-        ipAddress: req.ip || "Unknown",
-      });
+      // Save session explicitly and log result
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          logAuthDiagnostic(req, res, 'LOGIN_SESSION_SAVE_ERROR', { 
+            userId: user.id, 
+            error: saveErr.message 
+          });
+          return res.status(500).json({ error: "Failed to establish session" });
+        }
+        
+        // Log successful login with cookie info
+        const setCookieHeader = res.getHeader('Set-Cookie');
+        logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
+          userId: user.id,
+          sessionId: req.sessionID,
+          setCookiePresent: !!setCookieHeader,
+          cookieSecure: req.session.cookie.secure,
+          cookieDomain: req.session.cookie.domain || 'not set',
+          cookieSameSite: req.session.cookie.sameSite,
+          cookieMaxAge: req.session.cookie.maxAge,
+        });
+        
+        storage.createAuditLog({
+          userId: user.id,
+          action: "Login",
+          entity: "Session",
+          details: "Successful login via web",
+          ipAddress: req.ip || "Unknown",
+        });
 
-      res.json({ 
-        id: user.id, 
-        username: user.username, 
-        email: user.email, 
-        fullName: user.fullName, 
-        role: user.role,
-        mustChangePassword: user.mustChangePassword,
-        accessScope: user.accessScope,
+        res.json({ 
+          id: user.id, 
+          username: user.username, 
+          email: user.email, 
+          fullName: user.fullName, 
+          role: user.role,
+          mustChangePassword: user.mustChangePassword,
+          accessScope: user.accessScope,
+        });
       });
     } catch (error: any) {
+      logAuthDiagnostic(req, res, 'LOGIN_ERROR', { error: error.message });
       res.status(400).json({ error: error.message });
     }
   });
@@ -769,8 +846,14 @@ export async function registerRoutes(
 
   // Session refresh endpoint - explicitly extends session expiry
   app.post("/api/auth/refresh", async (req, res) => {
+    const requestId = (req as any).requestId || 'unknown';
+    
+    // Log refresh request
+    console.log(`[AUTH REFRESH] Request: requestId=${requestId}, host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, hasCookie=${!!req.headers.cookie}, sessionUserId=${req.session?.userId || 'none'}`);
+    
     try {
       if (!req.session?.userId) {
+        console.log(`[AUTH REFRESH] No session: requestId=${requestId}, cookieNames=${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
         return res.status(401).json({ error: "No active session", code: "NO_SESSION" });
       }
       
