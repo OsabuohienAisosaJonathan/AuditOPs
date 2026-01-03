@@ -1,0 +1,60 @@
+STOP INSTANT REDIRECT LOOP TO /login (PRODUCTION DEBUG + PERMANENT UX IMPROVEMENT)
+
+Problem:
+In production, after login it briefly shows dashboard then instantly redirects to /login. Redirect happens too quickly to diagnose. Many redirects were added during spinning fixes.
+
+Goal:
+1) Remove/disable automatic redirects to /login that happen immediately on 401.
+2) Replace with a friendly AuthExpired overlay/page that renders reliably.
+3) Add a debug kill-switch to disable redirects in production so we can test.
+
+A) FIND ALL REDIRECTS TO LOGIN
+Search entire repo for:
+- "/login", "/signin"
+- router.push, router.replace, navigate(
+- window.location, location.href
+- middleware/auth guard files
+List every file + line where redirect occurs.
+
+B) INTRODUCE CENTRAL AUTH GUARD (SINGLE SOURCE OF TRUTH)
+Create one auth handler:
+- If request returns 401:
+  1) Clear local auth state
+  2) Set global authError = true
+  3) DO NOT redirect automatically
+  4) Render <AuthExpiredOverlay />
+
+Overlay content:
+- Title: “Session expired”
+- Message: “We could not verify your session. Your data is safe.”
+- Buttons:
+  - Retry (re-call /api/profile)
+  - Sign in again (manual navigate to /login with returnUrl)
+
+C) ADD A “DISABLE_AUTO_LOGIN_REDIRECT” SWITCH
+Implement env flag:
+- DISABLE_AUTO_LOGIN_REDIRECT=true
+When enabled:
+- absolutely no auto redirect to login
+- only show overlay
+Even when disabled:
+- only redirect after user clicks “Sign in again”
+- never redirect during render phase
+
+D) FIX RACE CONDITION (DO NOT THROW + REDIRECT)
+Any place that currently does:
+throw error + redirect
+must be changed to:
+set authError state + return fallback UI
+
+E) KEEP RETURN URL
+When unauthorized occurs:
+- store last route (pathname + query) as returnUrl
+- pass returnUrl to login page
+- after successful login, navigate back to returnUrl
+
+REQUIRED OUTPUT:
+1) Exact file paths edited + first 10–15 lines of each.
+2) Code patches with START/END markers.
+3) Explain which redirect lines were removed/changed and why.
+END
