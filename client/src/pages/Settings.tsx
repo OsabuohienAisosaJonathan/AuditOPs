@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { organizationSettingsApi, userSettingsApi } from "@/lib/api";
+import { organizationSettingsApi, userSettingsApi, billingApi } from "@/lib/api";
 import { useCurrency } from "@/lib/currency-context";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
@@ -35,6 +35,12 @@ export default function Settings() {
   const { data: userSettings, isLoading: isLoadingUserSettings } = useQuery({
     queryKey: ["user-settings"],
     queryFn: userSettingsApi.get,
+  });
+  
+  const { data: billingData, isLoading: isLoadingBilling } = useQuery({
+    queryKey: ["billing-plan"],
+    queryFn: billingApi.getPlan,
+    enabled: user?.role === "super_admin",
   });
   
   useEffect(() => {
@@ -315,50 +321,109 @@ export default function Settings() {
               <CardDescription>View your subscription and billing details</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-sm">Current Plan</Label>
-                  <p className="font-medium text-lg capitalize">{orgSettings?.currency === "NGN" ? "Starter" : "Growth"}</p>
+              {isLoadingBilling ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-sm">Billing Cycle</Label>
-                  <p className="font-medium">Monthly</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-sm">Status</Label>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-                    Active
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-sm">Next Billing Date</Label>
-                  <p className="font-medium">—</p>
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <Label className="text-muted-foreground text-sm mb-3 block">Usage</Label>
-                <div className="grid md:grid-cols-3 gap-4">
-                  <div className="p-3 bg-muted rounded-lg">
-                    <p className="text-2xl font-bold">—</p>
-                    <p className="text-sm text-muted-foreground">Clients Used</p>
+              ) : (
+                <>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground text-sm">Current Plan</Label>
+                      <p className="font-medium text-lg capitalize">{billingData?.plan || "Starter"}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground text-sm">Billing Cycle</Label>
+                      <p className="font-medium">Monthly</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground text-sm">Status</Label>
+                      {billingData?.isActive ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                          {billingData?.status === "trial" ? "Trial" : "Active"}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
+                          {billingData?.status || "Inactive"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground text-sm">Next Billing Date</Label>
+                      <p className="font-medium">
+                        {billingData?.endDate ? new Date(billingData.endDate).toLocaleDateString() : "—"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="p-3 bg-muted rounded-lg">
-                    <p className="text-2xl font-bold">—</p>
-                    <p className="text-sm text-muted-foreground">SRD Stores</p>
+                  <Separator />
+                  <div>
+                    <Label className="text-muted-foreground text-sm mb-3 block">Usage</Label>
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <div className="p-3 bg-muted rounded-lg">
+                        <p className="text-2xl font-bold">
+                          {billingData?.usage?.clientsUsed ?? 0} / {billingData?.usage?.clientsAllowed ?? "∞"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Clients Used</p>
+                      </div>
+                      <div className="p-3 bg-muted rounded-lg">
+                        <p className="text-2xl font-bold">
+                          {(billingData?.usage?.totalMainStores ?? 0) + (billingData?.usage?.totalDeptStores ?? 0)}
+                        </p>
+                        <p className="text-sm text-muted-foreground">SRD Stores</p>
+                      </div>
+                      <div className="p-3 bg-muted rounded-lg">
+                        <p className="text-2xl font-bold">
+                          {billingData?.usage?.seatsUsed ?? 0} / {billingData?.usage?.seatsAllowed ?? "∞"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Team Members</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-3 bg-muted rounded-lg">
-                    <p className="text-2xl font-bold">—</p>
-                    <p className="text-sm text-muted-foreground">Team Members</p>
+                  <Separator />
+                  <div className="p-4 bg-muted/50 rounded-lg">
+                    <h4 className="font-medium mb-2">Plan Features</h4>
+                    <div className="grid md:grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        {billingData?.entitlements?.canDownloadReports ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <span className="h-4 w-4 text-muted-foreground">—</span>
+                        )}
+                        <span>Report Downloads</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {billingData?.entitlements?.canExportData ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <span className="h-4 w-4 text-muted-foreground">—</span>
+                        )}
+                        <span>Data Exports</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {billingData?.entitlements?.canAccessApi ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <span className="h-4 w-4 text-muted-foreground">—</span>
+                        )}
+                        <span>API Access</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {billingData?.entitlements?.canCustomBranding ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <span className="h-4 w-4 text-muted-foreground">—</span>
+                        )}
+                        <span>Custom Branding</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <Separator />
-              <div className="flex justify-end">
-                <Button variant="outline" disabled>
-                  Upgrade Plan
-                </Button>
-              </div>
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={() => toast.info("Please contact sales to upgrade your plan")}>
+                      Upgrade Plan
+                    </Button>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         )}

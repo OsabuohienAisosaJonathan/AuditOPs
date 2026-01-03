@@ -607,6 +607,63 @@ export const notificationsApi = {
     fetchApi<{ success: boolean }>("/notifications/mark-all-read", { method: "POST" }),
 };
 
+// Billing types
+export interface BillingPlan {
+  plan: string;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  isActive: boolean;
+  entitlements: {
+    maxClients: number;
+    maxMainStoresPerClient: number;
+    maxDeptStoresPerClient: number;
+    maxSeats: number;
+    canDownloadReports: boolean;
+    canExportData: boolean;
+    canAccessApi: boolean;
+    canCustomBranding: boolean;
+  };
+  usage: {
+    clientsUsed: number;
+    clientsAllowed: number;
+    totalMainStores: number;
+    totalDeptStores: number;
+    srdUsageByClient: Record<string, { mainStores: number; deptStores: number }>;
+    seatsUsed: number;
+    seatsAllowed: number;
+  };
+  organizationName: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  organizationId: string;
+  amount: string;
+  currency: string;
+  status: string;
+  periodCoveredStart: string | null;
+  periodCoveredEnd: string | null;
+  reference: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export const billingApi = {
+  getPlan: () => fetchApi<BillingPlan>("/billing/plan"),
+  getPayments: () => fetchApi<PaymentRecord[]>("/billing/payments"),
+  markPaid: (data: { amount: number; currency?: string; periodMonths: number; reference?: string; notes?: string }) =>
+    fetchApi<{ success: boolean; payment: PaymentRecord; message: string }>("/billing/mark-paid", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  upgradePlan: (planName: string) =>
+    fetchApi<{ success: boolean; message: string }>("/billing/upgrade", {
+      method: "POST",
+      body: JSON.stringify({ planName }),
+    }),
+};
+
 // Data Export types
 export interface DataExport {
   id: string;
