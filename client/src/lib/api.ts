@@ -12,6 +12,7 @@ export interface User {
   accessScope?: { clientIds?: string[]; departmentIds?: string[]; global?: boolean } | null;
   phone?: string | null;
   mustChangePassword?: boolean;
+  organizationId?: string | null;
 }
 
 export interface AdminActivityLog {

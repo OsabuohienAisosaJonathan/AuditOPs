@@ -9,6 +9,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { CurrencyProvider } from "@/lib/currency-context";
 import { LayoutProvider } from "@/lib/layout-context";
 import { EntitlementsProvider } from "@/lib/entitlements-context";
+import { NetworkStatusProvider } from "@/lib/network-status";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
@@ -141,20 +143,23 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="system" storageKey="miemploya-theme">
         <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <EntitlementsProvider>
-              <ClientProvider>
-                <CurrencyProvider>
-                  <LayoutProvider>
-                    <TooltipProvider>
-                      <Toaster />
-                      <Router />
-                    </TooltipProvider>
-                  </LayoutProvider>
-                </CurrencyProvider>
-              </ClientProvider>
-            </EntitlementsProvider>
-          </AuthProvider>
+          <NetworkStatusProvider>
+            <AuthProvider>
+              <EntitlementsProvider>
+                <ClientProvider>
+                  <CurrencyProvider>
+                    <LayoutProvider>
+                      <TooltipProvider>
+                        <OfflineBanner />
+                        <Toaster />
+                        <Router />
+                      </TooltipProvider>
+                    </LayoutProvider>
+                  </CurrencyProvider>
+                </ClientProvider>
+              </EntitlementsProvider>
+            </AuthProvider>
+          </NetworkStatusProvider>
         </QueryClientProvider>
       </ThemeProvider>
     </ErrorBoundary>
