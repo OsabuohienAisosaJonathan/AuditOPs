@@ -151,6 +151,11 @@ export async function registerRoutes(
     app.set("trust proxy", 1);
   }
   
+  // Configure session cookie domain for production to support both www and non-www
+  const cookieDomain = process.env.NODE_ENV === "production" && process.env.COOKIE_DOMAIN 
+    ? process.env.COOKIE_DOMAIN 
+    : undefined;
+  
   app.use(
     session({
       store: new PgStore({
@@ -167,6 +172,7 @@ export async function registerRoutes(
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         maxAge: 24 * 60 * 60 * 1000,
+        domain: cookieDomain,
       },
     })
   );
@@ -443,6 +449,81 @@ export async function registerRoutes(
         role: user.role,
         mustChangePassword: user.mustChangePassword,
         accessScope: user.accessScope,
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Demo login for development preview - creates or reuses a demo account
+  app.post("/api/auth/demo-login", async (req, res) => {
+    try {
+      // Only allow demo login in development mode for security
+      if (process.env.NODE_ENV === "production") {
+        return res.status(403).json({ error: "Demo login is not available in production" });
+      }
+
+      const DEMO_EMAIL = "demo@miauditops.com";
+      const DEMO_USERNAME = "demo_user";
+      const DEMO_PASSWORD = "DemoPass123!";
+      const DEMO_FULLNAME = "Demo User";
+
+      // Check if demo user exists
+      let demoUser = await storage.getUserByEmail(DEMO_EMAIL);
+      
+      if (!demoUser) {
+        // Create demo organization
+        const demoOrg = await storage.createOrganization({
+          name: "Demo Organization",
+        });
+
+        // Create demo user with verified email
+        const hashedPassword = await hash(DEMO_PASSWORD, 12);
+        demoUser = await storage.createUser({
+          username: DEMO_USERNAME,
+          email: DEMO_EMAIL,
+          password: hashedPassword,
+          fullName: DEMO_FULLNAME,
+          role: "super_admin",
+          status: "active",
+          mustChangePassword: false,
+          emailVerified: true,
+          accessScope: { global: true },
+          organizationId: demoOrg.id,
+        });
+
+        // Create a demo client for the demo organization
+        await storage.createClient({
+          name: "Demo Restaurant",
+          organizationId: demoOrg.id,
+        });
+      }
+
+      // Auto login the demo user
+      req.session.userId = demoUser.id;
+      req.session.role = demoUser.role;
+      
+      await storage.updateUser(demoUser.id, {
+        lastLoginAt: new Date(),
+      });
+
+      await storage.createAuditLog({
+        userId: demoUser.id,
+        action: "Demo Login",
+        entity: "Session",
+        details: "Demo account login for development preview",
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json({ 
+        id: demoUser.id, 
+        username: demoUser.username, 
+        email: demoUser.email, 
+        fullName: demoUser.fullName, 
+        role: demoUser.role,
+        mustChangePassword: false,
+        accessScope: demoUser.accessScope,
+        isDemo: true,
       });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -4562,37 +4643,24 @@ export async function registerRoutes(
   // ============== PURCHASES ==============
   app.get("/api/purchases", requireAuth, async (req, res) => {
     try {
-      const { outletId } = req.query;
+      const { clientId } = req.query;
       const user = await storage.getUser(req.session.userId!);
       if (!user?.organizationId) {
         return res.status(400).json({ error: "Your account is not associated with an organization" });
       }
       
-      if (outletId) {
-        // Verify outlet belongs to user's organization
-        const outlet = await storage.getOutlet(outletId as string);
-        if (!outlet) {
-          return res.status(404).json({ error: "Outlet not found" });
-        }
-        const client = await storage.getClientWithOrgCheck(outlet.clientId, user.organizationId);
+      if (clientId) {
+        // Verify client belongs to user's organization
+        const client = await storage.getClientWithOrgCheck(clientId as string, user.organizationId);
         if (!client) {
-          return res.status(403).json({ error: "You do not have access to this outlet" });
+          return res.status(403).json({ error: "You do not have access to this client" });
         }
-        const purchases = await storage.getPurchases(outletId as string);
+        const purchases = await storage.getPurchases(clientId as string);
         return res.json(purchases);
       }
       
       // Get all purchases for user's organization
       const purchases = await storage.getPurchasesByOrganization(user.organizationId);
-      res.json(purchases);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.get("/api/outlets/:outletId/purchases", requireAuth, async (req, res) => {
-    try {
-      const purchases = await storage.getPurchases(req.params.outletId);
       res.json(purchases);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -5434,7 +5502,7 @@ export async function registerRoutes(
         status: status as string | undefined,
         severity: severity as string | undefined,
         includeDeleted: includeDeleted === "true",
-        organizationId: user?.organizationId,
+        organizationId: user?.organizationId || undefined,
       });
       res.json(exceptions);
     } catch (error: any) {

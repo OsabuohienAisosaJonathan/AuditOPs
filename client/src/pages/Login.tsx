@@ -6,16 +6,55 @@ import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, Mail } from "lucide-react";
+import { RefreshCw, Mail, Play } from "lucide-react";
 import logoDarkImage from "@/assets/miauditops-logo-dark.jpeg";
+
+const isDevelopment = import.meta.env.DEV;
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
+
+  const handleDemoLogin = async () => {
+    setIsDemoLoading(true);
+    try {
+      const response = await fetch("/api/auth/demo-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        await refreshUser();
+        toast({
+          title: "Demo Mode",
+          description: "Logged in as demo user for preview testing",
+        });
+        setLocation("/dashboard");
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Demo Login Failed",
+          description: data.error || "Unable to access demo mode",
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setIsDemoLoading(false);
+    }
+  };
 
   const handleResendVerification = async () => {
     if (!unverifiedEmail) return;
@@ -149,6 +188,31 @@ export default function Login() {
           >
             {isLoading ? "Signing in..." : "Sign In"}
           </Button>
+
+          {isDevelopment && (
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Development Preview</span>
+              </div>
+            </div>
+          )}
+          
+          {isDevelopment && (
+            <Button 
+              type="button"
+              variant="outline"
+              className="w-full h-10 font-medium gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/10" 
+              disabled={isDemoLoading}
+              onClick={handleDemoLogin}
+              data-testid="button-demo-login"
+            >
+              <Play className="h-4 w-4" />
+              {isDemoLoading ? "Loading Demo..." : "Try Demo Account"}
+            </Button>
+          )}
 
           {unverifiedEmail && (
             <div className="p-4 rounded-lg border border-primary/30 bg-primary/10">
