@@ -398,9 +398,10 @@ export async function registerRoutes(
   app.get("/api/diag/session", async (req, res) => {
     const startTime = Date.now();
     const requestId = (req as any).requestId || 'unknown';
+    const sessionIdPrefix = req.sessionID ? req.sessionID.substring(0, 8) : 'none';
     
     // Log session diagnostic request
-    console.log(`[SESSION DIAGNOSTIC] Request: requestId=${requestId}, host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, cookieNames=${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
+    console.log(`[SESSION DIAGNOSTIC] Request: requestId=${requestId}, sessionId=${sessionIdPrefix}..., host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, cookieNames=${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
     
     try {
       if (!req.session?.userId) {
@@ -410,6 +411,7 @@ export async function registerRoutes(
           organizationId: null,
           role: null,
           sessionCookie: !!req.headers.cookie?.includes("connect.sid"),
+          sessionId: sessionIdPrefix + '...',
           requestId,
           host: req.headers.host,
           protocol: req.protocol,
@@ -640,26 +642,38 @@ export async function registerRoutes(
         lastLoginAt: new Date(),
       });
 
+      const sessionIdBeforeLogin = req.sessionID;
+      
       req.session.userId = user.id;
       req.session.role = user.role;
       (req.session as any).createdAt = Date.now(); // Track session creation for absolute max age
+      
+      console.log(`[LOGIN] Setting userId on session: sessionId=${sessionIdBeforeLogin?.substring(0, 8)}..., userId=${user.id}`);
       
       // Save session explicitly and log result
       req.session.save((saveErr) => {
         if (saveErr) {
           logAuthDiagnostic(req, res, 'LOGIN_SESSION_SAVE_ERROR', { 
             userId: user.id, 
+            sessionId: sessionIdBeforeLogin?.substring(0, 8),
             error: saveErr.message 
           });
           return res.status(500).json({ error: "Failed to establish session" });
         }
         
+        const sessionIdAfterSave = req.sessionID;
+        
         // Log successful login with cookie metadata (not the actual cookie value for security)
         const setCookieHeader = res.getHeader('Set-Cookie');
         const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
         
+        console.log(`[LOGIN] Session saved: beforeId=${sessionIdBeforeLogin?.substring(0, 8)}..., afterId=${sessionIdAfterSave?.substring(0, 8)}..., same=${sessionIdBeforeLogin === sessionIdAfterSave}`);
+        
         logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
           userId: user.id,
+          sessionIdBefore: sessionIdBeforeLogin?.substring(0, 8),
+          sessionIdAfter: sessionIdAfterSave?.substring(0, 8),
+          sessionIdChanged: sessionIdBeforeLogin !== sessionIdAfterSave,
           setCookiePresent: !!setCookieHeader,
           setCookieHasSecure: setCookieStr.includes('Secure'),
           setCookieHasDomain: setCookieStr.includes('Domain'),
