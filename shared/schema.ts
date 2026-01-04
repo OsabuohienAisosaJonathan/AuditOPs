@@ -24,6 +24,9 @@ export const organizations = pgTable("organizations", {
   phone: text("phone"),
   address: text("address"),
   currencyCode: text("currency_code").notNull().default("NGN"),
+  isSuspended: boolean("is_suspended").default(false),
+  suspendedAt: timestamp("suspended_at"),
+  suspendedReason: text("suspended_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -51,6 +54,8 @@ export const users = pgTable("users", {
   passwordResetExpiry: timestamp("password_reset_expiry"),
   loginAttempts: integer("login_attempts").default(0),
   lockedUntil: timestamp("locked_until"),
+  isLocked: boolean("is_locked").default(false),
+  lockedReason: text("locked_reason"),
   lastLoginAt: timestamp("last_login_at"),
   accessScope: jsonb("access_scope").$type<{ clientIds?: string[]; departmentIds?: string[]; global?: boolean }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -815,6 +820,10 @@ export type BillingPeriod = typeof BILLING_PERIODS[number];
 export const SUBSCRIPTION_STATUSES = ["trial", "active", "past_due", "suspended", "cancelled"] as const;
 export type SubscriptionStatus = typeof SUBSCRIPTION_STATUSES[number];
 
+// Subscription provider types
+export const SUBSCRIPTION_PROVIDERS = ["manual", "manual_free", "paystack", "stripe"] as const;
+export type SubscriptionProvider = typeof SUBSCRIPTION_PROVIDERS[number];
+
 // Subscriptions table for tenant billing and feature access
 export const subscriptions = pgTable("subscriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -822,9 +831,14 @@ export const subscriptions = pgTable("subscriptions", {
   planName: text("plan_name").notNull().default("starter"),
   billingPeriod: text("billing_period").notNull().default("monthly"),
   slotsPurchased: integer("slots_purchased").notNull().default(1),
-  status: text("status").notNull().default("trial"),
+  status: text("status").notNull().default("active"),
+  provider: text("provider").default("manual"),
   startDate: timestamp("start_date").defaultNow().notNull(),
+  nextBillingDate: timestamp("next_billing_date"),
+  expiresAt: timestamp("expires_at"),
   endDate: timestamp("end_date"),
+  notes: text("notes"),
+  updatedBy: varchar("updated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1020,3 +1034,55 @@ export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;
+
+// =====================================================
+// PLATFORM ADMIN TABLES (MiAuditOps Internal Staff)
+// =====================================================
+
+// Platform Admin Roles
+export const PLATFORM_ADMIN_ROLES = [
+  "platform_super_admin",
+  "billing_admin",
+  "support_admin",
+  "compliance_admin",
+  "readonly_admin"
+] as const;
+export type PlatformAdminRole = typeof PLATFORM_ADMIN_ROLES[number];
+
+// Platform Admin Users - separate from tenant users
+export const platformAdminUsers = pgTable("platform_admin_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  password: text("password").notNull(),
+  name: text("name").notNull(),
+  role: text("role").notNull().default("readonly_admin"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastLoginAt: timestamp("last_login_at"),
+  loginAttempts: integer("login_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertPlatformAdminUserSchema = createInsertSchema(platformAdminUsers).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPlatformAdminUser = z.infer<typeof insertPlatformAdminUserSchema>;
+export type PlatformAdminUser = typeof platformAdminUsers.$inferSelect;
+
+// Platform Admin Audit Log - tracks all admin actions
+export const platformAdminAuditLog = pgTable("platform_admin_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id").notNull().references(() => platformAdminUsers.id),
+  actionType: text("action_type").notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: varchar("target_id"),
+  beforeJson: jsonb("before_json"),
+  afterJson: jsonb("after_json"),
+  notes: text("notes"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertPlatformAdminAuditLogSchema = createInsertSchema(platformAdminAuditLog).omit({ id: true, createdAt: true });
+export type InsertPlatformAdminAuditLog = z.infer<typeof insertPlatformAdminAuditLogSchema>;
+export type PlatformAdminAuditLog = typeof platformAdminAuditLog.$inferSelect;

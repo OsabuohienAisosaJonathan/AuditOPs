@@ -22,6 +22,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
+import { registerPlatformAdminRoutes } from "./platform-admin-routes";
 
 declare module "express-session" {
   interface SessionData {
@@ -249,6 +250,9 @@ export async function registerRoutes(
     
     next();
   });
+
+  // Register platform admin routes (separate from tenant routes)
+  registerPlatformAdminRoutes(app);
 
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {

@@ -1,0 +1,192 @@
+BUILD MI AUDITOPS PLATFORM ADMIN CONSOLE (NOT TENANT SETTINGS)
+Goal: Create a separate “Platform Admin” area for MiAuditOps staff (you), completely different from tenant/organization users.
+
+IMPORTANT DEFINITIONS
+1) Tenant/Owner users = normal customers inside an Organization (Super Admin, Auditor, etc.)
+2) Platform Admin users = MiAuditOps internal admins who manage ALL organizations, billing, access, support, and compliance.
+
+ABSOLUTE RULES
+A) Platform Admin must NOT share the same UI sidebar/navigation with tenant dashboard.
+B) Platform Admin routes must be isolated: /platform-admin/*
+C) Platform Admin authentication must be separate and strongly protected:
+   - platform_admin_users table
+   - role-based access (RBAC)
+D) Tenant users must NEVER access /platform-admin routes.
+E) Avoid cross-tenant data leaks: tenant pages must always filter by organizationId; admin pages can query across orgs by design.
+
+========================================================
+1) PLATFORM ADMIN ROLES (ADD THESE)
+========================================================
+Create internal admin roles suitable for this application:
+
+A) Platform Super Admin (full control)
+- Can create/delete platform admins
+- Full access to all modules
+- Can override billing + dates + plans + limits
+
+B) Billing Admin
+- Can edit organization subscription manually
+- Can issue free access with expiry date
+- Can extend subscription dates
+- Can set plan, cycle, status, next billing date
+- Cannot delete organizations or manage platform admins
+
+C) Support Admin
+- Can view organizations and users
+- Can reset owner password (trigger reset email) / resend verification
+- Can lock/unlock owner account
+- Can view logs and errors
+- Cannot change billing
+
+D) Compliance / Audit Admin
+- Read-only access to org-level activity logs, report exports, exception logs
+- Can download audit logs
+- Cannot edit billing or user access
+
+E) Read-Only Admin
+- View everything in admin console, no edits anywhere
+
+Enforce permission checks at BOTH:
+- frontend UI (hide/disable buttons)
+- backend API (deny unauthorized roles)
+
+========================================================
+2) WHAT PLATFORM ADMIN CONTROLS (MODULES)
+========================================================
+Build the Platform Admin Console with these menu items:
+
+1) Overview Dashboard
+- Total Organizations
+- Active vs Inactive subscriptions
+- Expiring within 7/14/30 days
+- Failed emails/verification stats (if tracked)
+- Recent logins and error alerts
+- Quick actions: Create Organization, Grant Free Access, Extend Subscription
+
+2) Organizations
+- List organizations with search + filters:
+  - status (active/inactive/expired)
+  - plan
+  - billing cycle
+  - expiry window
+- Organization profile view:
+  - company name, contact email/phone, address
+  - created date
+  - subscription summary (plan/status/cycle/next billing date/expiry)
+  - usage summary: clients count, SRD dept stores count, report exports count (if available)
+- Actions:
+  - Suspend/Unsuspend organization
+  - Disable login for organization users
+  - Delete organization (Super Admin only, with confirmation)
+
+3) Owners / Users (Tenant users)
+- List all users across orgs
+- Filter by organization, role, status
+- Actions (based on admin role):
+  - resend verification email
+  - send password reset
+  - lock/unlock user account
+  - view user activity log
+
+4) Billing & Subscriptions (CORE)
+This is the most important module.
+
+REQUIREMENTS:
+A) Manual edit of billing MUST exist (Billing Admin+)
+B) Must support “Free Registration” with expiry:
+   - create owner/org with free access until expiry date
+   - system auto-expires at that date and becomes inactive/blocked
+
+Subscription fields managed by Platform Admin:
+- planCode: starter|growth|business|enterprise
+- billingCycle: monthly|quarterly|yearly
+- status: active|inactive|expired|canceled|past_due (no trial)
+- startAt
+- nextBillingDate
+- expiresAt (hard expiry date—especially for free access)
+- notes (admin note reason)
+
+Actions:
+1) Activate Subscription (manual)
+2) Extend Subscription Date:
+   - extend expiresAt by X days OR set a new expiresAt date
+   - recalc nextBillingDate if needed
+3) Grant Free Access:
+   - set planCode + status active + expiresAt (required)
+   - mark provider="manual_free"
+4) Change Plan / Upgrade / Downgrade:
+   - planCode update + refresh entitlements immediately
+5) Cancel/Deactivate:
+   - set status inactive/expired and block tenant operations
+
+CRITICAL:
+- No free trial exists.
+- Inactive/Expired organizations must still be able to login to see Billing/Settings, but cannot post operational data.
+
+5) Feature Access / Entitlements Inspector
+- Show what each plan allows:
+  - max clients
+  - max SRD dept stores per client
+  - report access locks
+- A “Preview as org” tool that shows what features are locked for that org
+- A “Recompute entitlements” button (Billing Admin+) to force-refresh limits after admin edits
+
+6) Logs & Audit Trail (Platform-level)
+- Admin activity log: every admin action must be recorded
+  (who changed plan, extended date, locked user, etc.)
+- Organization access events (optional)
+- Error logs (optional)
+
+========================================================
+3) DATABASE / BACKEND CHANGES (ADDITIVE ONLY)
+========================================================
+Add new tables without breaking existing ones:
+
+A) platform_admin_users
+- id, name, email, passwordHash (or existing auth method), role
+- isActive, createdAt, updatedAt, lastLoginAt
+
+B) platform_admin_audit_log
+- id, adminId, actionType, targetType (org/user/subscription), targetId
+- beforeJson, afterJson, notes, createdAt, ipAddress (optional)
+
+C) organization_subscriptions (if not already correct)
+- organizationId UNIQUE
+- planCode, billingCycle, status
+- startAt, nextBillingDate, expiresAt
+- provider ("manual", "manual_free", future: paystack)
+- updatedBy (adminId or userId), updatedAt
+
+D) Add organization lock flags if missing:
+- organizations.isSuspended boolean
+- users.isLocked boolean (optional)
+
+IMPORTANT:
+- No destructive migrations.
+- If duplicates exist in subscription/settings tables, FIX by consolidation script (keep newest), then apply UNIQUE constraints safely.
+
+========================================================
+4) UI DESIGN RULES (ADMIN CONSOLE)
+========================================================
+- Clean, modern SaaS admin layout
+- Left sidebar for /platform-admin
+- Top header: search, admin profile dropdown, logout
+- Tables: sticky header, pagination, filters, export CSV for admin lists (read-only export)
+- Confirmation modals for destructive actions
+- Status badges with consistent colors
+- Must be fast: optimize queries, avoid N+1, show loading skeletons
+
+========================================================
+5) REQUIRED OUTPUT FROM YOU (AI BUILDER)
+========================================================
+1) List exact file paths edited/created.
+2) For each file edited, print first 10–15 lines to confirm correct file.
+3) Provide patches with clear START/END markers.
+4) Provide migration steps and any safe data repair scripts.
+5) Provide test checklist:
+   - platform admin cannot be accessed by tenant user
+   - Billing Admin can extend expiry
+   - Free registration creates org active until expiresAt then blocks ops after expiry
+   - Support Admin can resend verification/reset password but cannot edit billing
+   - Actions recorded in platform_admin_audit_log
+END PROMPT
