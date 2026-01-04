@@ -1,0 +1,133 @@
+FIX + RESTORE SRD LEDGER CARRY-OVER IN PRODUCTION (MAIN STORE + DEPT STORES)
++ 90-DAY BACKFILL + FORWARD RECALC
++ INCLUDE: INTER-TRANSFER (IN/OUT), TRANSFERS (DEP↔MAIN), WASTE, WRITE-OFF, ADJUSTMENT
+
+CONTEXT
+Carry-over logic that worked in development is missing in production. SRD ledgers must correctly roll Opening from previous Closing EVERY day (no skipping), and it must backfill up to 90 days and recalculate forward whenever historical movements are entered late.
+
+GOALS
+1) For each SRD store (Main + Dept), each Item must have a ledger row per day.
+2) Opening(D) must always equal Closing(D-1) (or 0 if no prior exists).
+3) Carry-over must work for gaps: create missing day rows and propagate closings forward.
+4) Must support multi-day backfill up to 90 days (past) and forward recalculation up to 90 days (or endDate).
+5) MUST include and correctly apply ALL stock movements:
+   - Purchases/Added
+   - Transfers IN / Transfers OUT (Main↔Department)
+   - Inter-Department Transfers IN / OUT (Department↔Department)
+   - Adjustments (+/-)
+   - Waste (loss)
+   - Write-off (loss)
+   - Issues/ReqDep (Main Store requisitions to departments where applicable)
+   - Sold (where applicable)
+
+A) CANONICAL CLOSING FORMULA (USE EXISTING COLUMNS — DO NOT REDESIGN TABLES)
+For each SRD ledger row per item per date:
+ExpectedClosing =
+  Opening
+  + Added/Purchase
+  + TransfersIn
+  + InterDeptIn
+  + AdjustmentPlus
+  - (TransfersOut + InterDeptOut + Waste + WriteOff + Issues/ReqDep + Sold + AdjustmentMinus)
+
+IMPORTANT RULES
+1) Do NOT rename/remove existing columns. Map to what exists in your current SRD tables.
+2) If you only have one “Adjustment” column, treat:
+   - positive values as AdjustmentPlus
+   - negative values as AdjustmentMinus (absolute value)
+3) Waste and Write-off must always reduce stock (loss).
+4) InterDept transfers must reflect on BOTH sides:
+   - Source dept: InterDeptOut increases
+   - Destination dept: InterDeptIn increases
+5) Main↔Department transfers must reflect on BOTH sides:
+   - Source store: TransfersOut increases
+   - Destination store: TransfersIn increases
+
+B) LATE HISTORICAL MOVEMENT MUST ADJUST FORWARD (YOUR RULE)
+If user enters ANY movement late (purchase, transfer, intertransfer, adjustment, waste, write-off) on an older date X:
+1) Recompute ledger for date X (closing changes).
+2) Then recompute day-by-day from X+1 up to (X+90 OR endDate OR last existing ledger day):
+   - Opening(next) = Closing(prev)
+   - Closing(next) = recompute using that day’s stored movements
+3) Overwrite incorrect openings/closings for subsequent days.
+4) If there are missing days in between, create them and continue forward.
+
+C) SINGLE BACKFILL + FORWARD-RECALC SERVICE (PRODUCTION SAFE)
+Create/restore a reusable server function:
+backfillSrdLedgerCarryOver({
+  clientId,
+  outletId (if applicable),
+  srdId,
+  startDate,
+  endDate,
+  maxLookbackDays: 90,
+  maxForwardDays: 90
+})
+
+Algorithm (per item):
+1) effectiveStart = startDate - 90 days (clamped)
+2) Load existing ledger rows effectiveStart..endDate ordered by date.
+3) Ensure row exists for EVERY date in range (gap fill):
+   - create missing row with movements default 0
+4) Determine opening for effectiveStart:
+   - from effectiveStart-1 closing if exists else 0
+5) Iterate each day:
+   - opening(day) = closing(day-1)
+   - closing(day) = recompute using existing movement columns:
+       Added/Purchase, TransfersIn/Out, InterDeptIn/Out, Adjustment, Waste, WriteOff, Issues/ReqDep, Sold
+   - if differs, update row
+
+D) MOVEMENT → LEDGER TRANSLATION MUST BE COMPLETE (NO “DISPLAY ONLY” MOVEMENTS)
+Your Stock Movements table already displays. The bug is that movements are not fully translated into SRD ledgers.
+Fix by enforcing a single source-of-truth posting function:
+
+postStockMovementToLedgers(movement):
+- movement has: date, itemId, qty, fromSrdId, toSrdId (optional), type, description, value(optional)
+- Supported types:
+  1) transfer_main_to_dep / transfer_dep_to_main
+  2) inter_dept_transfer
+  3) adjustment
+  4) waste
+  5) write_off
+  6) purchase/addition (GRN push)
+
+Posting rules:
+1) Purchase/Addition:
+   - target SRD row(date,item): Added/Purchase += qty
+2) Transfer (Main↔Dept):
+   - from SRD: TransfersOut += qty
+   - to SRD: TransfersIn += qty
+3) Inter-Department transfer:
+   - from dept SRD: InterDeptOut += qty
+   - to dept SRD: InterDeptIn += qty
+4) Adjustment:
+   - if qty > 0: Adjustment += qty
+   - if qty < 0: Adjustment += qty (store negative)
+5) Waste:
+   - Waste += qty (qty stored positive but subtract in formula)
+6) Write-off:
+   - WriteOff += qty (qty stored positive but subtract in formula)
+
+After posting a movement on date X:
+- Run forward recalculation for BOTH affected SRDs from X..X+90
+- This ensures the movement changes closing and future openings.
+
+E) FIX THE “ONLY 1–2 DAYS REFLECT” BUG
+1) Remove any logic that only looks back 1–2 days (no LIMIT 2).
+2) Ensure day-by-day loop fills ALL missing dates between last existing row and requested date.
+3) Normalize dates to YYYY-MM-DD (avoid timezone drift).
+4) Ensure recomputation runs until endDate (or maxForwardDays).
+
+F) REQUIRED OUTPUT (AI BUILDER)
+1) Exact file paths edited.
+2) First 10–15 lines of each edited file.
+3) Code patches with START/END markers.
+4) Migration steps if needed (only additive).
+5) Test checklist:
+   - Gap days are created (no skipping)
+   - Late Purchase adjusts forward totals
+   - Late Transfer Main→Dep and Dep→Main adjusts both ledgers forward
+   - Late InterDept transfer adjusts both dept ledgers forward
+   - Waste/Write-off reduces closing and adjusts forward
+   - Adjustment +/- works and adjusts forward
+END PROMPT
