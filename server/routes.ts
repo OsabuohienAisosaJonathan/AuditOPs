@@ -28,6 +28,8 @@ import { registerPlatformAdminRoutes } from "./platform-admin-routes";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import { backfillSrdLedger, backfillAllSrdsForClient, postMovementToLedgers, recalculateForward } from "./srd-ledger-service";
+import { srdLedgerEngine } from "./srd-ledger-engine";
+import type { SrdMovementEventType } from "@shared/schema";
 
 declare module "express-session" {
   interface SessionData {
@@ -4900,6 +4902,174 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: any) {
       console.error("[Ledger Backfill] Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== SRD LEDGER ENGINE API ==============
+  // These endpoints use the new unified SRD Ledger Engine for all movements
+  
+  // Create a new stock movement via the ledger engine
+  app.post("/api/clients/:clientId/srd-movements", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { movementDate, eventType, fromSrdId, toSrdId, itemId, qty, description } = req.body;
+      
+      if (!movementDate || !eventType || !itemId || qty === undefined) {
+        return res.status(400).json({ error: "movementDate, eventType, itemId, and qty are required" });
+      }
+      
+      const validEventTypes: SrdMovementEventType[] = [
+        "PURCHASE", "REQ_MAIN_TO_DEP", "RETURN_DEP_TO_MAIN", 
+        "TRANSFER_DEP_TO_DEP", "WASTE", "WRITE_OFF", "ADJUSTMENT", "SOLD"
+      ];
+      
+      if (!validEventTypes.includes(eventType)) {
+        return res.status(400).json({ 
+          error: `Invalid eventType. Must be one of: ${validEventTypes.join(", ")}`
+        });
+      }
+      
+      const movement = await srdLedgerEngine.createMovementAndPost({
+        clientId,
+        movementDate,
+        eventType,
+        fromSrdId: fromSrdId || null,
+        toSrdId: toSrdId || null,
+        itemId,
+        qty: parseFloat(qty),
+        description: description || null,
+      });
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Created SRD Movement",
+        entity: "SrdStockMovement",
+        entityId: movement.id,
+        details: `${eventType}: ${qty} units of item ${itemId} on ${movementDate}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(movement);
+    } catch (error: any) {
+      console.error("[SRD Movement] Create error:", error);
+      const isValidationError = error.message?.includes("requires") || 
+                                 error.message?.includes("must be") ||
+                                 error.message?.includes("is required") ||
+                                 error.message?.includes("Invalid") ||
+                                 error.message?.includes("Unknown");
+      res.status(isValidationError ? 400 : 500).json({ error: error.message });
+    }
+  });
+  
+  // Update an existing movement via the ledger engine
+  app.patch("/api/clients/:clientId/srd-movements/:movementId", requireAuth, requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { movementId } = req.params;
+      const { movementDate, eventType, fromSrdId, toSrdId, itemId, qty, description } = req.body;
+      
+      const patch: Record<string, any> = {};
+      if (movementDate !== undefined) patch.movementDate = movementDate;
+      if (eventType !== undefined) patch.eventType = eventType;
+      if (fromSrdId !== undefined) patch.fromSrdId = fromSrdId;
+      if (toSrdId !== undefined) patch.toSrdId = toSrdId;
+      if (itemId !== undefined) patch.itemId = itemId;
+      if (qty !== undefined) patch.qty = parseFloat(qty);
+      if (description !== undefined) patch.description = description;
+      
+      await srdLedgerEngine.updateMovementAndRepost(movementId, patch);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Updated SRD Movement",
+        entity: "SrdStockMovement",
+        entityId: movementId,
+        details: `Updated movement with fields: ${Object.keys(patch).join(", ")}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[SRD Movement] Update error:", error);
+      const isValidationError = error.message?.includes("requires") || 
+                                 error.message?.includes("must be") ||
+                                 error.message?.includes("is required") ||
+                                 error.message?.includes("Invalid") ||
+                                 error.message?.includes("Unknown") ||
+                                 error.message?.includes("not found");
+      res.status(isValidationError ? 400 : 500).json({ error: error.message });
+    }
+  });
+  
+  // Delete (soft-delete) a movement via the ledger engine
+  app.delete("/api/clients/:clientId/srd-movements/:movementId", requireAuth, requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { movementId } = req.params;
+      
+      await srdLedgerEngine.deleteMovementAndReverse(movementId);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Deleted SRD Movement",
+        entity: "SrdStockMovement",
+        entityId: movementId,
+        details: "Movement soft-deleted and ledger recalculated",
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[SRD Movement] Delete error:", error);
+      const isValidationError = error.message?.includes("not found");
+      res.status(isValidationError ? 400 : 500).json({ error: error.message });
+    }
+  });
+  
+  // Get movements for a client within a date range
+  app.get("/api/clients/:clientId/srd-movements", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { startDate, endDate, includeDeleted } = req.query;
+      
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required" });
+      }
+      
+      const movements = await srdLedgerEngine.getMovements(
+        clientId,
+        startDate as string,
+        endDate as string,
+        includeDeleted === "true"
+      );
+      
+      res.json(movements);
+    } catch (error: any) {
+      console.error("[SRD Movement] Get error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get ledger rows for a specific SRD and date range
+  app.get("/api/clients/:clientId/srd-ledger", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { srdId, startDate, endDate, itemId } = req.query;
+      
+      if (!srdId || !startDate || !endDate) {
+        return res.status(400).json({ error: "srdId, startDate, and endDate are required" });
+      }
+      
+      const ledgerRows = await srdLedgerEngine.getLedgerRows(
+        clientId,
+        srdId as string,
+        startDate as string,
+        endDate as string,
+        itemId as string | undefined
+      );
+      
+      res.json(ledgerRows);
+    } catch (error: any) {
+      console.error("[SRD Ledger] Get error:", error);
       res.status(500).json({ error: error.message });
     }
   });

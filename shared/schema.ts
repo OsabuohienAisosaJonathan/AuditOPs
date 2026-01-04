@@ -567,7 +567,81 @@ export const srdTransfers = pgTable("srd_transfers", {
 });
 
 // ============================================================
-// STORE STOCK (Daily store inventory balances)
+// SRD LEDGER DAILY (Source of truth for SRD daily balances)
+// One row per day per SRD per item - used by SrdLedgerService
+// ============================================================
+
+export const SRD_LEDGER_TYPES = ["MAIN", "DEPARTMENT"] as const;
+export type SrdLedgerType = typeof SRD_LEDGER_TYPES[number];
+
+export const SRD_MOVEMENT_EVENT_TYPES = [
+  "PURCHASE",
+  "REQ_MAIN_TO_DEP", 
+  "RETURN_DEP_TO_MAIN",
+  "TRANSFER_DEP_TO_DEP",
+  "WASTE",
+  "WRITE_OFF",
+  "ADJUSTMENT",
+  "SOLD"
+] as const;
+export type SrdMovementEventType = typeof SRD_MOVEMENT_EVENT_TYPES[number];
+
+export const srdLedgerDaily = pgTable("srd_ledger_daily", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  srdId: varchar("srd_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  srdType: text("srd_type").notNull(), // 'MAIN' or 'DEPARTMENT'
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  ledgerDate: date("ledger_date").notNull(),
+  
+  // Opening/Closing
+  openingQty: decimal("opening_qty", { precision: 18, scale: 2 }).notNull().default("0"),
+  closingQty: decimal("closing_qty", { precision: 18, scale: 2 }).notNull().default("0"),
+  
+  // MAIN store movements
+  purchaseAddedQty: decimal("purchase_added_qty", { precision: 18, scale: 2 }).notNull().default("0"),
+  returnsInQty: decimal("returns_in_qty", { precision: 18, scale: 2 }).notNull().default("0"), // dept -> main returns received
+  reqDepTotalQty: decimal("req_dep_total_qty", { precision: 18, scale: 2 }).notNull().default("0"), // main -> dept requisitions issued
+  
+  // DEPARTMENT store movements
+  fromMainQty: decimal("from_main_qty", { precision: 18, scale: 2 }).notNull().default("0"), // received from main requisitions
+  interInQty: decimal("inter_in_qty", { precision: 18, scale: 2 }).notNull().default("0"), // received from other dept SRD
+  interOutQty: decimal("inter_out_qty", { precision: 18, scale: 2 }).notNull().default("0"), // sent to other dept SRD
+  returnsOutToMain: decimal("returns_out_to_main", { precision: 18, scale: 2 }).notNull().default("0"), // dept -> main returns sent
+  soldQty: decimal("sold_qty", { precision: 18, scale: 2 }).notNull().default("0"),
+  
+  // Shared movements
+  wasteQty: decimal("waste_qty", { precision: 18, scale: 2 }).notNull().default("0"),
+  writeOffQty: decimal("write_off_qty", { precision: 18, scale: 2 }).notNull().default("0"),
+  adjustmentQty: decimal("adjustment_qty", { precision: 18, scale: 2 }).notNull().default("0"), // can be negative
+  
+  // Audit fields
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// SRD STOCK MOVEMENTS (Unified event log for edit/reversal safety)
+// All movements go through SrdLedgerService
+// ============================================================
+
+export const srdStockMovements = pgTable("srd_stock_movements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  movementDate: date("movement_date").notNull(),
+  eventType: text("event_type").notNull(), // PURCHASE, REQ_MAIN_TO_DEP, etc.
+  fromSrdId: varchar("from_srd_id").references(() => inventoryDepartments.id, { onDelete: "set null" }),
+  toSrdId: varchar("to_srd_id").references(() => inventoryDepartments.id, { onDelete: "set null" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  qty: decimal("qty", { precision: 18, scale: 2 }).notNull(),
+  description: text("description"),
+  isDeleted: boolean("is_deleted").notNull().default(false), // for edit/reversal tracking
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// STORE STOCK (Daily store inventory balances) - LEGACY
 // ============================================================
 
 export const storeStock = pgTable("store_stock", {
@@ -797,6 +871,8 @@ export const insertOrganizationSettingsSchema = createInsertSchema(organizationS
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, updatedAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
 export const insertDataExportSchema = createInsertSchema(dataExports).omit({ id: true, createdAt: true });
+export const insertSrdLedgerDailySchema = createInsertSchema(srdLedgerDaily).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSrdStockMovementSchema = createInsertSchema(srdStockMovements).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Purchase Item Events - history/audit trail of all item purchases
 export const purchaseItemEvents = pgTable("purchase_item_events", {
@@ -1042,6 +1118,10 @@ export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;
+export type InsertSrdLedgerDaily = z.infer<typeof insertSrdLedgerDailySchema>;
+export type SrdLedgerDaily = typeof srdLedgerDaily.$inferSelect;
+export type InsertSrdStockMovement = z.infer<typeof insertSrdStockMovementSchema>;
+export type SrdStockMovement = typeof srdStockMovements.$inferSelect;
 
 // =====================================================
 // PLATFORM ADMIN TABLES (MiAuditOps Internal Staff)
