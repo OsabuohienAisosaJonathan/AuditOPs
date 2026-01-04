@@ -643,61 +643,77 @@ export async function registerRoutes(
       });
 
       const sessionIdBeforeLogin = req.sessionID;
+      console.log(`[LOGIN] Starting session setup: oldSessionId=${sessionIdBeforeLogin?.substring(0, 8)}..., userId=${user.id}`);
       
-      req.session.userId = user.id;
-      req.session.role = user.role;
-      (req.session as any).createdAt = Date.now(); // Track session creation for absolute max age
-      
-      console.log(`[LOGIN] Setting userId on session: sessionId=${sessionIdBeforeLogin?.substring(0, 8)}..., userId=${user.id}`);
-      
-      // Save session explicitly and log result
-      req.session.save((saveErr) => {
-        if (saveErr) {
-          logAuthDiagnostic(req, res, 'LOGIN_SESSION_SAVE_ERROR', { 
+      // CRITICAL FIX: Regenerate session to prevent session fixation attacks
+      // and ensure a fresh session ID is created for the authenticated user.
+      // This also ensures the browser gets a new cookie with the correct domain/secure flags.
+      req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          console.error(`[LOGIN] Session regeneration failed:`, regenErr);
+          logAuthDiagnostic(req, res, 'LOGIN_SESSION_REGEN_ERROR', { 
             userId: user.id, 
-            sessionId: sessionIdBeforeLogin?.substring(0, 8),
-            error: saveErr.message 
+            error: regenErr.message 
           });
           return res.status(500).json({ error: "Failed to establish session" });
         }
         
-        const sessionIdAfterSave = req.sessionID;
+        const newSessionId = req.sessionID;
+        console.log(`[LOGIN] Session regenerated: oldId=${sessionIdBeforeLogin?.substring(0, 8)}..., newId=${newSessionId?.substring(0, 8)}...`);
         
-        // Log successful login with cookie metadata (not the actual cookie value for security)
-        const setCookieHeader = res.getHeader('Set-Cookie');
-        const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
+        // Set user data on the NEW session
+        req.session.userId = user.id;
+        req.session.role = user.role;
+        (req.session as any).createdAt = Date.now();
         
-        console.log(`[LOGIN] Session saved: beforeId=${sessionIdBeforeLogin?.substring(0, 8)}..., afterId=${sessionIdAfterSave?.substring(0, 8)}..., same=${sessionIdBeforeLogin === sessionIdAfterSave}`);
-        
-        logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
-          userId: user.id,
-          sessionIdBefore: sessionIdBeforeLogin?.substring(0, 8),
-          sessionIdAfter: sessionIdAfterSave?.substring(0, 8),
-          sessionIdChanged: sessionIdBeforeLogin !== sessionIdAfterSave,
-          setCookiePresent: !!setCookieHeader,
-          setCookieHasSecure: setCookieStr.includes('Secure'),
-          setCookieHasDomain: setCookieStr.includes('Domain'),
-          cookieSecure: req.session.cookie.secure,
-          cookieDomain: req.session.cookie.domain || 'not set',
-          cookieSameSite: req.session.cookie.sameSite,
-        });
-        
-        storage.createAuditLog({
-          userId: user.id,
-          action: "Login",
-          entity: "Session",
-          details: "Successful login via web",
-          ipAddress: req.ip || "Unknown",
-        });
+        // Save the session with user data
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error(`[LOGIN] Session save failed:`, saveErr);
+            logAuthDiagnostic(req, res, 'LOGIN_SESSION_SAVE_ERROR', { 
+              userId: user.id, 
+              sessionId: newSessionId?.substring(0, 8),
+              error: saveErr.message 
+            });
+            return res.status(500).json({ error: "Failed to establish session" });
+          }
+          
+          // Log successful login with cookie metadata
+          const setCookieHeader = res.getHeader('Set-Cookie');
+          const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
+          
+          console.log(`[LOGIN] Session saved successfully: sessionId=${newSessionId?.substring(0, 8)}..., userId=${user.id}, setCookie=${!!setCookieHeader}`);
+          
+          logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
+            userId: user.id,
+            sessionIdBefore: sessionIdBeforeLogin?.substring(0, 8),
+            sessionIdAfter: newSessionId?.substring(0, 8),
+            sessionIdChanged: sessionIdBeforeLogin !== newSessionId,
+            setCookiePresent: !!setCookieHeader,
+            setCookieHasSecure: setCookieStr.includes('Secure'),
+            setCookieHasDomain: setCookieStr.includes('Domain'),
+            cookieSecure: req.session.cookie.secure,
+            cookieDomain: req.session.cookie.domain || 'not set',
+            cookieSameSite: req.session.cookie.sameSite,
+          });
+          
+          storage.createAuditLog({
+            userId: user.id,
+            action: "Login",
+            entity: "Session",
+            details: "Successful login via web",
+            ipAddress: req.ip || "Unknown",
+          });
 
-        res.json({ 
-          id: user.id, 
-          username: user.username, 
-          email: user.email, 
-          fullName: user.fullName, 
-          role: user.role,
-          mustChangePassword: user.mustChangePassword,
-          accessScope: user.accessScope,
+          res.json({ 
+            id: user.id, 
+            username: user.username, 
+            email: user.email, 
+            fullName: user.fullName, 
+            role: user.role,
+            mustChangePassword: user.mustChangePassword,
+            accessScope: user.accessScope,
+          });
         });
       });
     } catch (error: any) {
