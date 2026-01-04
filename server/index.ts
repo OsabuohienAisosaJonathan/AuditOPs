@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { initializePool, checkDbHealth, getPoolStats } from "./db";
+import { initializePool, checkDbHealth, getPoolStats, isCircuitBreakerOpen } from "./db";
 
 // Force production mode when deployed on Replit
 // REPLIT_DEPLOYMENT is set to "1" when the app is published
@@ -168,6 +168,36 @@ app.use((req, res, next) => {
     } catch (err: any) {
       res.status(503).json({ ok: false, error: err.message, poolStats: getPoolStats() });
     }
+  });
+  
+  // Add /api/health/pool endpoint for pool diagnostics
+  app.get("/api/health/pool", (_req, res) => {
+    const stats = getPoolStats();
+    const circuitOpen = isCircuitBreakerOpen();
+    res.json({
+      pool: stats,
+      circuitBreakerOpen: circuitOpen,
+      timestamp: new Date().toISOString(),
+    });
+  });
+  
+  // Circuit breaker middleware - return 503 early if DB is overloaded
+  app.use("/api", (req, res, next) => {
+    // Skip health endpoints
+    if (req.path.startsWith("/api/health")) {
+      return next();
+    }
+    
+    if (isCircuitBreakerOpen()) {
+      console.warn(`[Circuit Breaker] Rejecting ${req.method} ${req.path} - DB overloaded`);
+      return res.status(503).json({
+        error: "Database temporarily unavailable",
+        message: "Please wait a moment and try again",
+        retryAfter: 30,
+      });
+    }
+    
+    next();
   });
 
   // Log email configuration status

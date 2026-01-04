@@ -277,15 +277,17 @@ export default function InventoryLedger() {
     enabled: !!selectedClientId,
   });
 
-  // Fetch store stock for selected department and date (with auto-seeding)
+  // Fetch store stock for selected department and date (read-only with computed carry-over)
   const { data: storeStockData, isLoading: stockLoading, error: stockError, refetch: refetchStock } = useQuery<StoreStock[]>({
     queryKey: ["store-stock", selectedClientId, selectedInvDept, selectedDate],
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${selectedDate}&autoSeed=true`);
+      const res = await fetch(`/api/clients/${selectedClientId}/store-stock?departmentId=${selectedInvDept}&date=${selectedDate}&withCarryOver=true`);
       if (!res.ok) throw new Error("Failed to fetch store stock");
       return res.json();
     },
     enabled: !!selectedClientId && !!selectedInvDept,
+    staleTime: 30000, // Cache for 30 seconds to reduce repeated calls
+    refetchOnWindowFocus: false, // Don't refetch on window focus to prevent request storms
   });
 
   // Fetch previous day stock for opening rollforward
@@ -298,6 +300,8 @@ export default function InventoryLedger() {
       return res.json();
     },
     enabled: !!selectedClientId && !!selectedInvDept,
+    staleTime: 60000, // Cache previous day for 60 seconds (doesn't change often)
+    refetchOnWindowFocus: false,
   });
 
   // Fetch SRD transfers for selected SRD and date (new unified transfer system)
@@ -309,6 +313,8 @@ export default function InventoryLedger() {
       return res.json();
     },
     enabled: !!selectedClientId && !!selectedInvDept,
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false,
   });
 
   // Fetch movement breakdown (waste, write-off, returns, adjustments) for ledger display
@@ -331,6 +337,8 @@ export default function InventoryLedger() {
       return res.json();
     },
     enabled: !!selectedClientId && !!selectedInvDept,
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false,
   });
   
   const movementBreakdown = movementBreakdownData?.breakdown || {};

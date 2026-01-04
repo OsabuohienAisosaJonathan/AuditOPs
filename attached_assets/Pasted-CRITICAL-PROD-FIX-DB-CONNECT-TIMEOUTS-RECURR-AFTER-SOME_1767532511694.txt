@@ -1,0 +1,112 @@
+CRITICAL PROD FIX: DB CONNECT TIMEOUTS RECURR AFTER SOME MINUTES (POOL EXHAUSTION + REQUEST STORM)
+
+Evidence from logs:
+- Multiple endpoints fail together with: "timeout exceeded when trying to connect"
+- Failures cluster around ~8000ms
+- Same pages repeatedly call store-stock/store-issues/srd-transfers/movement-breakdown and return many 304s
+- After some minutes, everything starts timing out (DB connect timeout), not just one route
+
+GOAL:
+A) Stop DB connect timeouts in production permanently
+B) Prevent request storms from the UI (dedupe + caching + backoff)
+C) Ensure background jobs (auto-seed/carry-over/session prune) do NOT consume DB connections in a way that breaks API routes
+
+========================
+A) BACKEND: HARDEN DB CONNECTION + POOL
+========================
+1) Confirm DB driver and implement ONE singleton DB connection/pool for the whole app.
+   - There must be ZERO "new Pool()" inside route handlers.
+   - Put pool init in one file (e.g. server/db.ts) and import it everywhere.
+
+2) Configure pool for stability (Postgres/pg):
+   - max: 5 (start small to avoid exhausting provider)
+   - min: 0
+   - idleTimeoutMillis: 30000
+   - connectionTimeoutMillis: 3000-5000 (fast fail)
+   - keepAlive: true
+   - allowExitOnIdle: true (if applicable)
+   - If DB provider supports it, enable statement_timeout to prevent long locks.
+
+3) If using a serverless DB (Neon/Supabase/etc):
+   - Ensure production uses the POOLER connection string, not direct.
+   - Enforce SSL required if provider requires it.
+   - Print a safe diagnostic at boot:
+     “DB host=…, pooled=true/false, ssl=true/false” (no secrets)
+
+4) Add a DB acquisition guard:
+   - measure time to acquire pool client.
+   - If acquire > 2000ms, return 503 immediately:
+     {message:"Database busy, retry"} (DO NOT wait full 8s/15s).
+   - Also log pool stats: totalCount, idleCount, waitingCount on slow routes.
+
+5) Add a “circuit breaker”:
+   - If DB connect timeout happens N times in 30s (e.g. 5),
+     temporarily short-circuit DB routes for 30s with 503 to let pool recover.
+
+========================
+B) BACKEND: STOP BACKGROUND TASKS FROM BREAKING REQUESTS
+========================
+Your logs show auto-seed/carry-over running during page loads.
+These must not run heavy writes on GET requests.
+
+1) Move auto-seed/carry-over logic out of GET list endpoints:
+   - GET /store-stock should NEVER create rows or write.
+   - GET must be pure read.
+2) If auto-seed is required:
+   - run it as a separate POST endpoint (manual) OR a background queue
+   - OR run once per day per SRD with a lock and only when explicitly requested.
+3) If “session prune” exists:
+   - ensure it runs on a timer with try/catch
+   - it MUST reuse the same singleton pool
+   - it must never run inside a request handler
+   - reduce frequency (e.g. every 30–60 mins)
+
+========================
+C) FRONTEND: STOP REQUEST STORM (DEDUP + CACHE + BACKOFF)
+========================
+Your UI is repeatedly fetching the same endpoints (304 spam).
+This can overwhelm DB when it gets slow.
+
+Implement these rules:
+1) Dedupe concurrent fetches:
+   - if a request for the same key (clientId+date+endpoint) is in-flight, reuse it.
+2) Add client-side caching (short TTL):
+   - cache successful GET responses for 30–60 seconds for:
+     store-stock, store-issues, srd-transfers, movement-breakdown, inventory items
+3) Add exponential backoff on failure:
+   - if response is 500/503 or timeout, wait 2s then 4s then 8s before retry.
+   - do NOT retry instantly in a loop.
+4) Add AbortController:
+   - cancel in-flight requests when user leaves the page or changes date/client.
+5) Ensure React useEffect dependencies are correct:
+   - NO infinite loops that re-trigger fetch.
+   - NO polling unless explicitly intended.
+
+========================
+D) SERVER TIMEOUT VALUES (ALIGN CLIENT + SERVER)
+========================
+1) Increase client timeout to 30s ONLY for long reports (not for normal GETs).
+2) Keep normal API GET endpoints expected <2s.
+3) For DB acquire timeout, keep low (3–5s) and return 503 quickly.
+
+========================
+E) QUICK CHECKS TO APPLY NOW
+========================
+1) Add /api/health/db that runs SELECT 1 and returns latency.
+2) Add /api/health/pool that returns pool stats (no secrets).
+3) Add logging on every slow route:
+   - route, duration, pool waitingCount, idleCount, totalCount.
+
+========================
+OUTPUT REQUIRED
+========================
+1) Show exact file paths edited
+2) Print first 10–15 lines of each edited file to confirm correct files
+3) Provide code patches with START/END markers
+4) Provide a test checklist:
+   - open store page and leave it 30 mins, no DB timeout
+   - reload store page 10x, no DB timeout
+   - verify GET endpoints no longer perform auto-seed writes
+   - verify UI does not re-fetch same endpoints repeatedly
+END PROMPT
+

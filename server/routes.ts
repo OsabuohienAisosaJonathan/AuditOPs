@@ -4457,45 +4457,59 @@ export async function registerRoutes(
   });
 
   // ============== CLIENT-SCOPED STORE STOCK ==============
+  // GET is now PURE READ - no auto-seed writes to prevent DB pressure
   app.get("/api/clients/:clientId/store-stock", requireAuth, async (req, res) => {
     try {
       const { clientId } = req.params;
-      const { departmentId, date, autoSeed } = req.query;
+      const { departmentId, date, withCarryOver } = req.query;
       
       if (!departmentId) {
         return res.status(400).json({ error: "departmentId is required" });
       }
       
       const dateFilter = date ? new Date(date as string) : undefined;
-      let stock = await storage.getStoreStock(
+      const stock = await storage.getStoreStock(
         clientId,
         departmentId as string,
         dateFilter
       );
       
-      // Auto-seed and recalculate opening balances if requested and date is provided
-      if (autoSeed === "true" && dateFilter) {
+      // If withCarryOver=true, compute virtual opening balances WITHOUT writing to DB
+      // This is a read-only operation that calculates what the opening should be
+      if (withCarryOver === "true" && dateFilter) {
         const items = await storage.getItemsForInventoryDepartment(departmentId as string);
-        const existingItemIds = new Set(stock.map(s => s.itemId));
         const stockMap = new Map(stock.map(s => [s.itemId, s]));
-        
-        const updatedStock = [];
+        const result = [];
         
         for (const item of items) {
-          // Get the correct opening balance from previous day's closing
-          const { closing: correctOpening, sourceDate } = await storage.getLatestClosingBeforeDate(
-            departmentId as string,
-            item.id,
-            dateFilter
-          );
+          const existingRecord = stockMap.get(item.id);
           
-          if (!existingItemIds.has(item.id)) {
-            // Create missing record with proper carry-over
-            console.log(`[Auto-seed] Creating ledger for ${item.name} on ${date}, Opening from ${sourceDate || 'N/A'}: ${correctOpening}`);
+          if (existingRecord) {
+            // Return existing record with computed carry-over opening if needed
+            const { closing: correctOpening } = await storage.getLatestClosingBeforeDate(
+              departmentId as string,
+              item.id,
+              dateFilter
+            );
             
-            const newStock = await storage.createStoreStock({
+            // Include computed opening in response for UI display
+            result.push({
+              ...existingRecord,
+              computedOpening: correctOpening,
+              needsSync: existingRecord.openingQty !== correctOpening,
+            });
+          } else {
+            // Return virtual record (not in DB yet) for display
+            const { closing: correctOpening, sourceDate } = await storage.getLatestClosingBeforeDate(
+              departmentId as string,
+              item.id,
+              dateFilter
+            );
+            
+            result.push({
+              id: `virtual-${item.id}`,
               clientId,
-              storeDepartmentId: departmentId as string,
+              storeDepartmentId: departmentId,
               itemId: item.id,
               date: dateFilter,
               openingQty: correctOpening,
@@ -4505,42 +4519,96 @@ export async function registerRoutes(
               physicalClosingQty: null,
               varianceQty: "0",
               costPriceSnapshot: item.costPrice || "0.00",
-              createdBy: req.session.userId!,
+              createdBy: null,
+              createdAt: null,
+              updatedAt: null,
+              computedOpening: correctOpening,
+              sourceDate,
+              isVirtual: true,
             });
-            updatedStock.push(newStock);
-          } else {
-            // Check if existing record has incorrect opening balance and fix it
-            const existingRecord = stockMap.get(item.id)!;
-            const currentOpening = existingRecord.openingQty || "0";
-            
-            if (currentOpening !== correctOpening) {
-              console.log(`[Carry-over Fix] ${item.name} on ${date}: Correcting opening from ${currentOpening} to ${correctOpening} (source: ${sourceDate || 'N/A'})`);
-              
-              // Recalculate closing based on corrected opening
-              const added = parseFloat(existingRecord.addedQty || "0");
-              const issued = parseFloat(existingRecord.issuedQty || "0");
-              const newClosing = parseFloat(correctOpening) + added - issued;
-              
-              const updatedRecord = await storage.updateStoreStock(existingRecord.id, {
-                openingQty: correctOpening,
-                closingQty: newClosing.toString(),
-              });
-              
-              if (updatedRecord) {
-                updatedStock.push(updatedRecord);
-              } else {
-                updatedStock.push(existingRecord);
-              }
-            } else {
-              updatedStock.push(existingRecord);
-            }
           }
         }
         
-        stock = updatedStock;
+        return res.json(result);
       }
       
       res.json(stock);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // POST endpoint for auto-seeding (creates records with carry-over)
+  // Call this explicitly when user wants to initialize/sync ledger entries
+  app.post("/api/clients/:clientId/store-stock/seed", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { departmentId, date } = req.body;
+      
+      if (!departmentId || !date) {
+        return res.status(400).json({ error: "departmentId and date are required" });
+      }
+      
+      const dateFilter = new Date(date);
+      const items = await storage.getItemsForInventoryDepartment(departmentId);
+      const existingStock = await storage.getStoreStock(clientId, departmentId, dateFilter);
+      const existingItemIds = new Set(existingStock.map(s => s.itemId));
+      const stockMap = new Map(existingStock.map(s => [s.itemId, s]));
+      
+      const results = [];
+      let created = 0;
+      let updated = 0;
+      
+      for (const item of items) {
+        const { closing: correctOpening, sourceDate } = await storage.getLatestClosingBeforeDate(
+          departmentId,
+          item.id,
+          dateFilter
+        );
+        
+        if (!existingItemIds.has(item.id)) {
+          // Create new record
+          const newStock = await storage.createStoreStock({
+            clientId,
+            storeDepartmentId: departmentId,
+            itemId: item.id,
+            date: dateFilter,
+            openingQty: correctOpening,
+            addedQty: "0",
+            issuedQty: "0",
+            closingQty: correctOpening,
+            physicalClosingQty: null,
+            varianceQty: "0",
+            costPriceSnapshot: item.costPrice || "0.00",
+            createdBy: req.session.userId!,
+          });
+          results.push(newStock);
+          created++;
+        } else {
+          // Check if existing record needs opening correction
+          const existingRecord = stockMap.get(item.id)!;
+          const currentOpening = existingRecord.openingQty || "0";
+          
+          if (currentOpening !== correctOpening) {
+            const added = parseFloat(existingRecord.addedQty || "0");
+            const issued = parseFloat(existingRecord.issuedQty || "0");
+            const newClosing = parseFloat(correctOpening) + added - issued;
+            
+            const updatedRecord = await storage.updateStoreStock(existingRecord.id, {
+              openingQty: correctOpening,
+              closingQty: newClosing.toString(),
+            });
+            
+            results.push(updatedRecord || existingRecord);
+            updated++;
+          } else {
+            results.push(existingRecord);
+          }
+        }
+      }
+      
+      console.log(`[Store Stock Seed] ${departmentId} on ${date}: Created ${created}, Updated ${updated}`);
+      res.json({ stock: results, created, updated });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
