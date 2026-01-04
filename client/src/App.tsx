@@ -10,6 +10,7 @@ import { CurrencyProvider } from "@/lib/currency-context";
 import { LayoutProvider } from "@/lib/layout-context";
 import { EntitlementsProvider } from "@/lib/entitlements-context";
 import { NetworkStatusProvider } from "@/lib/network-status";
+import { PlatformAdminAuthProvider, usePlatformAdminAuth } from "@/lib/platform-admin-auth";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
@@ -39,6 +40,13 @@ import ClientAccess from "@/pages/ClientAccess";
 import ItemPurchases from "@/pages/ItemPurchases";
 import AppLayout from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import PlatformAdminLogin from "@/pages/platform-admin/PlatformAdminLogin";
+import PlatformAdminDashboard from "@/pages/platform-admin/PlatformAdminDashboard";
+import PlatformAdminOrganizations from "@/pages/platform-admin/PlatformAdminOrganizations";
+import PlatformAdminUsers from "@/pages/platform-admin/PlatformAdminUsers";
+import PlatformAdminBilling from "@/pages/platform-admin/PlatformAdminBilling";
+import PlatformAdminLogs from "@/pages/platform-admin/PlatformAdminLogs";
+import PlatformAdminEntitlements from "@/pages/platform-admin/PlatformAdminEntitlements";
 
 function AuthLoadingScreen() {
   return (
@@ -157,9 +165,47 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
   return <Component />;
 }
 
+function PlatformAdminRoutes() {
+  const { admin, isLoading } = usePlatformAdminAuth();
+  const [location] = useLocation();
+
+  if (location === "/platform-admin/login") {
+    return <PlatformAdminLogin />;
+  }
+
+  if (isLoading) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (!admin) {
+    return <PlatformAdminLogin />;
+  }
+
+  return (
+    <Switch>
+      <Route path="/platform-admin" component={PlatformAdminDashboard} />
+      <Route path="/platform-admin/organizations" component={PlatformAdminOrganizations} />
+      <Route path="/platform-admin/users" component={PlatformAdminUsers} />
+      <Route path="/platform-admin/billing" component={PlatformAdminBilling} />
+      <Route path="/platform-admin/logs" component={PlatformAdminLogs} />
+      <Route path="/platform-admin/entitlements" component={PlatformAdminEntitlements} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
 function Router() {
   const [location] = useLocation();
   const { user, isLoading, authError, clearAuthError } = useAuth();
+  
+  // Platform admin routes are completely separate
+  if (location.startsWith("/platform-admin")) {
+    return (
+      <PlatformAdminAuthProvider>
+        <PlatformAdminRoutes />
+      </PlatformAdminAuthProvider>
+    );
+  }
   
   // Define public routes that don't need auth
   const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
