@@ -2,17 +2,7 @@
 
 ## Overview
 
-Miemploya AuditOps is a multi-client audit operations platform designed for the hospitality industry (lounges and restaurants). The platform enables Miemploya's internal audit team to conduct daily and weekly audits across multiple clients, outlets, and departments.
-
-Key capabilities include:
-- Multi-tenant client management with outlets and departments hierarchy
-- Sales capture with POS import and manual entry modes
-- Inventory and purchase tracking with GRN (Goods Received Notes)
-- Daily reconciliation comparing theoretical vs physical stock
-- Exception/case management for audit discrepancies
-- Role-based access control (Super Admin, Supervisor, Auditor)
-- Comprehensive audit trail and admin activity logging
-- Report generation for audit compliance
+Miemploya AuditOps is a multi-client audit operations platform for the hospitality industry (lounges and restaurants). It enables Miemploya's internal audit team to conduct daily and weekly audits across multiple clients, outlets, and departments. The platform facilitates sales capture, inventory and purchase tracking, daily reconciliation, exception management, and comprehensive reporting, all supported by robust role-based access control and audit trails.
 
 ## User Preferences
 
@@ -22,219 +12,53 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend Architecture
 - **Framework**: React 18 with TypeScript
-- **Routing**: Wouter (lightweight React router)
-- **State Management**: TanStack React Query for server state
-- **UI Components**: shadcn/ui component library built on Radix UI primitives
-- **Styling**: Tailwind CSS with custom theme configuration
-- **Build Tool**: Vite with custom plugins for Replit integration
-
-The frontend follows a page-based architecture with shared components. Protected routes check authentication via React context before rendering.
+- **Routing**: Wouter
+- **State Management**: TanStack React Query
+- **UI Components**: shadcn/ui built on Radix UI
+- **Styling**: Tailwind CSS
+- **Build Tool**: Vite
+- **Offline Resilience**: Network status detection, IndexedDB caching via `localforage`, and stale-while-revalidate strategy using `useCachedQuery` for improved reliability and performance.
 
 ### Backend Architecture
 - **Framework**: Express.js with TypeScript
 - **Database ORM**: Drizzle ORM with PostgreSQL dialect
-- **Session Management**: express-session with connect-pg-simple for persistent sessions
-- **Authentication**: Custom implementation with bcrypt password hashing
-- **API Pattern**: RESTful endpoints under `/api` prefix
-
-The server uses a storage abstraction layer (`server/storage.ts`) that wraps all database operations, making it easier to test and maintain.
+- **Session Management**: express-session with connect-pg-simple
+- **Authentication**: Custom bcrypt-based implementation with role-based and scope-based access control.
+- **API Pattern**: RESTful endpoints.
+- **Multi-Tenant Data Isolation**: Critical security pattern ensuring all data access is scoped by `organizationId` via middleware and storage methods.
 
 ### Database Schema
-PostgreSQL database with the following core entities:
-- **users**: Authentication, roles, access scope
-- **clients**: Top-level tenant organization
-- **outlets**: Locations within a client, includes `departmentMode` field
-- **departments**: Flexible department system with client-level and outlet-level scopes
-- **outletDepartmentLinks**: Toggle inheritance of client departments per outlet
-- **salesEntries**: Daily sales records
-- **purchases/stockMovements**: Inventory tracking
-- **goodsReceivedNotes**: GRN records with supplier, invoice, amount, status, and evidence file upload
-- **reconciliations**: Daily stock comparisons
-- **exceptions/exceptionComments**: Audit discrepancy cases
-- **auditLogs/adminActivityLogs**: Compliance logging
-- **itemSerialEvents**: Serial number tracking events for inventory movements
-- **purchaseItemEvents**: Purchase register tracking all item purchases with qty, cost, supplier, and invoice details
-
-### Serial Number Tracking
-Items can be configured with serial tracking types:
-- **none**: No serial tracking (default)
-- **serial**: Standard serial number tracking
-- **batch**: Batch number tracking
-- **lot**: Lot number tracking  
-- **imei**: IMEI tracking for electronics
-
-The `serialNotes` field documents expected format patterns (e.g., "XX-YYYY-NNN").
-
-### Inventory Ledger Features
-Main Store ledger includes:
-- Collapsible column groups: Return Inward, Losses, Req Dep (Requisition Department)
-- Count Progress indicator showing items counted vs total
-- Awaiting Count, Variance, Variance Value, and Count Value columns with purple highlighting
-- Dynamic colspan calculations that adjust when column groups expand/collapse
-
-Department Store ledger includes:
-- Collapsible Transfers column group with In/Out breakdowns by source type
-- Opening + Added + Received - Issued Out - Losses formula for totals
-
-### Purchase Item Events Register
-The Item Purchases page (`/item-purchases`) provides a comprehensive register of all purchase transactions:
-- Filterable by date range, SRD, item, or search term
-- Displays item, SRD, quantity, unit cost, total cost, supplier, invoice number, and notes
-- Shows total value summary for filtered results
-- Supports CSV export for reporting
-- Automatically logs purchase events when purchases are recorded in the Inventory module
-- Client access enforced via `requireClientAccess` middleware for multi-tenant isolation
+PostgreSQL database supporting core entities like `users`, `clients`, `outlets`, `departments`, `salesEntries`, `purchases`, `goodsReceivedNotes`, `reconciliations`, `exceptions`, and audit logs. Includes flexible department management with inheritance options and robust serial number tracking (`none`, `serial`, `batch`, `lot`, `imei`).
 
 ### Department Architecture
-The department system supports flexible inheritance:
-- **Client-level departments** (`scope='client'`): Shared across all outlets
-- **Outlet-level departments** (`scope='outlet'`): Specific to one outlet
-- **Department modes** per outlet:
-  - `inherit_only`: Uses only client departments
-  - `outlet_only`: Uses only outlet-specific departments
-  - `inherit_add`: Combines client + outlet departments
-- **Inheritance toggles**: Client departments can be individually enabled/disabled per outlet via `outletDepartmentLinks`
-- **Deletion protection**: Departments used in records are deactivated instead of deleted
+Supports client-level and outlet-level departments with configurable inheritance modes (`inherit_only`, `outlet_only`, `inherit_add`) and individual inheritance toggles for client departments per outlet.
 
 ### Authentication & Authorization
-- Session-based authentication stored in PostgreSQL
-- Three-tier role system: super_admin, supervisor, auditor
-- Rate limiting on login attempts (5 attempts, 15-minute lockout)
-- Password requirements: 8+ characters, mixed case, numbers
-- Bootstrap flow for first super admin creation with optional secret key
-- Scope-based access control (users can be limited to specific clients/outlets)
-- **Email verification** required for new registrations
+Session-based authentication with `super_admin`, `supervisor`, `auditor` roles. Features include rate limiting, strong password requirements, and email verification. A bootstrap flow is available for initial super admin creation.
 
-### Multi-Tenant Data Isolation
-**CRITICAL SECURITY PATTERN**: All data access is scoped by organization to prevent cross-account data leaks.
-
-Key enforcement points:
-- **`requireClientAccess` middleware**: Verifies client belongs to user's organization BEFORE checking fine-grained access
-- **`getClients(organizationId)` storage method**: Filters clients by organization
-- **`getClientWithOrgCheck(id, organizationId)`**: Verifies client ownership on read
-- **Dashboard queries**: All aggregations filter by organization's client IDs
-
-Pattern for new endpoints:
-1. Get user from session: `storage.getUser(req.session.userId)`
-2. Verify organizationId exists: `if (!user?.organizationId) return 400`
-3. Pass organizationId to storage methods
-4. Storage methods filter by organizationId (directly or via client lookup)
-
-Empty organizations get zeroed metrics (never global data fallback).
-
-### Email Configuration
-Email sending is powered by Resend (https://resend.com). Required environment variables:
-- `RESEND_API_KEY` (secret): Your Resend API key for sending transactional emails
-- `APP_URL` (optional): Base URL for email links (e.g., `https://yourdomain.com`). Falls back to request host if not set.
-
-Email features:
-- Verification emails on signup with 24-hour expiry
-- Resend verification option on login page and check-email page
-- Password reset emails (1-hour expiry)
-
-Note: Resend integration is configured manually (not via Replit connector). The API key is stored in Replit Secrets.
-
-### Development Preview
-For development testing, a demo login feature is available:
-- **Demo Login Endpoint**: `POST /api/auth/demo-login` (development only, blocked in production)
-- **Demo Account**: Creates a demo user (`demo@miauditops.com`) with a demo organization and client
-- **Login Page Button**: "Try Demo Account" button appears only in development mode
-- Useful for testing the full application flow without setting up real accounts
-
-### Custom Domain Configuration
-For production deployment with custom domains:
-- **COOKIE_DOMAIN**: Set to `.miauditops.com` in production to share sessions across www and non-www domains
-- **APP_URL**: Base URL for email links (e.g., `https://miauditops.com`)
-- DNS: Configure A records for both apex domain and www subdomain pointing to the same IP
-
-### Production Reliability
-Diagnostic endpoints and error handling for production debugging:
-- **Health Check**: `GET /api/health` - Tests database connectivity, returns timing info
-- **Session Diagnostics**: `GET /api/diag/session` - Shows auth state, organization, subscription info
-- **Slow Query Logging**: Server logs warnings for requests taking >3s on dashboard/clients routes
-- **Error Boundary**: Global React ErrorBoundary catches crashes and shows fallback UI
-- **API Retry Logic**: Client-side retry with exponential backoff (2 retries, excludes 401 errors)
-- **Timeout Handling**: 12s client timeout with proper error UI and retry buttons
-
-### Offline Resilience & Caching
-The application includes offline support and data caching for improved reliability:
-
-**Network Status Detection** (`client/src/lib/network-status.tsx`):
-- `NetworkStatusProvider` wraps the app to track online/offline state
-- `useNetworkStatus()` hook provides `isOnline`, `wasOffline`, `lastOnlineAt`
-- `OfflineBanner` component shows fixed amber banner when offline
-
-**IndexedDB Caching** (`client/src/lib/cache.ts`):
-- Uses `localforage` for IndexedDB storage (NOT localStorage)
-- Cache keys include `organizationId` for multi-tenant isolation: `${organizationId}:${endpoint}:${paramsHash}`
-- 24-hour default max age for cached data
-- No auth tokens stored in cache (security)
-
-**Stale-While-Revalidate** (`client/src/lib/useCachedQuery.tsx`):
-- `useCachedQuery()` hook wraps `useQuery` with caching
-- Shows cached data immediately while fetching fresh data
-- Returns: `data`, `cachedData`, `isUsingCache`, `lastUpdated`, `cacheTimestamp`
-- `CacheStatus` component displays cache timestamp to users
-
-**Helper Functions**:
-- `safeArray(arr)`: Returns `[]` if null/undefined
-- `safeNumber(val, fallback)`: Returns fallback if invalid
-- `safeFormat(dateStr, formatFn, fallback)`: Safe date formatting
-
-**UI Components**:
-- `ErrorCard`: Amber card with retry button for error states
-- `DashboardSkeleton`, `TableSkeleton`, `ListSkeleton`: Loading states
-- Cache badges: Pages show "Cached" badge with last updated timestamp when showing cached data
-
-**Pages Using Caching**:
-- Dashboard: `useCachedQuery` for clients and summary data with cache status badges
-- Clients: `useCachedQuery` for client list with cache status badges
-
-### Build System
-- Development: Vite dev server with HMR
-- Production: Custom build script using esbuild for server, Vite for client
-- Server dependencies are bundled to reduce cold start times
+### Platform Admin Console
+A separate, isolated administrative interface (`/platform-admin/*`) for MiAuditOps internal staff. It uses distinct authentication, roles (`platform_super_admin`, `billing_admin`, `support_admin`, `compliance_admin`, `readonly_admin`), and database tables. Provides features for managing organizations, users, billing, and auditing platform admin actions.
 
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary data store (configured via DATABASE_URL environment variable)
-- **Drizzle Kit**: Database migrations and schema push
+- **PostgreSQL**: Primary data store.
+- **Drizzle Kit**: For database migrations.
 
 ### Authentication
-- **bcrypt**: Password hashing
-- **connect-pg-simple**: Session storage in PostgreSQL
-- **express-session**: Session middleware
+- **bcrypt**: Password hashing.
+- **connect-pg-simple**: PostgreSQL session storage.
+- **express-session**: Session management middleware.
 
 ### UI Libraries
-- **Radix UI**: Accessible component primitives (dialogs, dropdowns, forms, etc.)
-- **Recharts**: Data visualization for dashboard charts
-- **date-fns**: Date formatting and manipulation
-- **lucide-react**: Icon library
+- **Radix UI**: Accessible component primitives.
+- **Recharts**: Data visualization.
+- **date-fns**: Date manipulation.
+- **lucide-react**: Icon library.
 
 ### Development Tools
-- **Replit Vite Plugins**: Error overlay, cartographer, dev banner for Replit environment
-- **TypeScript**: Type safety across full stack
+- **Replit Vite Plugins**: Integration with Replit environment.
+- **TypeScript**: Full-stack type safety.
 
-## Recent Changes
-
-### Report Terminology Update (Jan 2026)
-- **"System Sales" → "Captured Sales"**: All references to "System Sales" in reports have been renamed to "Captured Sales" for clarity
-- **Variance calculation corrected**: Variance is now calculated as `declared - captured` (positive = surplus/over-declared, negative = shortage)
-- **GRN supplier display fix**: Reports now correctly display `supplierName` instead of undefined `supplier` field
-
-### Client Name Validation (Jan 2026)
-- **20-character limit**: Client names are now limited to 20 characters maximum
-- Enforced on both frontend (maxLength input attribute) and backend (validation in POST/PATCH endpoints)
-- Names are still normalized to uppercase
-
-### Print Styles Enhancement (Jan 2026)
-- Added comprehensive print CSS to hide UI chrome (sidebar, navigation, overlays)
-- Report dialog content prints cleanly without duplicate sections
-- Page break utilities for better multi-page report printing
-
-### Session Persistence Fix (Jan 2026)
-- **Cookie secure flag**: Production uses `secure: true`, development uses `secure: 'auto'` (express-session auto-detection)
-- **Post-login verification**: Client waits 100ms after login, then verifies session via `/auth/me` before proceeding to dashboard
-- **Race condition fix**: Removed dynamic cookie.secure middleware that was causing sessions to not persist after login
-- **Security**: Login diagnostic logs no longer expose session IDs (metadata only)
+### Email Service
+- **Resend**: Transactional email sending (e.g., verification, password reset).
