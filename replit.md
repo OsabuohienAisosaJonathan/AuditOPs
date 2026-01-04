@@ -232,3 +232,9 @@ The application includes offline support and data caching for improved reliabili
 - Added comprehensive print CSS to hide UI chrome (sidebar, navigation, overlays)
 - Report dialog content prints cleanly without duplicate sections
 - Page break utilities for better multi-page report printing
+
+### Session Persistence Fix (Jan 2026)
+- **Cookie secure flag**: Production uses `secure: true`, development uses `secure: 'auto'` (express-session auto-detection)
+- **Post-login verification**: Client waits 100ms after login, then verifies session via `/auth/me` before proceeding to dashboard
+- **Race condition fix**: Removed dynamic cookie.secure middleware that was causing sessions to not persist after login
+- **Security**: Login diagnostic logs no longer expose session IDs (metadata only)
