@@ -1,0 +1,582 @@
+1) DATABASE (Migration SQL)
+Create a dedicated table for SRD daily ledger rows. This does not disturb your existing tables — it’s additive and can be used as the source of truth.
+-- FILE: migrations/xxxx_create_srd_ledger_daily.sql
+-- SRD Daily Ledger (one row per day per SRD per item)
+
+CREATE TABLE IF NOT EXISTS srd_ledger_daily (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  client_id UUID NOT NULL,
+  srd_id UUID NOT NULL,             -- main store or department store SRD id
+  srd_type TEXT NOT NULL,           -- 'MAIN' or 'DEPARTMENT'
+  item_id UUID NOT NULL,
+
+  ledger_date DATE NOT NULL,
+
+  -- Opening/Closing
+  opening_qty NUMERIC(18,2) NOT NULL DEFAULT 0,
+  closing_qty NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+  -- MAIN store movements (still safe to store for department rows as 0)
+  purchase_added_qty NUMERIC(18,2) NOT NULL DEFAULT 0,
+  returns_in_qty     NUMERIC(18,2) NOT NULL DEFAULT 0,  -- dept -> main returns received
+  req_dep_total_qty  NUMERIC(18,2) NOT NULL DEFAULT 0,  -- main -> dept requisitions issued
+
+  -- DEPARTMENT store movements
+  from_main_qty        NUMERIC(18,2) NOT NULL DEFAULT 0, -- received from main requisitions
+  inter_in_qty         NUMERIC(18,2) NOT NULL DEFAULT 0, -- received from other dept SRD
+  inter_out_qty        NUMERIC(18,2) NOT NULL DEFAULT 0, -- sent to other dept SRD
+  returns_out_to_main  NUMERIC(18,2) NOT NULL DEFAULT 0, -- dept -> main returns sent
+  sold_qty             NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+  -- Shared movements
+  waste_qty        NUMERIC(18,2) NOT NULL DEFAULT 0,
+  write_off_qty    NUMERIC(18,2) NOT NULL DEFAULT 0,
+  adjustment_qty   NUMERIC(18,2) NOT NULL DEFAULT 0, -- can be negative
+
+  -- Optional: audit fields
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Ensure exactly one row per day per SRD per item
+CREATE UNIQUE INDEX IF NOT EXISTS srd_ledger_daily_unique
+ON srd_ledger_daily (srd_id, item_id, ledger_date);
+
+-- Helpful indexes
+CREATE INDEX IF NOT EXISTS srd_ledger_daily_client_date_idx
+ON srd_ledger_daily (client_id, ledger_date);
+
+CREATE INDEX IF NOT EXISTS srd_ledger_daily_srd_date_idx
+ON srd_ledger_daily (srd_id, ledger_date);
+
+2) STOCK MOVEMENTS TABLE (for edit/reversal safety)
+If you already have a movements table, reuse it. If not, add this minimal one:
+-- FILE: migrations/xxxx_create_stock_movements.sql
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,
+
+  movement_date DATE NOT NULL,
+
+  event_type TEXT NOT NULL,
+  -- event_type examples:
+  -- 'PURCHASE', 'REQ_MAIN_TO_DEP', 'RETURN_DEP_TO_MAIN',
+  -- 'TRANSFER_DEP_TO_DEP', 'WASTE', 'WRITE_OFF', 'ADJUSTMENT', 'SOLD'
+
+  from_srd_id UUID NULL,
+  to_srd_id   UUID NULL,
+
+  item_id UUID NOT NULL,
+  qty NUMERIC(18,2) NOT NULL,
+
+  description TEXT NULL,
+
+  -- for edit/reversal tracking
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS stock_movements_client_date_idx
+ON stock_movements (client_id, movement_date);
+
+
+3) THE SRD LEDGER ENGINE (Node/TS Service)
+FILE: server/src/services/srdLedgerService.ts
+If your backend is not in server/src, tell AI Builder to create this file under your backend source folder where your Express server lives (the folder that builds into dist/index.cjs).
+// FILE: server/src/services/srdLedgerService.ts
+// SRD LEDGER ENGINE (Main + Department) — single source of truth
+// Supports: backdated recalc forward up to 90 days, transfers, returns, requisitions, waste, write-off, adjustment, sold
+import { Pool, PoolClient } from "pg";
+
+export type SrdType = "MAIN" | "DEPARTMENT";
+
+export type MovementType =
+  | "PURCHASE"
+  | "REQ_MAIN_TO_DEP"
+  | "RETURN_DEP_TO_MAIN"
+  | "TRANSFER_DEP_TO_DEP"
+  | "WASTE"
+  | "WRITE_OFF"
+  | "ADJUSTMENT"
+  | "SOLD";
+
+export interface StockMovement {
+  id: string;
+  clientId: string;
+  movementDate: string; // YYYY-MM-DD
+  eventType: MovementType;
+  fromSrdId?: string | null;
+  toSrdId?: string | null;
+  itemId: string;
+  qty: number; // positive
+  description?: string | null;
+  isDeleted?: boolean;
+}
+
+export class SrdLedgerService {
+  constructor(private pool: Pool) {}
+
+  // --- PUBLIC API ---
+  async createMovementAndPost(mv: Omit<StockMovement, "id">): Promise<StockMovement> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const inserted = await client.query<StockMovement>(
+        `
+        INSERT INTO stock_movements
+          (client_id, movement_date, event_type, from_srd_id, to_srd_id, item_id, qty, description)
+        VALUES
+          ($1, $2::date, $3, $4, $5, $6, $7, $8)
+        RETURNING
+          id as "id",
+          client_id as "clientId",
+          movement_date::text as "movementDate",
+          event_type as "eventType",
+          from_srd_id as "fromSrdId",
+          to_srd_id as "toSrdId",
+          item_id as "itemId",
+          qty::float8 as "qty",
+          description as "description",
+          is_deleted as "isDeleted"
+        `,
+        [
+          mv.clientId,
+          mv.movementDate,
+          mv.eventType,
+          mv.fromSrdId ?? null,
+          mv.toSrdId ?? null,
+          mv.itemId,
+          mv.qty,
+          mv.description ?? null,
+        ]
+      );
+
+      const movement = inserted.rows[0];
+      await this.applyMovementDelta(client, movement, +1);
+      await this.recalcForward(client, movement.clientId, movement.itemId, movement.fromSrdId, movement.toSrdId, movement.movementDate, 90);
+
+      await client.query("COMMIT");
+      return movement;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateMovementAndRepost(movementId: string, patch: Partial<Omit<StockMovement, "id" | "clientId">>): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const oldMv = await this.getMovementForUpdate(client, movementId);
+      if (!oldMv) throw new Error("Movement not found");
+
+      // Reverse old
+      await this.applyMovementDelta(client, oldMv, -1);
+
+      // Update movement
+      const newMv = await this.updateMovementRow(client, movementId, patch);
+
+      // Apply new
+      await this.applyMovementDelta(client, newMv, +1);
+
+      // Recalc forward from earliest affected date
+      const startDate = (patch.movementDate ?? oldMv.movementDate) as string;
+      await this.recalcForward(client, oldMv.clientId, oldMv.itemId, oldMv.fromSrdId, oldMv.toSrdId, startDate, 90);
+      // if SRDs changed, also recalc forward for new SRDs
+      await this.recalcForward(client, newMv.clientId, newMv.itemId, newMv.fromSrdId, newMv.toSrdId, startDate, 90);
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteMovementAndReverse(movementId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const mv = await this.getMovementForUpdate(client, movementId);
+      if (!mv) throw new Error("Movement not found");
+
+      if (mv.isDeleted) {
+        await client.query("COMMIT");
+        return;
+      }
+
+      // Reverse effect
+      await this.applyMovementDelta(client, mv, -1);
+
+      // Mark deleted
+      await client.query(`UPDATE stock_movements SET is_deleted=true, updated_at=now() WHERE id=$1`, [movementId]);
+
+      // Recalc
+      await this.recalcForward(client, mv.clientId, mv.itemId, mv.fromSrdId, mv.toSrdId, mv.movementDate, 90);
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  // --- INTERNALS ---
+
+  private async getMovementForUpdate(pg: PoolClient, id: string): Promise<StockMovement | null> {
+    const res = await pg.query<StockMovement>(
+      `
+      SELECT
+        id as "id",
+        client_id as "clientId",
+        movement_date::text as "movementDate",
+        event_type as "eventType",
+        from_srd_id as "fromSrdId",
+        to_srd_id as "toSrdId",
+        item_id as "itemId",
+        qty::float8 as "qty",
+        description as "description",
+        is_deleted as "isDeleted"
+      FROM stock_movements
+      WHERE id=$1
+      FOR UPDATE
+      `,
+      [id]
+    );
+    return res.rows[0] ?? null;
+  }
+
+  private async updateMovementRow(pg: PoolClient, id: string, patch: Partial<any>): Promise<StockMovement> {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+
+    const map: Record<string, string> = {
+      movementDate: "movement_date",
+      eventType: "event_type",
+      fromSrdId: "from_srd_id",
+      toSrdId: "to_srd_id",
+      itemId: "item_id",
+      qty: "qty",
+      description: "description",
+    };
+
+    for (const [k, col] of Object.entries(map)) {
+      if (patch[k] === undefined) continue;
+      fields.push(`${col}=$${i++}${col === "movement_date" ? "::date" : ""}`);
+      values.push(patch[k]);
+    }
+
+    if (fields.length === 0) {
+      const mv = await this.getMovementForUpdate(pg, id);
+      if (!mv) throw new Error("Movement not found");
+      return mv;
+    }
+
+    values.push(id);
+
+    const res = await pg.query<StockMovement>(
+      `
+      UPDATE stock_movements
+      SET ${fields.join(", ")}, updated_at=now()
+      WHERE id=$${i}
+      RETURNING
+        id as "id",
+        client_id as "clientId",
+        movement_date::text as "movementDate",
+        event_type as "eventType",
+        from_srd_id as "fromSrdId",
+        to_srd_id as "toSrdId",
+        item_id as "itemId",
+        qty::float8 as "qty",
+        description as "description",
+        is_deleted as "isDeleted"
+      `,
+      values
+    );
+    return res.rows[0];
+  }
+
+  // Apply movement delta into ledger rows (sign=+1 apply, sign=-1 reverse)
+  private async applyMovementDelta(pg: PoolClient, mv: StockMovement, sign: 1 | -1): Promise<void> {
+    if (mv.isDeleted) return;
+    const qty = Number(mv.qty) * sign;
+
+    switch (mv.eventType) {
+      case "PURCHASE": {
+        // Main store only -> toSrdId must be main store SRD
+        if (!mv.toSrdId) throw new Error("PURCHASE requires toSrdId (Main Store SRD)");
+        await this.upsertAndBump(pg, mv.clientId, mv.toSrdId, "MAIN", mv.itemId, mv.movementDate, {
+          purchase_added_qty: qty,
+        });
+        break;
+      }
+
+      case "REQ_MAIN_TO_DEP": {
+        // from main to dept (requisition)
+        if (!mv.fromSrdId || !mv.toSrdId) throw new Error("REQ_MAIN_TO_DEP requires fromSrdId (MAIN) and toSrdId (DEP)");
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "MAIN", mv.itemId, mv.movementDate, {
+          req_dep_total_qty: qty,
+        });
+        await this.upsertAndBump(pg, mv.clientId, mv.toSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          from_main_qty: qty,
+        });
+        break;
+      }
+
+      case "RETURN_DEP_TO_MAIN": {
+        // from dept back to main
+        if (!mv.fromSrdId || !mv.toSrdId) throw new Error("RETURN_DEP_TO_MAIN requires fromSrdId (DEP) and toSrdId (MAIN)");
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          returns_out_to_main: qty,
+        });
+        await this.upsertAndBump(pg, mv.clientId, mv.toSrdId, "MAIN", mv.itemId, mv.movementDate, {
+          returns_in_qty: qty,
+        });
+        break;
+      }
+
+      case "TRANSFER_DEP_TO_DEP": {
+        if (!mv.fromSrdId || !mv.toSrdId) throw new Error("TRANSFER_DEP_TO_DEP requires fromSrdId and toSrdId");
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          inter_out_qty: qty,
+        });
+        await this.upsertAndBump(pg, mv.clientId, mv.toSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          inter_in_qty: qty,
+        });
+        break;
+      }
+
+      case "WASTE": {
+        if (!mv.fromSrdId) throw new Error("WASTE requires fromSrdId (the store SRD)");
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          waste_qty: qty,
+        });
+        break;
+      }
+
+      case "WRITE_OFF": {
+        if (!mv.fromSrdId) throw new Error("WRITE_OFF requires fromSrdId (the store SRD)");
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          write_off_qty: qty,
+        });
+        break;
+      }
+
+      case "ADJUSTMENT": {
+        if (!mv.fromSrdId) throw new Error("ADJUSTMENT requires fromSrdId (the store SRD)");
+        // qty may represent net adjustment. If you want negative adjustments, pass mv.qty negative at API level.
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          adjustment_qty: qty,
+        });
+        break;
+      }
+
+      case "SOLD": {
+        if (!mv.fromSrdId) throw new Error("SOLD requires fromSrdId (the store SRD)");
+        await this.upsertAndBump(pg, mv.clientId, mv.fromSrdId, "DEPARTMENT", mv.itemId, mv.movementDate, {
+          sold_qty: qty,
+        });
+        break;
+      }
+
+      default:
+        throw new Error(`Unknown movement type: ${mv.eventType}`);
+    }
+  }
+
+  // Upsert row and bump movement columns
+  private async upsertAndBump(
+    pg: PoolClient,
+    clientId: string,
+    srdId: string,
+    srdType: SrdType,
+    itemId: string,
+    date: string,
+    deltas: Record<string, number>
+  ): Promise<void> {
+    // Ensure row exists
+    await pg.query(
+      `
+      INSERT INTO srd_ledger_daily (client_id, srd_id, srd_type, item_id, ledger_date)
+      VALUES ($1, $2, $3, $4, $5::date)
+      ON CONFLICT (srd_id, item_id, ledger_date)
+      DO NOTHING
+      `,
+      [clientId, srdId, srdType, itemId, date]
+    );
+
+    // Build update statement
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let i = 1;
+
+    for (const [col, delta] of Object.entries(deltas)) {
+      sets.push(`${col} = ${col} + $${i++}`);
+      vals.push(delta);
+    }
+
+    vals.push(srdId, itemId, date);
+
+    await pg.query(
+      `
+      UPDATE srd_ledger_daily
+      SET ${sets.join(", ")}, updated_at=now()
+      WHERE srd_id=$${i++} AND item_id=$${i++} AND ledger_date=$${i}::date
+      `,
+      vals
+    );
+  }
+
+  // Recalc forward for affected SRDs (from date for up to N days)
+  private async recalcForward(
+    pg: PoolClient,
+    clientId: string,
+    itemId: string,
+    fromSrdId: string | null | undefined,
+    toSrdId: string | null | undefined,
+    startDate: string,
+    days: number
+  ): Promise<void> {
+    const srdIds = Array.from(new Set([fromSrdId, toSrdId].filter(Boolean))) as string[];
+    for (const srdId of srdIds) {
+      await this.recalcOneStoreOneItem(pg, clientId, srdId, itemId, startDate, days);
+    }
+  }
+
+  private async recalcOneStoreOneItem(
+    pg: PoolClient,
+    clientId: string,
+    srdId: string,
+    itemId: string,
+    startDate: string,
+    days: number
+  ): Promise<void> {
+    // Pull srd_type once
+    const typeRes = await pg.query<{ srd_type: SrdType }>(
+      `SELECT srd_type FROM srd_ledger_daily WHERE client_id=$1 AND srd_id=$2 LIMIT 1`,
+      [clientId, srdId]
+    );
+    const srdType: SrdType = typeRes.rows[0]?.srd_type ?? "DEPARTMENT";
+
+    // Create rows for date range (so we never skip days)
+    await pg.query(
+      `
+      WITH dates AS (
+        SELECT generate_series($1::date, ($1::date + ($2::int || ' days')::interval)::date, '1 day'::interval)::date as d
+      )
+      INSERT INTO srd_ledger_daily (client_id, srd_id, srd_type, item_id, ledger_date)
+      SELECT $3, $4, $5, $6, d FROM dates
+      ON CONFLICT (srd_id, item_id, ledger_date) DO NOTHING
+      `,
+      [startDate, days, clientId, srdId, srdType, itemId]
+    );
+
+    // Load rows ordered
+    const rowsRes = await pg.query<any>(
+      `
+      SELECT *
+      FROM srd_ledger_daily
+      WHERE client_id=$1 AND srd_id=$2 AND item_id=$3
+        AND ledger_date BETWEEN $4::date AND ($4::date + ($5::int || ' days')::interval)::date
+      ORDER BY ledger_date ASC
+      FOR UPDATE
+      `,
+      [clientId, srdId, itemId, startDate, days]
+    );
+
+    // Get previous day closing for startDate
+    const prevRes = await pg.query<{ closing_qty: string }>(
+      `
+      SELECT closing_qty
+      FROM srd_ledger_daily
+      WHERE client_id=$1 AND srd_id=$2 AND item_id=$3 AND ledger_date < $4::date
+      ORDER BY ledger_date DESC
+      LIMIT 1
+      `,
+      [clientId, srdId, itemId, startDate]
+    );
+
+    let prevClosing = Number(prevRes.rows[0]?.closing_qty ?? 0);
+
+    for (const r of rowsRes.rows) {
+      const opening = prevClosing;
+
+      let closingExpected = 0;
+
+      if (srdType === "MAIN") {
+        // MAIN STORE formula:
+        // Closing = Opening + Purchase + ReturnsIn - Waste - WriteOff - ReqDepTotal
+        closingExpected =
+          opening +
+          Number(r.purchase_added_qty) +
+          Number(r.returns_in_qty) -
+          Number(r.waste_qty) -
+          Number(r.write_off_qty) -
+          Number(r.req_dep_total_qty);
+      } else {
+        // DEPARTMENT formula:
+        // Closing = Opening + FromMain + InterIn + Adjustment - (InterOut + ReturnsOut + Waste + WriteOff + Sold)
+        closingExpected =
+          opening +
+          Number(r.from_main_qty) +
+          Number(r.inter_in_qty) +
+          Number(r.adjustment_qty) -
+          (Number(r.inter_out_qty) +
+            Number(r.returns_out_to_main) +
+            Number(r.waste_qty) +
+            Number(r.write_off_qty) +
+            Number(r.sold_qty));
+      }
+
+      await pg.query(
+        `
+        UPDATE srd_ledger_daily
+        SET opening_qty=$1, closing_qty=$2, updated_at=now()
+        WHERE id=$3
+        `,
+        [opening, closingExpected, r.id]
+      );
+
+      prevClosing = closingExpected;
+    }
+  }
+}
+
+
+(Integration Rules)
+Tell your AI Builder:
+1.	Every time a stock movement is created/edited/deleted, it must call:
+•	createMovementAndPost(...)
+•	or updateMovementAndRepost(...)
+•	or deleteMovementAndReverse(...)
+2.	No other part of the app should write directly to SRD ledger columns.
+Everything goes through this engine.
+________________________________________
+5) IMPORTANT: BACKDATED FIX (Your Example)
+Because this service always calls:
+•	applyMovementDelta(...) to the row of that date
+•	then recalc forward up to 90 days
+Your scenario becomes correct automatically:
+If 50 bottles is posted on Dec 20, then Dec 21…Dec 25 closing updates automatically, making Dec 25 total 150 not 100.
+________________________________________
+6) 
+Implement SRD Ledger Engine EXACTLY using the provided SQL + srdLedgerService.ts.
+Rules:
+1) Do NOT redesign existing backend. 
+2) All movements must be posted via SrdLedgerService (create/update/delete), never by random writes.
+3) Recalc forward must run for up to 900 days for any backdated edit/post, ensuring Opening = yesterday Closing.
+4) Support: PURCHASE (Main), REQ_MAIN_TO_DEP, RETURN_DEP_TO_MAIN, TRANSFER_DEP_TO_DEP, WASTE, WRITE_OFF, ADJUSTMENT, SOLD.
+5) When movement touches two SRDs, update both SRDs and recalc both.
+6) Provide exact file paths edited + print first 10–15 lines of each file + code patches with star
