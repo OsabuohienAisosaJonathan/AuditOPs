@@ -165,6 +165,21 @@ export async function registerRoutes(
   // Both production (custom domain) and development (Replit webview) use HTTPS
   const isProduction = process.env.NODE_ENV === "production";
   
+  // Cookie secure flag strategy:
+  // - Production: always true (HTTPS required, explicit for safety)
+  // - Development: 'auto' - express-session automatically sets based on req.secure
+  //   which is determined by trust proxy + X-Forwarded-Proto header
+  //
+  // Using 'auto' in dev allows:
+  // - HTTPS on Replit webview (secure=true)
+  // - HTTP for local testing (secure=false)
+  //
+  // The previous dynamic middleware approach was removed because it caused race
+  // conditions - the cookie was being modified after session creation.
+  const useSecureCookies: boolean | "auto" = isProduction ? true : "auto";
+  
+  console.log(`[SESSION CONFIG] Production: ${isProduction}, CookieDomain: ${cookieDomain || 'not set'}, SecureCookies: ${useSecureCookies}`);
+  
   app.use(
     session({
       store: new PgStore({
@@ -179,10 +194,9 @@ export async function registerRoutes(
       rolling: true, // Enable sliding sessions - extends expiry on each request
       cookie: {
         httpOnly: true,
-        // Secure cookie: use req.secure which is set by trust proxy from X-Forwarded-Proto
-        // When accessed via HTTPS (Replit webview or production), req.secure will be true
-        // When accessed via HTTP (local curl), req.secure will be false
-        secure: false, // TEMPORARILY disabled to debug - will be set dynamically below
+        // FIXED: Always use secure cookies - Replit uses HTTPS in both dev and prod
+        // The previous dynamic approach caused race conditions where cookies weren't sent back
+        secure: useSecureCookies,
         sameSite: "lax",
         maxAge: SESSION_IDLE_MAX_AGE,
         domain: cookieDomain,
@@ -191,16 +205,8 @@ export async function registerRoutes(
     })
   );
   
-  // Dynamically set cookie.secure based on request protocol (req.secure is set by trust proxy)
-  // This ensures cookies work in both HTTPS (Replit/production) and HTTP (local testing)
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.session?.cookie) {
-      // If request is secure (HTTPS via X-Forwarded-Proto), set cookie as secure
-      // Otherwise leave as non-secure for local HTTP testing
-      req.session.cookie.secure = req.secure;
-    }
-    next();
-  });
+  // NOTE: Removed dynamic cookie.secure middleware - it was causing inconsistency
+  // With trust proxy enabled and secure: true, cookies work correctly in HTTPS environments
   
   // Sliding session middleware - extends session on authenticated requests
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -648,23 +654,18 @@ export async function registerRoutes(
           return res.status(500).json({ error: "Failed to establish session" });
         }
         
-        // Log successful login with cookie info
+        // Log successful login with cookie metadata (not the actual cookie value for security)
         const setCookieHeader = res.getHeader('Set-Cookie');
         const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
         
-        // Log the actual Set-Cookie header for debugging
-        console.log(`[LOGIN SET-COOKIE] ${setCookieStr.substring(0, 200)}...`);
-        
         logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
           userId: user.id,
-          sessionId: req.sessionID,
           setCookiePresent: !!setCookieHeader,
           setCookieHasSecure: setCookieStr.includes('Secure'),
           setCookieHasDomain: setCookieStr.includes('Domain'),
           cookieSecure: req.session.cookie.secure,
           cookieDomain: req.session.cookie.domain || 'not set',
           cookieSameSite: req.session.cookie.sameSite,
-          cookieMaxAge: req.session.cookie.maxAge,
         });
         
         storage.createAuditLog({

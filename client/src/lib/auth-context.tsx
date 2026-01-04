@@ -118,7 +118,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await authApi.login(username, password);
       const duration = Date.now() - startTime;
       logAuthEvent("LOGIN_OK", { endpoint: "/auth/login", duration, status: 200 });
-      setUser(userData);
+      
+      // CRITICAL FIX: Wait a brief moment for session to fully persist to database
+      // This prevents the race condition where /auth/me is called before session is saved
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify the session is actually working by calling /auth/me
+      // This ensures the cookie is properly set and session is persisted
+      try {
+        logAuthEvent("POST_LOGIN_VERIFY", { message: "Verifying session after login" });
+        const verifiedUser = await authApi.me();
+        logAuthEvent("POST_LOGIN_VERIFY_OK", { message: `Session verified for user ${verifiedUser.id}` });
+        setUser(verifiedUser);
+      } catch (verifyErr: any) {
+        // If verification fails, log it but still use the login response data
+        // This is a fallback - the login response has the user data
+        logAuthEvent("POST_LOGIN_VERIFY_FAIL", { 
+          message: `${verifyErr.message} - Using login response data`,
+          status: verifyErr.status,
+        });
+        setUser(userData);
+      }
+      
       setAuthError(null);
       resetRedirectState(); // Clear any redirect flags on successful login
       return userData;

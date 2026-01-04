@@ -1,0 +1,46 @@
+AI Builder Prompt: Fix “Sign-in overrides to Login” in Production
+In production only, users can successfully sign in but are immediately redirected back to the login page (override redirect). DevTools shows auth-protected calls often fail right after login. I need you to find the root cause and implement a permanent fix.
+1) Identify the exact redirect trigger
+A. Locate all redirect logic to login: middleware, route guards, layouts, useEffect, interceptors, and server auth checks.
+B. For each redirect location, log (temporarily) the reason for redirect (e.g., “no session”, “role missing”, “401”, “loading state”).
+C. Output: list all files/paths and the exact lines responsible for redirecting to login.
+2) Verify if the session/token is failing in production
+A. Confirm whether auth is cookie-based or Bearer token based.
+B. If cookie-based:
+Confirm login response sends Set-Cookie in production.
+Confirm subsequent requests (e.g., /api/profile or /api/me) include cookies.
+Ensure fetch/axios uses credentials: "include" (or equivalent).
+Check cookie flags: Secure, SameSite, Domain, Path, and ensure they match the production domain/subdomain and HTTPS.
+If API and frontend are different origins, fix CORS to allow credentials. C. If token-based:
+Confirm token is stored correctly and immediately available after login.
+Confirm every protected request sends Authorization: Bearer <token>.
+Ensure token is not being cleared on hydration or refresh.
+3) Fix production-only cookie/domain/HTTPS issues
+A. Ensure production uses HTTPS correctly and proxy headers are handled:
+If Express/Node: set trust proxy appropriately.
+Ensure X-Forwarded-Proto is respected. B. Ensure BASE_URL / NEXTAUTH_URL / callback URLs match the exact production domain. C. Ensure cookies are valid for the correct subdomain (e.g., app.domain.com vs domain.com).
+4) Prevent “redirect while auth is loading” (hydration bug)
+A. Find any logic like if (!user) redirect('/login') that runs before auth finishes loading.
+B. Implement correct gating:
+If auth is loading → show loader, do NOT redirect.
+Redirect only when loading === false and user/session is truly missing. C. Ensure the dashboard does not show briefly then redirect.
+5) Stop aggressive logout/redirect from interceptors
+A. Check axios/fetch interceptors that redirect to login on 401.
+B. Change logic so:
+Only log out when the auth-check endpoint confirms session invalid.
+Don’t log out due to one failing endpoint. C. Add “single-flight” refresh logic to prevent multiple refresh calls racing and forcing logout.
+6) Multi-instance / session store problems (production scaling)
+A. If sessions are stored in memory, fix it:
+Use Redis/DB session store OR switch to JWT strategy. B. Ensure SESSION_SECRET / JWT_SECRET is identical across all production instances.
+7) Deliverables (must be exact)
+A. Provide exact code edits with:
+Full file path + filename
+How to confirm it’s the right file (first 10–15 lines or a unique snippet)
+Exact section to replace (start/end markers)
+Full updated code for each modified file B. Add a short test checklist to confirm fix:
+Sign in → stay on dashboard (no redirect)
+Refresh dashboard page → still logged in
+New tab open → still logged in
+Network auth-check endpoints return 200 after login
+No 12-second client abort or “canceled” auth calls
+Goal: Eliminate production sign-in redirect override, stabilize session persistence, and ensure route guards behave correctly
