@@ -3,6 +3,13 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
+// Force production mode when deployed on Replit
+// REPLIT_DEPLOYMENT is set to "1" when the app is published
+if (process.env.REPLIT_DEPLOYMENT === "1" && !process.env.NODE_ENV) {
+  process.env.NODE_ENV = "production";
+  console.log("[STARTUP] Detected Replit deployment, setting NODE_ENV=production");
+}
+
 const app = express();
 const httpServer = createServer(app);
 

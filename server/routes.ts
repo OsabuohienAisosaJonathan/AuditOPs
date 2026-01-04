@@ -1233,12 +1233,13 @@ export async function registerRoutes(
 
   app.get("/api/auth/me", async (req, res) => {
     const requestId = (req as any).requestId || 'unknown';
+    const sessionIdPrefix = req.sessionID ? req.sessionID.substring(0, 8) : 'none';
     
     // Log detailed session diagnostics for /api/auth/me
-    console.log(`[AUTH /api/auth/me] Request: requestId=${requestId}, host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, sessionUserId=${req.session?.userId || 'none'}, cookieSecure=${req.session?.cookie?.secure}`);
+    console.log(`[AUTH /api/auth/me] Request: requestId=${requestId}, sessionId=${sessionIdPrefix}..., host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, sessionUserId=${req.session?.userId || 'none'}, cookieSecure=${req.session?.cookie?.secure}`);
     
     if (!req.session?.userId) {
-      console.log(`[AUTH /api/auth/me] No session userId - returning 401. Cookies present: ${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
+      console.log(`[AUTH /api/auth/me] No session userId - sessionId=${sessionIdPrefix}..., returning 401. Cookies present: ${req.headers.cookie?.split(';').map(c => c.trim().split('=')[0]).join(', ') || 'none'}`);
       return res.status(401).json({ error: "Unauthorized" });
     }
     
