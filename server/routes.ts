@@ -964,25 +964,29 @@ export async function registerRoutes(
       // Extend the session by touching it
       req.session.touch();
       
-      // Save session to persist the extended expiry
-      req.session.save((err) => {
-        if (err) {
-          console.error("[Auth] Session save error during refresh:", err);
-          return res.status(500).json({ error: "Failed to refresh session" });
-        }
-        
-        // Return session info
-        res.json({
-          success: true,
-          expiresAt: req.session.cookie.expires?.toISOString(),
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            fullName: user.fullName,
-            role: user.role,
+      // Save session to persist the extended expiry - await completion
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error("[Auth] Session save error during refresh:", err);
+            reject(err);
+          } else {
+            resolve();
           }
         });
+      });
+      
+      // Return session info after save completes
+      res.json({
+        success: true,
+        expiresAt: req.session.cookie.expires?.toISOString(),
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+        }
       });
     } catch (error: any) {
       console.error("[Auth] Refresh error:", error);
