@@ -27,6 +27,7 @@ import { randomBytes } from "crypto";
 import { registerPlatformAdminRoutes } from "./platform-admin-routes";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
+import { backfillSrdLedger, recalculateForward, backfillAllSrdsForClient, postMovementToLedgers } from "./srd-ledger-service";
 
 declare module "express-session" {
   interface SessionData {
@@ -4806,6 +4807,16 @@ export async function registerRoutes(
       
       console.log(`[SRD Transfer] RefId: ${refId}, From: ${fromSrdId}, To: ${toSrdId}, Item: ${item.name}, Qty: ${parsedQty}, Type: ${transferType || 'transfer'}`);
       
+      // Trigger forward recalculation for both SRDs to ensure carry-over is correct
+      setImmediate(async () => {
+        try {
+          await recalculateForward(clientId, fromSrdId, itemId, parsedDate);
+          await recalculateForward(clientId, toSrdId, itemId, parsedDate);
+        } catch (err: any) {
+          console.error(`[SRD Transfer] Forward recalc failed:`, err.message);
+        }
+      });
+      
       res.json(transfer);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -4869,6 +4880,80 @@ export async function registerRoutes(
       
       res.json({ success: true, message: "Transfer recalled successfully" });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============== SRD LEDGER BACKFILL API ==============
+  
+  // Backfill ledger for a specific SRD (supervisors and above)
+  app.post("/api/clients/:clientId/srd/:srdId/backfill-ledger", requireAuth, requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { clientId, srdId } = req.params;
+      const { startDate, endDate, itemId } = req.body;
+      
+      if (!startDate) {
+        return res.status(400).json({ error: "startDate is required" });
+      }
+      
+      const parsedStartDate = new Date(startDate);
+      const parsedEndDate = endDate ? new Date(endDate) : new Date();
+      
+      console.log(`[Ledger Backfill] Manual trigger for SRD ${srdId}, item: ${itemId || 'all'}, range: ${startDate} to ${endDate || 'today'}`);
+      
+      const result = await backfillSrdLedger({
+        clientId,
+        srdId,
+        itemId,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+      });
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Ledger Backfill",
+        entity: "StoreStock",
+        entityId: srdId,
+        details: `Backfilled ledger: ${result.rowsProcessed} rows (${result.rowsCreated} created, ${result.rowsUpdated} updated)`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("[Ledger Backfill] Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Backfill ledger for ALL SRDs of a client (supervisors and above)
+  app.post("/api/clients/:clientId/backfill-all-ledgers", requireAuth, requireSupervisorOrAbove, async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { startDate, endDate } = req.body;
+      
+      if (!startDate) {
+        return res.status(400).json({ error: "startDate is required" });
+      }
+      
+      const parsedStartDate = new Date(startDate);
+      const parsedEndDate = endDate ? new Date(endDate) : new Date();
+      
+      console.log(`[Ledger Backfill] Full client backfill for client ${clientId}, range: ${startDate} to ${endDate || 'today'}`);
+      
+      const result = await backfillAllSrdsForClient(clientId, parsedStartDate, parsedEndDate);
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Full Client Ledger Backfill",
+        entity: "Client",
+        entityId: clientId,
+        details: `Backfilled ${result.srdCount} SRDs: ${result.totalRows} rows (${result.totalCreated} created, ${result.totalUpdated} updated)`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("[Ledger Backfill] Error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -5860,6 +5945,22 @@ export async function registerRoutes(
           await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, -qty, unitCost, movementDate);
         }
       }
+      
+      // Trigger forward recalculation for affected SRDs
+      setImmediate(async () => {
+        try {
+          for (const line of lines) {
+            if (movementData.fromSrdId) {
+              await recalculateForward(clientId, movementData.fromSrdId, line.itemId, movementDate);
+            }
+            if (movementData.toSrdId && movementData.toSrdId !== movementData.fromSrdId) {
+              await recalculateForward(clientId, movementData.toSrdId, line.itemId, movementDate);
+            }
+          }
+        } catch (err: any) {
+          console.error(`[Stock Movement] Forward recalc failed:`, err.message);
+        }
+      });
       
       await storage.createAuditLog({
         userId: req.session.userId!,
