@@ -722,6 +722,10 @@ export interface UserSettings {
   autoSaveEnabled: boolean;
   autoSaveIntervalSeconds: number;
   varianceThresholdPercent: string;
+  emailNotificationsEnabled: boolean;
+  exceptionAlertsEnabled: boolean;
+  varianceAlertsEnabled: boolean;
+  dailyDigestEnabled: boolean;
   updatedAt?: string;
 }
 

@@ -1,0 +1,132 @@
+BILLING + SUBSCRIPTION ENFORCEMENT (MAKE IT FUNCTIONAL END-TO-END, NO UI REDESIGN)
+
+Context:
+Home pricing section + plan cards already exist, but billing is not functioning. Other settings sections work.
+We need real subscription status per organization + enforce limits + show billing status in Settings.
+
+Goals:
+1) Every owner account belongs to an organization/tenant.
+2) Each organization has a subscription plan + billing period + status.
+3) Enforce plan limits (clients count, SRD Dept Stores count, report access locks).
+4) Provide a clean Billing section in Settings: current plan, usage, upgrade, invoices/history placeholders.
+5) Do NOT redesign home page UI. Only connect functionality.
+
+---------------------------------------------------------
+A) DATA MODEL (TENANT-SAFE)
+---------------------------------------------------------
+1) Confirm we have: organizations table and users belong to organizationId.
+2) Create or finalize subscription tables (minimal):
+   organization_subscriptions:
+   - id
+   - organizationId (unique)
+   - planCode: starter|growth|business|enterprise
+   - billingCycle: monthly|quarterly|yearly
+   - status: trialing|active|past_due|canceled
+   - startsAt, endsAt
+   - autoRenew boolean
+   - provider: "manual" for now (do not integrate payment gateway unless already started)
+   - createdAt, updatedAt
+
+3) If org settings exist (organization_settings), enforce ONE row per org with proper UNIQUE constraint and UPSERT.
+   DO NOT suggest deleting production data. Use safe upsert and repair duplicates if present.
+
+---------------------------------------------------------
+B) ENTITLEMENTS + LIMITS (PLAN RULES)
+---------------------------------------------------------
+Implement a single source of truth: getEntitlements(planCode)
+
+Use these rules:
+Starter:
+- maxClients = 1
+- maxSRDMainStore = 1 per client
+- maxSRDDeptStores = 4 per client
+- Report locks:
+  - NO Purchases Register page + report download
+  - NO Department Comparison (1st Hit) report download
+  - NO Department Comparison (2nd Hit) page + full table report download
+  - NO SRD Main Store Ledger Summary report download
+
+Growth:
+- maxClients = 3
+- maxSRDMainStore = 1 per client
+- maxSRDDeptStores = 7 per client
+- Report locks:
+  - NO Department Comparison (2nd Hit) page + full table report download
+  - NO SRD Main Store Ledger Summary report download
+
+Business:
+- maxClients = 5
+- maxSRDMainStore = 1 per client
+- maxSRDDeptStores = 12 per client
+- Access all features + reports
+
+Enterprise:
+- maxClients = 10 (or unlimited if you prefer, but default to 10 for now)
+- maxSRDMainStore = 1 per client
+- maxSRDDeptStores = unlimited
+- Access all features + reports
+- Dedicated support badge
+
+(If you already defined client slots on Home page, align with it and store maxClients based on selection.)
+
+---------------------------------------------------------
+C) ENFORCEMENT POINTS (MUST WORK)
+---------------------------------------------------------
+1) When creating a NEW Client:
+- Check organization subscription status is active or trialing.
+- Check current client count < maxClients.
+- If exceeded: block create + show upgrade modal.
+
+2) When creating SRD inventory departments (Main Store / Department Store):
+- For the selected client, count existing SRD Dept Stores and compare against plan limit.
+- Block creation if limit exceeded with clear error: “Plan limit reached (X of Y). Upgrade to add more.”
+
+3) Report download + locked sections:
+- Report Builder selection must hide/disable locked options.
+- If user tries to export a locked report, show upgrade modal and prevent export.
+
+4) Department Comparison (2nd Hit) PAGE access:
+- If plan does not include it, page still loads but displays a locked screen with upgrade CTA (no crashes, no redirects).
+
+5) SRD Main Store Ledger Summary report:
+- If locked, show locked screen.
+
+---------------------------------------------------------
+D) BILLING UI IN SETTINGS (FUNCTIONAL)
+---------------------------------------------------------
+Add/finish Settings → Billing tab (or section) with:
+1) Current Plan card:
+- Plan name
+- Status (active/trialing/past_due/canceled)
+- Billing cycle
+- Renewal date (endsAt)
+2) Usage meters:
+- Clients used: X / maxClients
+- SRD Dept Stores used per selected client: X / limit
+3) Buttons:
+- Upgrade Plan (routes to /pricing or opens upgrade modal)
+- Manage Subscription (if provider=manual, show “Contact Support” for now)
+4) Billing History placeholder (table):
+- Date, Description, Amount, Status (empty state if none)
+
+---------------------------------------------------------
+E) ADMIN CONTROLS (SUPER ADMIN INSIDE ORG)
+---------------------------------------------------------
+1) Only Super Admin can change organization plan (manual mode):
+- Provide an internal admin action “Set Plan” inside Billing settings (visible to super admin only).
+- This updates organization_subscriptions record.
+2) Ensure non-super-admin cannot access plan modification routes.
+
+---------------------------------------------------------
+F) REQUIRED OUTPUT
+---------------------------------------------------------
+1) Exact file paths edited + first 10–15 lines each.
+2) Code patches with start/end markers.
+3) Migration steps (safe, no delete-all).
+4) Test checklist:
+- New org gets default trial subscription
+- Client limit blocks create on Starter
+- SRD Dept Store limit blocks create
+- Locked report options disabled
+- Locked pages show upgrade screen, no redirect loops
+END
