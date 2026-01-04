@@ -183,13 +183,37 @@ export async function registerRoutes(
   
   console.log(`[SESSION CONFIG] Production: ${isProduction}, CookieDomain: ${cookieDomain || 'not set'}, SecureCookies: ${useSecureCookies}`);
   
+  // Create session store with DISABLED automatic pruning
+  // We'll run pruning manually in a background interval with error isolation
+  const sessionStore = new PgStore({
+    pool: pool,
+    tableName: "session",
+    createTableIfMissing: true,
+    pruneSessionInterval: false, // DISABLE automatic pruning - prevents DB pressure during requests
+  });
+  
+  // Background session pruning - runs every 30 minutes, isolated from request path
+  const SESSION_PRUNE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+  setInterval(async () => {
+    try {
+      console.log("[Session Prune] Starting background session cleanup...");
+      const startTime = Date.now();
+      // Use a manual query to delete expired sessions instead of pruneSessions
+      // This gives us more control and better error handling
+      const result = await pool.query(
+        `DELETE FROM session WHERE expire < NOW()`
+      );
+      const duration = Date.now() - startTime;
+      console.log(`[Session Prune] Cleaned up ${result.rowCount || 0} expired sessions in ${duration}ms`);
+    } catch (err: any) {
+      // Log error but NEVER crash the server
+      console.error("[Session Prune] Failed to prune sessions:", err.message);
+    }
+  }, SESSION_PRUNE_INTERVAL_MS);
+  
   app.use(
     session({
-      store: new PgStore({
-        pool: pool,
-        tableName: "session",
-        createTableIfMissing: true,
-      }),
+      store: sessionStore,
       secret: process.env.SESSION_SECRET || "audit-ops-secret-key-change-in-production",
       resave: true, // Allow resave for sliding sessions
       saveUninitialized: false,

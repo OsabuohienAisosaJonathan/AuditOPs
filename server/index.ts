@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { initializePool, checkDbHealth, getPoolStats } from "./db";
 
 // Force production mode when deployed on Replit
 // REPLIT_DEPLOYMENT is set to "1" when the app is published
@@ -148,6 +149,27 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize database pool with retry at startup
+  console.log("[STARTUP] Initializing database pool...");
+  try {
+    await initializePool();
+    console.log("[STARTUP] Database pool initialized successfully");
+  } catch (err: any) {
+    console.error("[STARTUP] Failed to initialize database pool:", err.message);
+    console.error("[STARTUP] Server will attempt to connect on first request");
+  }
+
+  // Add /api/health/db endpoint before other routes (fast, no auth)
+  app.get("/api/health/db", async (_req, res) => {
+    try {
+      const health = await checkDbHealth();
+      const statusCode = health.ok ? 200 : 503;
+      res.status(statusCode).json(health);
+    } catch (err: any) {
+      res.status(503).json({ ok: false, error: err.message, poolStats: getPoolStats() });
+    }
+  });
+
   // Log email configuration status
   const { logEmailConfigStatus } = await import('./email');
   logEmailConfigStatus();

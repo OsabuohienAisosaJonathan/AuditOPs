@@ -1,0 +1,99 @@
+URGENT FIX: DB CONNECT TIMEOUTS CAUSING 15s ROUTE FAILURES (LOGIN + /api/clients + SESSION PRUNE)
+
+LOG PROOF:
+- POST /api/auth/login and GET /api/clients hit 15000ms and return 500
+- Error: “timeout exceeded when trying to connect”
+- Also: “Failed to prune sessions” same DB connect timeout
+This is NOT a UI issue — it’s backend DB connectivity/pool/session-prune pressure.
+
+GOAL:
+1) Stop “timeout exceeded when trying to connect”
+2) Make login + clients load reliably in production
+3) Ensure session prune NEVER breaks requests
+4) Add fast fallback (503 with clear message) instead of black/spinning UI
+
+A) DIAGNOSE QUICKLY (ADD SAFE LOGS, NO SECRETS)
+1) Add DB diagnostics logs (safe) around every DB call:
+   - route name, orgId/userId (if available), query start/end, duration
+   - pool stats: totalCount, idleCount, waitingCount (if pg Pool)
+   - acquisition time: how long it waited to get a client
+2) Add a lightweight /api/health/db endpoint:
+   - runs “SELECT 1” with a hard timeout
+   - returns { ok:true, latencyMs } or { ok:false, error }
+This confirms if prod DB is reachable when the problem happens.
+
+B) FIX ROOT CAUSE: ENSURE SINGLETON POOL + RIGHT POOL SETTINGS
+This error usually happens when:
+- a new DB connection/pool is created per request (bad in prod),
+- pool is exhausted / waiting,
+- DB provider sleeps / needs pooled connection string,
+- session prune and auth queries are competing for connections.
+
+Implement these rules:
+1) Use ONE shared DB pool/client for the whole server process (singleton).
+   - Move DB init into one module (e.g. server/db.ts) and export it.
+   - Ensure routes import the same instance (NO new Pool() in routes).
+2) Configure pool for production stability (example for pg Pool):
+   - max: 5 (or 10 if you’re sure DB allows it)
+   - idleTimeoutMillis: 30000
+   - connectionTimeoutMillis: 10000 (NOT 15000)
+   - keepAlive: true
+   - statement_timeout: 30000 (optional)
+3) If database is NEON/SERVERLESS:
+   - ensure production uses the “pooled” connection string (pooler endpoint)
+   - enforce sslmode=require if provider needs it
+   - do NOT open many direct connections (pooler is required)
+4) Add retry-on-connect only at pool creation / first connect:
+   - 2 retries with exponential backoff (e.g. 300ms, 800ms)
+   - DO NOT retry each query repeatedly (causes thundering herd)
+
+C) FIX REQUEST TIMEOUT HANDLING (DON’T DOUBLE-RESPOND)
+Your logs show:
+- [REQUEST TIMEOUT] … aborting
+- [SKIP WRITE] response already handled
+This means route handler is still running after timeout.
+
+Implement:
+1) Wrap each request with a safe timeout middleware:
+   - if timeout triggers, return 504/503 once
+   - abort further writes / stop awaiting DB when possible
+2) Ensure all routes return a friendly JSON error on DB timeout:
+   { message: "Database temporarily unavailable. Please retry." }
+
+D) SESSION PRUNE MUST NOT BREAK APP
+“Failed to prune sessions” proves background session cleanup is hitting DB and failing.
+
+Fix:
+1) Session pruning must run:
+   - in a background interval with try/catch
+   - NEVER inside request/response path
+2) If prune fails, log it but DO NOT crash the server.
+3) Reduce prune frequency (e.g. every 30–60 mins), and ensure it uses the shared pool (no new connection).
+
+E) MAKE LOGIN + /api/clients FAST & SAFE
+1) Add DB indexes (only if missing) for org scoping:
+   - clients.organizationId
+   - users.organizationId
+   - sessions.userId / sessions.expiresAt (if sessions stored in DB)
+2) Ensure /api/clients always filters by organizationId and does not do heavy joins.
+3) On login:
+   - avoid any extra heavy queries (no big selects)
+   - just validate credentials + fetch user/org id.
+
+F) FRONTEND SAFETY (MINIMAL)
+Even with backend fixed, UI must not go blank:
+1) If API returns 503/504, show error card + retry button.
+2) Do NOT infinite-spin.
+(Keep changes minimal; no redesign.)
+
+G) REQUIRED OUTPUT
+1) Show exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide patches with clear START/END markers.
+4) Provide a test checklist:
+   - login works in production 10 times in a row
+   - /api/clients returns under 2s with real data
+   - when DB is down, API returns 503 fast (no 15s hang)
+   - session prune failure does not affect login/clients
+END PROMPT
+
