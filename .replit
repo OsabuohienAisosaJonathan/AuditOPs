@@ -48,3 +48,4 @@ mockupState = "FULLSTACK"
 [userenv.production]
 APP_URL = "https://miauditops.com"
 COOKIE_DOMAIN = ".miauditops.com"
+NODE_ENV = "production"
