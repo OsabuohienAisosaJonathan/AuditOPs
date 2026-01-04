@@ -14,8 +14,11 @@ import { useCurrency } from "@/lib/currency-context";
 import { useAuth } from "@/lib/auth-context";
 import { useEntitlements } from "@/lib/entitlements-context";
 import { toast } from "sonner";
-import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun, Bell, Download, FileText, Clock, Shield } from "lucide-react";
+import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun, Bell, Download, FileText, Clock, Shield, Calendar } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
+import { format, subDays } from "date-fns";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 
 function AdminSubscriptionControls({ currentPlan, currentStatus, onPlanChange }: { currentPlan: string; currentStatus: string; onPlanChange?: () => void }) {
   const queryClient = useQueryClient();
@@ -95,6 +98,197 @@ function AdminSubscriptionControls({ currentPlan, currentStatus, onPlanChange }:
             {updateSubscriptionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save Changes
           </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataExportCard() {
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"xlsx" | "csv">("xlsx");
+  const [startDate, setStartDate] = useState<Date>(subDays(new Date(), 30));
+  const [endDate, setEndDate] = useState<Date>(new Date());
+  const [showCustomRange, setShowCustomRange] = useState(false);
+
+  const handleExport = async (useRange: boolean = false) => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("format", exportFormat);
+      if (useRange) {
+        params.set("startDate", startDate.toISOString());
+        params.set("endDate", endDate.toISOString());
+      }
+      
+      toast.info("Preparing export...");
+      
+      const response = await fetch(`/api/export?${params.toString()}`, {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Export failed");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = exportFormat === "csv" 
+        ? `audit-export-${format(new Date(), "yyyy-MM-dd")}.zip`
+        : `audit-export-${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success("Download started!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export data");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Download className="h-5 w-5 text-muted-foreground" />
+          <CardTitle>Data Export</CardTitle>
+        </div>
+        <CardDescription>Export your audit data for backup or analysis</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Label>Format:</Label>
+            <Select value={exportFormat} onValueChange={(v: "xlsx" | "csv") => setExportFormat(v)}>
+              <SelectTrigger className="w-[180px]" data-testid="select-export-format">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
+                <SelectItem value="csv">CSV (ZIP)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="p-4 border rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <FileText className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium">Full Data Export</span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Export all clients, items, inventory, reconciliations, and exceptions (last 30 days).
+            </p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handleExport(false)}
+              disabled={isExporting}
+              data-testid="button-export-full"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export All
+                </>
+              )}
+            </Button>
+          </div>
+          <div className="p-4 border rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium">Date Range Export</span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-2">
+              Export data from a specific time period.
+            </p>
+            {!showCustomRange ? (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setShowCustomRange(true)}
+                data-testid="button-show-range"
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                Select Date Range
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex gap-2 items-center flex-wrap">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="justify-start text-left font-normal w-[130px]">
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {format(startDate, "MMM d, yyyy")}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <CalendarComponent
+                        mode="single"
+                        selected={startDate}
+                        onSelect={(date) => date && setStartDate(date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <span className="text-sm text-muted-foreground">to</span>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="justify-start text-left font-normal w-[130px]">
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {format(endDate, "MMM d, yyyy")}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <CalendarComponent
+                        mode="single"
+                        selected={endDate}
+                        onSelect={(date) => date && setEndDate(date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleExport(true)}
+                  disabled={isExporting}
+                  data-testid="button-export-range"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Range
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+        <Separator />
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Exports include: Clients, Categories, Departments, Items, Suppliers, GRNs, SRDs, Exceptions, Receivables, and Surplus data.
+          </p>
         </div>
       </CardContent>
     </Card>
@@ -581,50 +775,7 @@ export default function Settings() {
         </Card>
 
         {isSuperAdmin && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Download className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Data Export</CardTitle>
-              </div>
-              <CardDescription>Export your audit data for backup or analysis</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center gap-3 mb-2">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                    <span className="font-medium">Full Data Export</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Export all clients, items, inventory, reconciliations, and exceptions.
-                  </p>
-                  <Button variant="outline" size="sm" disabled data-testid="button-export-full">
-                    <Download className="mr-2 h-4 w-4" />
-                    Export All (Coming Soon)
-                  </Button>
-                </div>
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Clock className="h-5 w-5 text-muted-foreground" />
-                    <span className="font-medium">Date Range Export</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Export data from a specific time period.
-                  </p>
-                  <Button variant="outline" size="sm" disabled data-testid="button-export-range">
-                    <Download className="mr-2 h-4 w-4" />
-                    Custom Export (Coming Soon)
-                  </Button>
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <Label className="text-muted-foreground text-sm mb-3 block">Recent Exports</Label>
-                <p className="text-sm text-muted-foreground italic">No exports yet. Start an export above.</p>
-              </div>
-            </CardContent>
-          </Card>
+          <DataExportCard />
         )}
       </div>
     </div>

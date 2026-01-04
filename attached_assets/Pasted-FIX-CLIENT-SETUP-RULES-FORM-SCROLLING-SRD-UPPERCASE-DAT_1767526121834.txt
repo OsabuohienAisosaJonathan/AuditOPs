@@ -1,0 +1,67 @@
+FIX CLIENT SETUP RULES + FORM SCROLLING + SRD UPPERCASE + DATA EXPORT (ONE PROMPT)
+
+A) CLIENT SETUP RULE: CATEGORY REQUIRED BEFORE DEPARTMENT
+1) Block “Create Department” if the selected client has ZERO categories.
+2) When user clicks “Add Department” and no categories exist:
+   a) Show a clean modal/alert:
+      “Create at least 1 CATEGORY before adding Departments. Categories help group Departments for inventory and reporting.”
+   b) Add button: “Create Category Now” -> opens Create Category modal/page.
+3) Backend enforcement too:
+   a) If POST /departments is called when client has no categories, return 400 with the same message.
+4) After category is created successfully, auto-refresh and allow department creation immediately.
+Do not redesign UI. Just enforce this rule + friendly prompt.
+
+B) UI FIX: MAKE ITEM CREATE/EDIT FORMS SCROLLABLE
+Problem: Item Create/Edit forms can’t reach the last sections on smaller screens.
+Fix:
+1) Wrap the form body in a scroll container:
+   a) set a max-height (e.g., 70vh or calc(100vh - header/footer))
+   b) enable overflow-y:auto
+2) Keep footer actions (Save/Cancel) sticky or always visible at the bottom.
+3) Apply to BOTH:
+   a) Create Item form modal
+   b) Edit Item form modal
+No layout redesign. Just add scrolling + ensure buttons remain accessible.
+
+C) SRD NAME AUTO-UPPERCASE (LINK OR CREATE SRD FORM)
+1) On the “Link or Create SRD” form, for the “Create New SRD” name input:
+   a) convert user typing to UPPERCASE live (onChange -> value.toUpperCase()).
+2) Backend enforcement:
+   a) sanitize SRD name to UPPERCASE again on create/update so lowercase can never be stored.
+3) Apply ONLY to SRD Name field (do not affect other fields unless already required).
+
+D) DATA EXPORT & BACKUP: MAKE IT FUNCTIONAL (TENANT-SAFE)
+In Settings → Data Export & Backup:
+1) Implement export buttons that actually work and download files.
+2) Export MUST be scoped to the logged-in organizationId/tenant only (no cross-tenant data).
+3) Provide export options:
+   A) Export to Excel (XLSX)
+   B) Export to CSV (ZIP if multiple files)
+4) Include at minimum these datasets:
+   - Clients
+   - Departments + Categories
+   - Items + Suppliers
+   - Purchases/GRN
+   - Sales Captures + Declared Payments
+   - SRD Ledgers + Counts
+   - Exceptions + Receivables + Surplus Registers
+5) Add date range filter (default: last 30 days) + custom range.
+6) Backend:
+   a) Create /api/export endpoint(s) that generate file and return as attachment download.
+   b) For larger exports, use streaming or chunking but MUST still return a working download.
+7) UI:
+   a) show progress state (“Preparing export…”)
+   b) show success (“Download started”)
+   c) show error message if export fails
+Do not redesign the Settings page; only make the existing export actions functional.
+
+E) REQUIRED OUTPUT (FOR VERIFICATION)
+1) List exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide code patches with clear START/END markers.
+4) Provide a quick test checklist:
+   - cannot create department without at least 1 category
+   - item create/edit forms scroll and Save button reachable
+   - SRD name saves in uppercase (frontend + backend)
+   - data export downloads correct tenant data and respects date range
+END PROMPT

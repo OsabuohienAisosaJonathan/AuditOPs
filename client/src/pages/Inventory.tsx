@@ -515,7 +515,7 @@ export default function Inventory() {
                       <Plus className="h-4 w-4" /> Add Item
                     </Button>
                   </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="max-h-[85vh] flex flex-col">
                       <DialogHeader>
                         <DialogTitle>Create New Item</DialogTitle>
                         <DialogDescription>Add a new inventory item.</DialogDescription>
@@ -543,8 +543,8 @@ export default function Inventory() {
                         });
                         setNewItemCategoryId("");
                         setNewItemSerialTracking("none");
-                      }}>
-                        <div className="space-y-4 py-4">
+                      }} className="flex flex-col flex-1 overflow-hidden">
+                        <div className="space-y-4 py-4 overflow-y-auto flex-1 px-1">
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <Label htmlFor="name">Item Name</Label>
@@ -628,7 +628,7 @@ export default function Inventory() {
                             )}
                           </div>
                         </div>
-                        <DialogFooter>
+                        <DialogFooter className="flex-shrink-0 border-t pt-4 mt-2">
                           <Button type="button" variant="outline" onClick={() => setCreateItemOpen(false)}>Cancel</Button>
                           <Button type="submit" disabled={createItemMutation.isPending} data-testid="button-submit-item">
                             {createItemMutation.isPending && <Spinner className="mr-2" />}
@@ -1176,8 +1176,16 @@ export default function Inventory() {
                       ) : (
                         <div className="space-y-2">
                           <Label htmlFor="storeName">Stock Reconciliation Department (SRD) Name</Label>
-                          <Input id="storeName" name="name" placeholder="e.g., Main Kitchen, Bar Area" data-testid="input-store-name" />
-                          <p className="text-xs text-muted-foreground">"SR-D" suffix will be added automatically</p>
+                          <Input 
+                            id="storeName" 
+                            name="name" 
+                            placeholder="e.g., MAIN KITCHEN, BAR AREA" 
+                            data-testid="input-store-name"
+                            onChange={(e) => {
+                              e.target.value = e.target.value.toUpperCase();
+                            }}
+                          />
+                          <p className="text-xs text-muted-foreground">SRD names are saved in UPPERCASE. "SR-D" suffix will be added automatically.</p>
                         </div>
                       )}
                     </div>
@@ -1477,7 +1485,7 @@ export default function Inventory() {
 
       {/* Edit Item Dialog */}
       <Dialog open={editItemOpen} onOpenChange={setEditItemOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit Item</DialogTitle>
             <DialogDescription>Update the inventory item details.</DialogDescription>
@@ -1504,8 +1512,8 @@ export default function Inventory() {
                   serialNotes: formData.get("serialNotes") as string || null,
                 },
               });
-            }}>
-              <div className="space-y-4 py-4">
+            }} className="flex flex-col flex-1 overflow-hidden">
+              <div className="space-y-4 py-4 overflow-y-auto flex-1 px-1">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-name">Item Name</Label>
@@ -1593,7 +1601,7 @@ export default function Inventory() {
                   )}
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="flex-shrink-0 border-t pt-4 mt-2">
                 <Button type="button" variant="outline" onClick={() => setEditItemOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={updateItemMutation.isPending} data-testid="button-save-item">
                   {updateItemMutation.isPending ? "Saving..." : "Update Item"}

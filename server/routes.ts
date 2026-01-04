@@ -23,6 +23,8 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { registerPlatformAdminRoutes } from "./platform-admin-routes";
+import * as XLSX from "xlsx";
+import archiver from "archiver";
 
 declare module "express-session" {
   interface SessionData {
@@ -3223,6 +3225,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "clientId is required" });
       }
       
+      // Check if client has at least one category before allowing department creation
+      const categories = await storage.getCategories(clientId);
+      if (!categories || categories.length === 0) {
+        return res.status(400).json({ 
+          error: "Create at least 1 CATEGORY before adding Departments. Categories help group Departments for inventory and reporting.",
+          code: "CATEGORY_REQUIRED"
+        });
+      }
+      
       const insertData = deptList
         .map((name: string) => name.trim())
         .filter((name: string) => validateNameLength(name))
@@ -4160,9 +4171,10 @@ export async function registerRoutes(
   });
 
   const normalizeSRDName = (name: string): string => {
-    const trimmed = name.trim();
+    // Convert to uppercase first, then trim
+    const trimmed = name.toUpperCase().trim();
     const suffix = "SR-D";
-    if (trimmed.toUpperCase().endsWith(suffix)) {
+    if (trimmed.endsWith(suffix)) {
       return trimmed.slice(0, -suffix.length).trim() + " " + suffix;
     }
     return trimmed + " " + suffix;
@@ -6557,6 +6569,151 @@ export async function registerRoutes(
       res.json(report);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== DATA EXPORT ==============
+  app.get("/api/export", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const { format = "xlsx", startDate, endDate } = req.query;
+      
+      // Calculate date range (default to last 30 days)
+      const end = endDate ? new Date(endDate as string) : new Date();
+      const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Fetch all data scoped to organization
+      const clients = await storage.getClients(user.organizationId);
+      const clientIds = clients.map((c: any) => c.id);
+      
+      // Collect all data for each client
+      const allCategories: any[] = [];
+      const allDepartments: any[] = [];
+      const allItems: any[] = [];
+      const allSuppliers: any[] = [];
+      const allGRNs: any[] = [];
+      const allStoreNames: any[] = [];
+      const allExceptions: any[] = [];
+      const allReceivables: any[] = [];
+      const allSurplus: any[] = [];
+      
+      for (const clientId of clientIds) {
+        try {
+          const clientName = clients.find((cl: any) => cl.id === clientId)?.name;
+          
+          const categories = await storage.getCategories(clientId);
+          allCategories.push(...categories.map((c: any) => ({ ...c, clientName })));
+          
+          const departments = await storage.getDepartments(clientId);
+          allDepartments.push(...departments.map((d: any) => ({ ...d, clientName })));
+          
+          const items = await storage.getItems(clientId);
+          allItems.push(...items.map((i: any) => ({ ...i, clientName })));
+          
+          const suppliers = await storage.getSuppliers(clientId);
+          allSuppliers.push(...suppliers.map((s: any) => ({ ...s, clientName })));
+          
+          const grns = await storage.getGoodsReceivedNotes(clientId);
+          const filteredGRNs = grns.filter((g: any) => new Date(g.createdAt) >= start && new Date(g.createdAt) <= end);
+          allGRNs.push(...filteredGRNs.map((g: any) => ({ ...g, clientName })));
+          
+          const storeNames = await storage.getStoreNamesByClient(clientId);
+          allStoreNames.push(...storeNames.map((s: any) => ({ ...s, clientName })));
+          
+          const exceptions = await storage.getExceptions({ clientId });
+          const filteredExceptions = exceptions.filter((e: any) => new Date(e.createdAt) >= start && new Date(e.createdAt) <= end);
+          allExceptions.push(...filteredExceptions.map((e: any) => ({ ...e, clientName })));
+          
+          const receivables = await storage.getReceivables(clientId);
+          allReceivables.push(...receivables.map((r: any) => ({ ...r, clientName })));
+          
+          const surplus = await storage.getSurpluses(clientId);
+          allSurplus.push(...surplus.map((s: any) => ({ ...s, clientName })));
+        } catch (e) {
+          // Continue with next client if one fails
+          console.error(`Export error for client ${clientId}:`, e);
+        }
+      }
+      
+      // Create workbook with all sheets
+      const workbook = XLSX.utils.book_new();
+      
+      // Helper to convert data to sheet with flattened objects
+      const addSheet = (data: any[], sheetName: string) => {
+        if (data.length === 0) {
+          const emptySheet = XLSX.utils.json_to_sheet([{ note: "No data available" }]);
+          XLSX.utils.book_append_sheet(workbook, emptySheet, sheetName);
+        } else {
+          const flatData = data.map(item => {
+            const flat: Record<string, any> = {};
+            for (const [key, value] of Object.entries(item)) {
+              if (value instanceof Date) {
+                flat[key] = value.toISOString();
+              } else if (typeof value === "object" && value !== null) {
+                flat[key] = JSON.stringify(value);
+              } else {
+                flat[key] = value;
+              }
+            }
+            return flat;
+          });
+          const sheet = XLSX.utils.json_to_sheet(flatData);
+          XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+        }
+      };
+      
+      addSheet(clients.map((c: any) => ({ id: c.id, name: c.name, status: c.status, createdAt: c.createdAt })), "Clients");
+      addSheet(allCategories, "Categories");
+      addSheet(allDepartments, "Departments");
+      addSheet(allItems, "Items");
+      addSheet(allSuppliers, "Suppliers");
+      addSheet(allGRNs, "GRNs");
+      addSheet(allStoreNames, "SRDs");
+      addSheet(allExceptions, "Exceptions");
+      addSheet(allReceivables, "Receivables");
+      addSheet(allSurplus, "Surplus");
+      
+      if (format === "csv") {
+        // Create CSV zip file
+        const archive = archiver("zip");
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename=audit-export-${new Date().toISOString().split("T")[0]}.zip`);
+        
+        archive.pipe(res);
+        
+        // Add each sheet as a CSV file
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const csv = XLSX.utils.sheet_to_csv(sheet);
+          archive.append(csv, { name: `${sheetName}.csv` });
+        }
+        
+        await archive.finalize();
+      } else {
+        // Generate Excel file
+        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+        
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", `attachment; filename=audit-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        res.send(buffer);
+      }
+      
+      // Log the export
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Data Export",
+        entity: "Export",
+        entityId: null,
+        details: `Exported data in ${format} format. Date range: ${start.toISOString().split("T")[0]} to ${end.toISOString().split("T")[0]}`,
+        ipAddress: req.ip || "Unknown",
+      });
+    } catch (error: any) {
+      console.error("Export error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate export" });
     }
   });
 

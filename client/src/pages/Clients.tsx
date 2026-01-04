@@ -48,6 +48,7 @@ export default function Clients() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [deleteCategoryConfirm, setDeleteCategoryConfirm] = useState<Category | null>(null);
   const [deleteCategoryAck, setDeleteCategoryAck] = useState(false);
+  const [showCategoryRequiredDialog, setShowCategoryRequiredDialog] = useState(false);
 
   const queryClient = useQueryClient();
   const { isOnline } = useNetworkStatus();
@@ -407,6 +408,12 @@ export default function Clients() {
                           <Button 
                             size="sm" 
                             onClick={() => {
+                              // Check if client has at least one category before allowing department creation
+                              if (!expandedCategories || expandedCategories.length === 0) {
+                                setSelectedClientForCategory(client);
+                                setShowCategoryRequiredDialog(true);
+                                return;
+                              }
                               setSelectedClientForDept(client);
                               setCreateDeptDialogOpen(true);
                             }}
@@ -685,6 +692,36 @@ export default function Clients() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Category Required Dialog - shown when trying to add department without categories */}
+      <Dialog open={showCategoryRequiredDialog} onOpenChange={setShowCategoryRequiredDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Category Required
+            </DialogTitle>
+            <DialogDescription>
+              Create at least 1 CATEGORY before adding Departments. Categories help group Departments for inventory and reporting.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShowCategoryRequiredDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              type="button" 
+              onClick={() => {
+                setShowCategoryRequiredDialog(false);
+                setCreateCategoryDialogOpen(true);
+              }}
+            >
+              Create Category Now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
       <Dialog open={createCategoryDialogOpen} onOpenChange={setCreateCategoryDialogOpen}>
         <DialogContent>
           <DialogHeader>
