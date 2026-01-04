@@ -645,76 +645,89 @@ export async function registerRoutes(
       const sessionIdBeforeLogin = req.sessionID;
       console.log(`[LOGIN] Starting session setup: oldSessionId=${sessionIdBeforeLogin?.substring(0, 8)}..., userId=${user.id}`);
       
-      // CRITICAL FIX: Regenerate session to prevent session fixation attacks
-      // and ensure a fresh session ID is created for the authenticated user.
-      // This also ensures the browser gets a new cookie with the correct domain/secure flags.
-      req.session.regenerate((regenErr) => {
-        if (regenErr) {
-          console.error(`[LOGIN] Session regeneration failed:`, regenErr);
-          logAuthDiagnostic(req, res, 'LOGIN_SESSION_REGEN_ERROR', { 
-            userId: user.id, 
-            error: regenErr.message 
-          });
-          return res.status(500).json({ error: "Failed to establish session" });
-        }
-        
-        const newSessionId = req.sessionID;
-        console.log(`[LOGIN] Session regenerated: oldId=${sessionIdBeforeLogin?.substring(0, 8)}..., newId=${newSessionId?.substring(0, 8)}...`);
-        
-        // Set user data on the NEW session
-        req.session.userId = user.id;
-        req.session.role = user.role;
-        (req.session as any).createdAt = Date.now();
-        
-        // Save the session with user data
-        req.session.save((saveErr) => {
-          if (saveErr) {
-            console.error(`[LOGIN] Session save failed:`, saveErr);
+      // CRITICAL FIX: Use Promise wrappers to ensure session is fully persisted
+      // to PostgreSQL before sending response. This prevents the race condition
+      // where client calls /auth/me before session row has userId.
+      
+      // Step 1: Regenerate session (prevents session fixation attacks)
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) {
+            console.error(`[LOGIN] Session regeneration failed:`, err);
+            logAuthDiagnostic(req, res, 'LOGIN_SESSION_REGEN_ERROR', { 
+              userId: user.id, 
+              error: err.message 
+            });
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+      
+      const newSessionId = req.sessionID;
+      console.log(`[LOGIN] Session regenerated: oldId=${sessionIdBeforeLogin?.substring(0, 8)}..., newId=${newSessionId?.substring(0, 8)}...`);
+      
+      // Step 2: Set user data on the NEW session
+      req.session.userId = user.id;
+      req.session.role = user.role;
+      (req.session as any).createdAt = Date.now();
+      
+      // Step 3: Save the session and WAIT for PostgreSQL write to complete
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error(`[LOGIN] Session save failed:`, err);
             logAuthDiagnostic(req, res, 'LOGIN_SESSION_SAVE_ERROR', { 
               userId: user.id, 
               sessionId: newSessionId?.substring(0, 8),
-              error: saveErr.message 
+              error: err.message 
             });
-            return res.status(500).json({ error: "Failed to establish session" });
+            reject(err);
+          } else {
+            resolve();
           }
-          
-          // Log successful login with cookie metadata
-          const setCookieHeader = res.getHeader('Set-Cookie');
-          const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
-          
-          console.log(`[LOGIN] Session saved successfully: sessionId=${newSessionId?.substring(0, 8)}..., userId=${user.id}, setCookie=${!!setCookieHeader}`);
-          
-          logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
-            userId: user.id,
-            sessionIdBefore: sessionIdBeforeLogin?.substring(0, 8),
-            sessionIdAfter: newSessionId?.substring(0, 8),
-            sessionIdChanged: sessionIdBeforeLogin !== newSessionId,
-            setCookiePresent: !!setCookieHeader,
-            setCookieHasSecure: setCookieStr.includes('Secure'),
-            setCookieHasDomain: setCookieStr.includes('Domain'),
-            cookieSecure: req.session.cookie.secure,
-            cookieDomain: req.session.cookie.domain || 'not set',
-            cookieSameSite: req.session.cookie.sameSite,
-          });
-          
-          storage.createAuditLog({
-            userId: user.id,
-            action: "Login",
-            entity: "Session",
-            details: "Successful login via web",
-            ipAddress: req.ip || "Unknown",
-          });
-
-          res.json({ 
-            id: user.id, 
-            username: user.username, 
-            email: user.email, 
-            fullName: user.fullName, 
-            role: user.role,
-            mustChangePassword: user.mustChangePassword,
-            accessScope: user.accessScope,
-          });
         });
+      });
+      
+      // Session is now fully persisted to PostgreSQL
+      // Log successful login with cookie metadata
+      const setCookieHeader = res.getHeader('Set-Cookie');
+      const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
+      
+      console.log(`[LOGIN] Session saved successfully: sessionId=${newSessionId?.substring(0, 8)}..., userId=${user.id}, setCookie=${!!setCookieHeader}`);
+      
+      logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
+        userId: user.id,
+        sessionIdBefore: sessionIdBeforeLogin?.substring(0, 8),
+        sessionIdAfter: newSessionId?.substring(0, 8),
+        sessionIdChanged: sessionIdBeforeLogin !== newSessionId,
+        setCookiePresent: !!setCookieHeader,
+        setCookieHasSecure: setCookieStr.includes('Secure'),
+        setCookieHasDomain: setCookieStr.includes('Domain'),
+        cookieSecure: req.session.cookie.secure,
+        cookieDomain: req.session.cookie.domain || 'not set',
+        cookieSameSite: req.session.cookie.sameSite,
+      });
+      
+      // Non-blocking audit log (don't await - session is already persisted)
+      storage.createAuditLog({
+        userId: user.id,
+        action: "Login",
+        entity: "Session",
+        details: "Successful login via web",
+        ipAddress: req.ip || "Unknown",
+      });
+
+      // Send response ONLY after session is fully persisted
+      res.json({ 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        fullName: user.fullName, 
+        role: user.role,
+        mustChangePassword: user.mustChangePassword,
+        accessScope: user.accessScope,
       });
     } catch (error: any) {
       logAuthDiagnostic(req, res, 'LOGIN_ERROR', { error: error.message });
@@ -831,7 +844,19 @@ export async function registerRoutes(
       // Auto login the demo user
       req.session.userId = demoUser.id;
       req.session.role = demoUser.role;
-      (req.session as any).createdAt = Date.now(); // Track session creation for absolute max age
+      (req.session as any).createdAt = Date.now();
+      
+      // Save session and WAIT for PostgreSQL write to complete
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error(`[DEMO-LOGIN] Session save failed:`, err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
       
       await storage.updateUser(demoUser.id, {
         lastLoginAt: new Date(),
