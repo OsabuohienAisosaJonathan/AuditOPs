@@ -169,21 +169,26 @@ function PlatformAdminRoutes() {
   const { admin, isLoading } = usePlatformAdminAuth();
   const [location] = useLocation();
 
+  // Always show login page for login route
   if (location === "/platform-admin/login") {
     return <PlatformAdminLogin />;
   }
 
+  // Show loading while checking auth - prevents flash of protected content
   if (isLoading) {
     return <AuthLoadingScreen />;
   }
 
+  // Not authenticated - redirect to login
   if (!admin) {
     return <PlatformAdminLogin />;
   }
 
+  // Authenticated - show protected routes
   return (
     <Switch>
       <Route path="/platform-admin" component={PlatformAdminDashboard} />
+      <Route path="/platform-admin/organizations/:id" component={PlatformAdminOrganizations} />
       <Route path="/platform-admin/organizations" component={PlatformAdminOrganizations} />
       <Route path="/platform-admin/users" component={PlatformAdminUsers} />
       <Route path="/platform-admin/billing" component={PlatformAdminBilling} />
