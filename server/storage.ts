@@ -354,6 +354,7 @@ export interface IStorage {
   generateTransferRefId(clientId: string, date: Date): Promise<string>;
 
   // Purchase Item Events (purchase register)
+  getPurchaseItemEvent(id: string): Promise<PurchaseItemEvent | undefined>;
   getPurchaseItemEvents(filters: { clientId: string; srdId?: string; itemId?: string; dateFrom?: Date; dateTo?: Date }): Promise<PurchaseItemEvent[]>;
   createPurchaseItemEvent(event: InsertPurchaseItemEvent): Promise<PurchaseItemEvent>;
   deletePurchaseItemEvent(id: string): Promise<boolean>;
@@ -2688,6 +2689,11 @@ export class DbStorage implements IStorage {
   }
 
   // Purchase Item Events
+  async getPurchaseItemEvent(id: string): Promise<PurchaseItemEvent | undefined> {
+    const [event] = await db.select().from(purchaseItemEvents).where(eq(purchaseItemEvents.id, id));
+    return event;
+  }
+
   async getPurchaseItemEvents(filters: { clientId: string; srdId?: string; itemId?: string; dateFrom?: Date; dateTo?: Date }): Promise<PurchaseItemEvent[]> {
     let conditions = [eq(purchaseItemEvents.clientId, filters.clientId)];
     

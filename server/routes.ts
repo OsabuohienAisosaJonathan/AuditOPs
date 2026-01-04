@@ -3843,6 +3843,18 @@ export async function registerRoutes(
             createdBy: req.session.userId!,
           });
         }
+        
+        // Physical closing affects next day's opening - trigger forward recalculation
+        const nextDay = new Date(stockDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        setImmediate(async () => {
+          try {
+            await recalculateForward(stockCountData.clientId, storeDepartmentId, stockCountData.itemId, nextDay);
+            console.log(`[Stock Count] Forward recalc triggered from ${nextDay.toISOString().split('T')[0]}`);
+          } catch (err: any) {
+            console.error(`[Stock Count] Forward recalc failed:`, err.message);
+          }
+        });
       }
       
       await storage.createAuditLog({
@@ -3906,9 +3918,35 @@ export async function registerRoutes(
             await storage.updateStoreStock(storeStockRecord.id, {
               physicalClosingQty: null,
             });
+            
+            // Trigger forward recalculation from next day
+            const nextDay = new Date(stockCount.date);
+            nextDay.setDate(nextDay.getDate() + 1);
+            setImmediate(async () => {
+              try {
+                await recalculateForward(stockCount.clientId, srd.id, stockCount.itemId, nextDay);
+                console.log(`[Stock Count Delete] Forward recalc triggered from ${nextDay.toISOString().split('T')[0]}`);
+              } catch (err: any) {
+                console.error(`[Stock Count Delete] Forward recalc failed:`, err.message);
+              }
+            });
             break;
           }
         }
+      }
+      
+      // Also trigger recalc if storeDepartmentId is known
+      if (stockCount.storeDepartmentId) {
+        const nextDay = new Date(stockCount.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        setImmediate(async () => {
+          try {
+            await recalculateForward(stockCount.clientId, stockCount.storeDepartmentId!, stockCount.itemId, nextDay);
+            console.log(`[Stock Count Delete] Forward recalc triggered from ${nextDay.toISOString().split('T')[0]}`);
+          } catch (err: any) {
+            console.error(`[Stock Count Delete] Forward recalc failed:`, err.message);
+          }
+        });
       }
       
       await storage.deleteStockCount(req.params.id);
@@ -7263,6 +7301,20 @@ export async function registerRoutes(
       
       const event = await storage.createPurchaseItemEvent(data);
       
+      // Trigger forward recalculation if purchase is linked to an SRD
+      const srdId = req.body.srdId;
+      if (srdId) {
+        const purchaseDate = new Date(date);
+        setImmediate(async () => {
+          try {
+            await recalculateForward(clientId, srdId, itemId, purchaseDate);
+            console.log(`[Purchase Event] Forward recalc triggered for SRD ${srdId} from ${purchaseDate.toISOString().split('T')[0]}`);
+          } catch (err: any) {
+            console.error(`[Purchase Event] Forward recalc failed:`, err.message);
+          }
+        });
+      }
+      
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Created Purchase Event",
@@ -7280,9 +7332,24 @@ export async function registerRoutes(
 
   app.delete("/api/purchase-item-events/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
     try {
+      // Get the event first to trigger recalculation after delete
+      const eventToDelete = await storage.getPurchaseItemEvent(req.params.id);
+      
       const deleted = await storage.deletePurchaseItemEvent(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Purchase event not found" });
+      }
+      
+      // Trigger forward recalculation if purchase was linked to an SRD
+      if (eventToDelete && eventToDelete.srdId) {
+        setImmediate(async () => {
+          try {
+            await recalculateForward(eventToDelete.clientId, eventToDelete.srdId!, eventToDelete.itemId, eventToDelete.date);
+            console.log(`[Purchase Event Delete] Forward recalc triggered for SRD ${eventToDelete.srdId} from ${eventToDelete.date.toISOString().split('T')[0]}`);
+          } catch (err: any) {
+            console.error(`[Purchase Event Delete] Forward recalc failed:`, err.message);
+          }
+        });
       }
       
       await storage.createAuditLog({
