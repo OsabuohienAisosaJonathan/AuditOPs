@@ -17,11 +17,11 @@ function ensureDatabase() {
     _pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       // Connection pool settings for production reliability
-      max: 50, // Maximum 50 connections in pool (sized for multi-tenant workload)
-      min: 5, // Keep at least 5 connections ready
+      max: 20, // Maximum 20 connections in pool (reasonable for Neon/serverless)
+      min: 2, // Keep at least 2 connections ready
       idleTimeoutMillis: 30000, // Close idle connections after 30s
-      connectionTimeoutMillis: 5000, // Timeout for acquiring connection: 5s (fail fast)
-      query_timeout: 10000, // Query timeout: 10s (fail fast for slow queries)
+      connectionTimeoutMillis: 15000, // Timeout for acquiring connection: 15s (production reliability)
+      statement_timeout: 30000, // Statement timeout: 30s
     });
     
     // Log pool errors

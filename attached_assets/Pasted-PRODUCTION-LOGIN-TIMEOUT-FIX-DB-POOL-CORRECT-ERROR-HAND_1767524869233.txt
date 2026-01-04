@@ -1,0 +1,52 @@
+PRODUCTION LOGIN TIMEOUT FIX (DB/POOL) + CORRECT ERROR HANDLING (NO REDIRECTS)
+
+Evidence:
+POST /api/auth/login takes ~5000ms then fails with:
+"timeout exceeded when trying to connect"
+[SLOW ROUTE] POST /api/auth/login took 5007ms status=400
+Session exists but sessionUserId is null.
+
+Goal:
+Fix production backend so login does not timeout.
+Do NOT redesign auth. Do NOT change UI. Do NOT delete tables.
+Only diagnose and fix the backend connectivity bottleneck.
+
+A) FIND THE EXACT SOURCE OF THE TIMEOUT
+1) Search codebase for the exact error string: "timeout exceeded when trying to connect"
+2) Identify if it comes from:
+   - Postgres client (pg/drizzle/prisma)
+   - DB pool acquire timeout
+   - network fetch to another internal API
+3) Add timing spans inside /api/auth/login to measure each step:
+   - start
+   - DB connect/pool acquire
+   - user lookup query
+   - password verify
+   - session write
+Return timings in server logs with the requestId.
+
+B) FIX DB CONNECTION / POOLING FOR PRODUCTION
+1) Ensure DB client/pool is a singleton and NOT created per request.
+   - Use a global cached pool instance.
+2) Increase DB pool acquire/connect timeouts above 5s:
+   - connectionTimeoutMillis >= 15000
+   - idleTimeoutMillis reasonable
+   - max connections set sensibly (e.g. 10–20)
+3) Ensure DATABASE_URL is present in PRODUCTION deployment env (not only dev).
+4) Add a fast DB ping endpoint /api/health/db that runs SELECT 1 and returns timing.
+5) If DB is unreachable, return 503 with message "Database unreachable" (NOT 400).
+
+C) DO NOT LOG OUT USERS ON TIMEOUT
+1) Any timeout/network failure must NOT clear session or redirect to login.
+2) Only redirect to login on real 401 from server.
+
+D) OUTPUT REQUIRED
+1) List exact files edited + paths.
+2) For each edited file print first 10–15 lines to confirm correct file.
+3) Provide patch markers START/END.
+4) Test checklist:
+   - /api/health/db returns < 300ms in production
+   - login completes in < 2s
+   - wrong password returns 401 fast (no timeout)
+   - DB down returns 503 (no redirect loop)
+END

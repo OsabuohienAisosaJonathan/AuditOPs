@@ -378,7 +378,8 @@ export async function registerRoutes(
         version: "1.0.0"
       });
     } catch (error: any) {
-      res.status(500).json({
+      // Return 503 for DB connectivity issues
+      res.status(503).json({
         ok: false,
         serverTime: new Date().toISOString(),
         db: {
@@ -394,7 +395,36 @@ export async function registerRoutes(
           NODE_ENV: process.env.NODE_ENV || "development"
         },
         responseTimeMs: Date.now() - startTime,
-        version: "1.0.0"
+        version: "1.0.0",
+        code: "SERVICE_UNAVAILABLE"
+      });
+    }
+  });
+
+  // Fast DB ping endpoint - returns timing only
+  app.get("/api/health/db", async (req, res) => {
+    const startTime = Date.now();
+    try {
+      const dbResult = await pool.query("SELECT 1 as test");
+      const latencyMs = Date.now() - startTime;
+      
+      if (dbResult.rows.length > 0) {
+        return res.json({
+          ok: true,
+          latencyMs,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        throw new Error("Query returned no rows");
+      }
+    } catch (error: any) {
+      console.error(`[HEALTH/DB] Database unreachable: ${error.message}`);
+      return res.status(503).json({
+        ok: false,
+        latencyMs: Date.now() - startTime,
+        error: "Database unreachable",
+        code: "SERVICE_UNAVAILABLE",
+        timestamp: new Date().toISOString()
       });
     }
   });
@@ -570,6 +600,10 @@ export async function registerRoutes(
   }
   
   app.post("/api/auth/login", async (req, res) => {
+    const requestId = (req as any).requestId || `login-${Date.now()}`;
+    const timings: Record<string, number> = {};
+    const loginStart = Date.now();
+    
     try {
       const { username, password } = req.body;
       const identifier = username || req.ip;
@@ -582,10 +616,13 @@ export async function registerRoutes(
         return res.status(429).json({ error: `Too many login attempts. Please try again in ${LOCKOUT_MINUTES} minutes.` });
       }
 
+      // Timing: User lookup
+      const userLookupStart = Date.now();
       let user = await storage.getUserByUsername(username);
       if (!user) {
         user = await storage.getUserByEmail(username);
       }
+      timings.userLookup = Date.now() - userLookupStart;
 
       if (!user) {
         recordFailedAttempt(identifier);
@@ -615,7 +652,12 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Account is temporarily locked. Please try again later." });
       }
 
-      if (!(await compare(password, user.password))) {
+      // Timing: Password verification (bcrypt is CPU-intensive)
+      const passwordStart = Date.now();
+      const passwordValid = await compare(password, user.password);
+      timings.passwordVerify = Date.now() - passwordStart;
+
+      if (!passwordValid) {
         recordFailedAttempt(identifier);
         
         const newAttempts = (user.loginAttempts || 0) + 1;
@@ -648,6 +690,9 @@ export async function registerRoutes(
 
       const sessionIdBeforeLogin = req.sessionID;
       console.log(`[LOGIN] Starting session setup: oldSessionId=${sessionIdBeforeLogin?.substring(0, 8)}..., userId=${user.id}`);
+      
+      // Timing: Session operations
+      const sessionStart = Date.now();
       
       // CRITICAL FIX: Use Promise wrappers to ensure session is fully persisted
       // to PostgreSQL before sending response. This prevents the race condition
@@ -695,11 +740,15 @@ export async function registerRoutes(
       });
       
       // Session is now fully persisted to PostgreSQL
-      // Log successful login with cookie metadata
+      timings.sessionOps = Date.now() - sessionStart;
+      timings.total = Date.now() - loginStart;
+      
+      // Log successful login with cookie metadata and timings
       const setCookieHeader = res.getHeader('Set-Cookie');
       const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : String(setCookieHeader || 'none');
       
       console.log(`[LOGIN] Session saved successfully: sessionId=${newSessionId?.substring(0, 8)}..., userId=${user.id}, setCookie=${!!setCookieHeader}`);
+      console.log(`[LOGIN TIMING] requestId=${requestId}, userLookup=${timings.userLookup}ms, passwordVerify=${timings.passwordVerify}ms, sessionOps=${timings.sessionOps}ms, total=${timings.total}ms`);
       
       logAuthDiagnostic(req, res, 'LOGIN_SUCCESS', { 
         userId: user.id,
@@ -734,8 +783,33 @@ export async function registerRoutes(
         accessScope: user.accessScope,
       });
     } catch (error: any) {
-      logAuthDiagnostic(req, res, 'LOGIN_ERROR', { error: error.message });
-      res.status(400).json({ error: error.message });
+      const totalTime = Date.now() - loginStart;
+      const errorMessage = error.message || 'Unknown error';
+      
+      // Log with timing info
+      console.error(`[LOGIN ERROR] requestId=${requestId}, error=${errorMessage}, timings=${JSON.stringify(timings)}, totalMs=${totalTime}`);
+      logAuthDiagnostic(req, res, 'LOGIN_ERROR', { error: errorMessage, timings, totalMs: totalTime });
+      
+      // Check if this is a database connectivity/timeout error
+      const isDbError = errorMessage.includes('timeout exceeded') || 
+                        errorMessage.includes('connection') || 
+                        errorMessage.includes('ECONNREFUSED') ||
+                        errorMessage.includes('ETIMEDOUT') ||
+                        errorMessage.includes('database') ||
+                        error.code === 'ECONNRESET' ||
+                        error.code === 'ENOTFOUND';
+      
+      if (isDbError) {
+        // Return 503 Service Unavailable for DB errors - client should NOT redirect to login
+        return res.status(503).json({ 
+          error: "Service temporarily unavailable. Please try again.", 
+          code: "SERVICE_UNAVAILABLE",
+          retryAfter: 5 
+        });
+      }
+      
+      // Other errors (validation, etc.) return 400
+      res.status(400).json({ error: errorMessage });
     }
   });
 
