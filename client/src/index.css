@@ -223,3 +223,100 @@
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ring-1 ring-inset;
   }
 }
+
+/* Print Styles - Hide UI chrome, show only report content */
+@media print {
+  /* Hide everything by default */
+  body > *:not([data-radix-portal]) {
+    display: none !important;
+  }
+  
+  /* Hide sidebar, navigation, and overlays */
+  aside,
+  nav,
+  header,
+  [data-sidebar],
+  .sonner-toast {
+    display: none !important;
+  }
+  
+  /* Hide dialog overlay (backdrop) */
+  [data-radix-dialog-overlay] {
+    display: none !important;
+  }
+  
+  /* Show portal and style dialog content for full-page print */
+  [data-radix-portal] {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+  
+  [role="dialog"] {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+  
+  /* Reset body and root for printing */
+  html, body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  
+  #root {
+    background: white !important;
+    width: 100% !important;
+    height: auto !important;
+    display: none !important;
+  }
+  
+  /* Report content styling for print */
+  #report-content {
+    padding: 20px !important;
+    margin: 0 !important;
+    background: white !important;
+    color: black !important;
+    width: 100% !important;
+  }
+  
+  /* Page break utilities */
+  .page-break-before {
+    page-break-before: always;
+  }
+  
+  .page-break-after {
+    page-break-after: always;
+  }
+  
+  /* Ensure tables print correctly */
+  table {
+    page-break-inside: auto;
+    width: 100% !important;
+  }
+  
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
+  /* Ensure chart containers print */
+  .recharts-wrapper {
+    overflow: visible !important;
+  }
+}

@@ -2369,6 +2369,9 @@ export async function registerRoutes(
       if (!req.body.name || !validateNameLength(req.body.name)) {
         return res.status(400).json({ error: "Client name must be at least 2 characters" });
       }
+      if (req.body.name.trim().length > 20) {
+        return res.status(400).json({ error: "Client name cannot exceed 20 characters" });
+      }
 
       // Get user's organization and check entitlements
       const user = await storage.getUser(req.session.userId!);
@@ -2431,6 +2434,9 @@ export async function registerRoutes(
       if (updateData.name) {
         if (!validateNameLength(updateData.name)) {
           return res.status(400).json({ error: "Client name must be at least 2 characters" });
+        }
+        if (updateData.name.trim().length > 20) {
+          return res.status(400).json({ error: "Client name cannot exceed 20 characters" });
         }
         updateData.name = updateData.name.trim().toUpperCase().replace(/\s+/g, ' ');
       }

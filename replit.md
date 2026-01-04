@@ -215,3 +215,20 @@ The application includes offline support and data caching for improved reliabili
 ### Development Tools
 - **Replit Vite Plugins**: Error overlay, cartographer, dev banner for Replit environment
 - **TypeScript**: Type safety across full stack
+
+## Recent Changes
+
+### Report Terminology Update (Jan 2026)
+- **"System Sales" → "Captured Sales"**: All references to "System Sales" in reports have been renamed to "Captured Sales" for clarity
+- **Variance calculation corrected**: Variance is now calculated as `declared - captured` (positive = surplus/over-declared, negative = shortage)
+- **GRN supplier display fix**: Reports now correctly display `supplierName` instead of undefined `supplier` field
+
+### Client Name Validation (Jan 2026)
+- **20-character limit**: Client names are now limited to 20 characters maximum
+- Enforced on both frontend (maxLength input attribute) and backend (validation in POST/PATCH endpoints)
+- Names are still normalized to uppercase
+
+### Print Styles Enhancement (Jan 2026)
+- Added comprehensive print CSS to hide UI chrome (sidebar, navigation, overlays)
+- Report dialog content prints cleanly without duplicate sections
+- Page break utilities for better multi-page report printing

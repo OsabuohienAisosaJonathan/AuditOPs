@@ -1,0 +1,129 @@
+AUDITOPS – REPORT + CLIENT PAGE FIXES (NO REDESIGN, NO NEW FEATURES)
+
+Scope: Fix ONLY the issues listed below. Do NOT introduce extra redirects, do NOT redesign the UI, do NOT change existing database structure unless required for correctness. Keep all changes minimal and safe.
+
+========================================================
+1) REPORT BUG: DUPLICATE SECTIONS IN DOWNLOAD/PRINT
+========================================================
+Problem:
+When the user downloads or prints a report, the selected sections render twice (duplicated blocks).
+
+Task:
+A) Find where report sections are assembled and rendered for:
+   - Report Preview modal
+   - PDF generation
+   - Print view
+B) Identify why sections are duplicated (common causes):
+   - selectedSections array merged twice
+   - preview and export both rendering the same section list
+   - React strict mode double render is not the issue for PDF (it’s usually bad assembly)
+C) Fix by enforcing a single canonical “finalSections” list:
+   1) Create section ids (string constants) and dedupe by id
+   2) finalSections = dedupeSections(selectedSections)
+   3) Ensure preview, print, and PDF export use finalSections only
+
+Required:
+- Each section must appear exactly once in preview, print, and downloaded PDF.
+- Provide root cause explanation + patch.
+
+========================================================
+2) REPORT LOGIC FIX: CHANGE “SYSTEM SALES” TO “CAPTURED SALES”
+========================================================
+Problem:
+The Department Comparison section in reports is using the wrong logic/labels (“System Sales”).  
+We want “Captured Sales” vs “Declared Sales” everywhere in report output.
+
+Task:
+A) Locate the Department Comparison report section renderer + its data builder.
+B) Replace “System Sales” with “Captured Sales” in:
+   - Table headers
+   - Export/PDF headers
+   - Any summary labels
+
+C) IMPORTANT: This is not only a text change — it must use the correct source values:
+   - capturedTotal must come from Sales Capture / Audit Workspace (captured sales records)
+   - declaredTotal must come from declared payments/declared totals inputs
+Do NOT use “system totals” anywhere for this table.
+
+D) Ensure the table includes ALL columns (no missing columns compared to the Reconciliation page 2nd Hit table):
+   - Department
+   - Captured Total
+   - Declared Total
+   - Audit (Dep) if that exists in the source page
+   - Variance 1st Hit (if available)
+   - Variance 2nd Hit (if available)
+   - Final Variance
+   - Status/Action labels (Balanced/Receivable etc.) if available
+
+Final requirement:
+The report’s “Department Comparison (2nd Hit)” must match the Reconciliation page “Department Comparison (2nd Hit)” data + columns exactly.
+
+========================================================
+3) VARIANCE WRONG: MUST BE “CAPTURED vs DECLARED”
+========================================================
+Problem:
+The report currently calculates variance wrongly and/or uses wrong sources.
+
+Correct rules for variance in report:
+A) varianceAmount = declaredTotal - capturedTotal
+B) variancePercent = capturedTotal === 0 ? 0 : (varianceAmount / capturedTotal) * 100
+
+Sign rules:
+- declared > captured => positive variance (surplus / over-declared)
+- declared < captured => negative variance (short / under-declared)
+
+Implementation:
+1) Fix the variance calculation everywhere it is displayed in report preview and PDF.
+2) Ensure totals are computed from correct sources:
+   - captured totals from Sales Capture / Audit Workspace captured totals
+   - declared totals from declared payments/declared sales totals
+3) Add a small validation row in the report summary to show:
+   Captured Total, Declared Total, Variance Amount, Variance %
+
+DO NOT mix payment method totals into captured totals unless the source page explicitly defines captured totals as payment-method-summed.
+
+========================================================
+4) GRN REGISTER: SUPPLIER NAME MUST SHOW IN REPORT
+========================================================
+Problem:
+GRN section in report does not display supplier name properly.
+
+Task:
+A) Locate GRN report section data builder.
+B) If GRN rows contain supplierId, join suppliers scoped to current organization/client.
+C) Populate supplierName column reliably:
+   - supplierName = supplierMap[supplierId] || "Unknown Supplier"
+D) Ensure NO cross-tenant mixing:
+   - suppliers must be filtered by organizationId/clientId
+
+========================================================
+5) CLIENT PAGE: LIMIT CLIENT NAME TO 20 CHARACTERS MAX
+========================================================
+Requirement:
+Client names must be restricted to 20 characters maximum.
+
+Implement both:
+A) Frontend:
+1) Add maxLength=20 to add/edit client name input
+2) Show helper text: “Max 20 characters”
+3) In the client listing table, apply safe truncation fallback:
+   If name > 20 => show first 20 + “…”
+
+B) Backend validation:
+Reject names longer than 20 with clear error:
+“Client name must be 20 characters or less.”
+
+========================================================
+OUTPUT FORMAT REQUIRED (STRICT)
+========================================================
+1) List exact file paths edited.
+2) For each file, print the first 10–15 lines so user can confirm correct file.
+3) Provide code patches with START/END markers for each change.
+4) Provide a test checklist:
+   - report preview no duplicate sections
+   - PDF download no duplicate sections
+   - Department Comparison shows Captured vs Declared (not System)
+   - variance matches declared - captured
+   - GRN supplier names display correctly
+   - client names capped at 20 chars
+END

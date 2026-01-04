@@ -602,12 +602,13 @@ export default function Clients() {
                   id="name" 
                   name="name" 
                   placeholder="Enter client name" 
+                  maxLength={20}
                   onChange={(e) => e.target.value = e.target.value.toUpperCase()}
                   required 
                   data-testid="input-client-name" 
                 />
                 <p className="text-xs text-muted-foreground">
-                  Client names will be saved as UPPERCASE.
+                  Client names will be saved as UPPERCASE. Maximum 20 characters.
                 </p>
               </div>
             </div>
@@ -642,11 +643,12 @@ export default function Clients() {
                   id="edit-name" 
                   name="name" 
                   defaultValue={editingClient?.name} 
+                  maxLength={20}
                   onChange={(e) => e.target.value = e.target.value.toUpperCase()}
                   required 
                 />
                 <p className="text-xs text-muted-foreground">
-                  Client names will be saved as UPPERCASE.
+                  Client names will be saved as UPPERCASE. Maximum 20 characters.
                 </p>
               </div>
             </div>

@@ -42,7 +42,7 @@ const SECTIONS = {
     { id: "sales-by-department", label: "Sales by Department (Summary)" },
     { id: "payment-methods", label: "Payment Methods Breakdown (Overall)" },
     { id: "payment-matrix", label: "Payment Methods by Department (Matrix)" },
-    { id: "declared-vs-system", label: "Declared vs System Variance" },
+    { id: "declared-vs-system", label: "Declared vs Captured Variance" },
     { id: "department-comparison-full", label: "Department Comparison (2nd Hit) - Full Table", helper: "Matches Reconciliation page 2nd Hit Comparison exactly" },
     { id: "department-comparison", label: "Department Comparison (2nd Hit)" },
     { id: "daily-breakdown", label: "Daily Breakdown (Weekly/Monthly)" },
@@ -351,13 +351,14 @@ export default function Reports() {
 
   const calculateMetrics = () => {
     const sales: SalesEntry[] = getFilteredSalesData();
-    const totalSystemSales = sales.reduce((sum: number, s: SalesEntry) => sum + parseFloat(s.totalSales || "0"), 0);
+    const totalCapturedSales = sales.reduce((sum: number, s: SalesEntry) => sum + parseFloat(s.totalSales || "0"), 0);
     const totalCash = sales.reduce((sum: number, s: SalesEntry) => sum + parseFloat(s.cashAmount || "0"), 0);
     const totalPos = sales.reduce((sum: number, s: SalesEntry) => sum + parseFloat(s.posAmount || "0"), 0);
     const totalTransfer = sales.reduce((sum: number, s: SalesEntry) => sum + parseFloat(s.transferAmount || "0"), 0);
     const totalDeclared = totalCash + totalPos + totalTransfer;
-    const variance = totalSystemSales - totalDeclared;
-    const variancePercent = totalSystemSales > 0 ? (variance / totalSystemSales) * 100 : 0;
+    // CORRECT: variance = declared - captured (positive = surplus, negative = shortage)
+    const variance = totalDeclared - totalCapturedSales;
+    const variancePercent = totalCapturedSales > 0 ? (variance / totalCapturedSales) * 100 : 0;
 
     const movements: StockMovement[] = getFilteredStockMovements();
     const wasteTotal = movements.filter((m: StockMovement) => m.movementType === "waste").reduce((sum: number, m: StockMovement) => sum + parseFloat(m.totalValue || "0"), 0);
@@ -390,7 +391,7 @@ export default function Reports() {
     else if (complianceScore < 85) complianceBand = "Good";
 
     return {
-      totalSystemSales,
+      totalCapturedSales,
       totalDeclared,
       variance,
       variancePercent,
@@ -434,11 +435,11 @@ export default function Reports() {
       return {
         departmentId: deptId,
         departmentName: dept?.name || "Unknown",
-        systemSales: data.sales,
+        capturedSales: data.sales,
         percentOfTotal: totalSales > 0 ? (data.sales / totalSales) * 100 : 0,
         transactions: data.transactions,
       };
-    }).sort((a, b) => b.systemSales - a.systemSales);
+    }).sort((a, b) => b.capturedSales - a.capturedSales);
   };
 
   const getPaymentMethodsByDepartment = () => {
@@ -470,13 +471,13 @@ export default function Reports() {
 
   const getDepartmentComparison = () => {
     const sales: SalesEntry[] = getFilteredSalesData();
-    const deptMap: Record<string, { system: number; cash: number; pos: number; transfer: number; declared: number }> = {};
+    const deptMap: Record<string, { captured: number; cash: number; pos: number; transfer: number; declared: number }> = {};
     
     sales.forEach((sale: SalesEntry) => {
       if (!deptMap[sale.departmentId]) {
-        deptMap[sale.departmentId] = { system: 0, cash: 0, pos: 0, transfer: 0, declared: 0 };
+        deptMap[sale.departmentId] = { captured: 0, cash: 0, pos: 0, transfer: 0, declared: 0 };
       }
-      deptMap[sale.departmentId].system += parseFloat(sale.totalSales || "0");
+      deptMap[sale.departmentId].captured += parseFloat(sale.totalSales || "0");
       deptMap[sale.departmentId].cash += parseFloat(sale.cashAmount || "0");
       deptMap[sale.departmentId].pos += parseFloat(sale.posAmount || "0");
       deptMap[sale.departmentId].transfer += parseFloat(sale.transferAmount || "0");
@@ -488,8 +489,9 @@ export default function Reports() {
 
     return Object.entries(deptMap).map(([deptId, data]) => {
       const dept = departments?.find(d => d.id === deptId);
-      const variance = data.system - data.declared;
-      const variancePercent = data.system > 0 ? (variance / data.system) * 100 : 0;
+      // CORRECT: variance = declared - captured (positive = surplus/over-declared, negative = short)
+      const variance = data.declared - data.captured;
+      const variancePercent = data.captured > 0 ? (variance / data.captured) * 100 : 0;
       let status: "OK" | "Review" | "Critical" = "OK";
       if (Math.abs(variancePercent) > 5) status = "Critical";
       else if (Math.abs(variancePercent) > 2) status = "Review";
@@ -497,7 +499,7 @@ export default function Reports() {
       return {
         departmentId: deptId,
         departmentName: dept?.name || "Unknown",
-        systemSales: data.system,
+        capturedSales: data.captured,
         declaredSales: data.declared,
         cash: data.cash,
         pos: data.pos,
@@ -521,13 +523,14 @@ export default function Reports() {
       const dateStr = format(day, "yyyy-MM-dd");
       const daySales = sales.filter(s => format(new Date(s.date), "yyyy-MM-dd") === dateStr);
       
-      const systemSales = daySales.reduce((sum, s) => sum + parseFloat(s.totalSales || "0"), 0);
+      const capturedSales = daySales.reduce((sum, s) => sum + parseFloat(s.totalSales || "0"), 0);
       const cash = daySales.reduce((sum, s) => sum + parseFloat(s.cashAmount || "0"), 0);
       const pos = daySales.reduce((sum, s) => sum + parseFloat(s.posAmount || "0"), 0);
       const transfer = daySales.reduce((sum, s) => sum + parseFloat(s.transferAmount || "0"), 0);
       const declared = cash + pos + transfer;
-      const variance = systemSales - declared;
-      const variancePercent = systemSales > 0 ? (variance / systemSales) * 100 : 0;
+      // CORRECT: variance = declared - captured
+      const variance = declared - capturedSales;
+      const variancePercent = capturedSales > 0 ? (variance / capturedSales) * 100 : 0;
       
       const dayMovements = movements.filter(m => m.createdAt && format(new Date(m.createdAt), "yyyy-MM-dd") === dateStr);
       const stockVariance = dayMovements.filter(m => m.movementType === "adjustment").reduce((sum, m) => sum + parseFloat(m.totalValue || "0"), 0);
@@ -541,7 +544,7 @@ export default function Reports() {
       return {
         date: dateStr,
         displayDate: format(day, "EEE, MMM d"),
-        systemSales,
+        capturedSales,
         declared,
         variance,
         variancePercent,
@@ -960,7 +963,7 @@ export default function Reports() {
     
     csvContent += "=== SUMMARY METRICS ===\n";
     csvContent += "Metric,Value\n";
-    csvContent += `Total Sales (System),${formatMoney(metrics.totalSystemSales)}\n`;
+    csvContent += `Total Captured Sales,${formatMoney(metrics.totalCapturedSales)}\n`;
     csvContent += `Total Declared,${formatMoney(metrics.totalDeclared)}\n`;
     csvContent += `Variance,${formatMoney(metrics.variance)}\n`;
     csvContent += `Variance %,${metrics.variancePercent.toFixed(2)}%\n`;
@@ -974,18 +977,18 @@ export default function Reports() {
     
     if (selectedSections.includes("department-comparison")) {
       csvContent += "=== DEPARTMENT COMPARISON (2ND HIT) ===\n";
-      csvContent += "Department,System Sales,Declared Sales,Variance,Variance %,Cash,POS,Transfer,Status\n";
+      csvContent += "Department,Captured Sales,Declared Sales,Variance,Variance %,Cash,POS,Transfer,Status\n";
       departmentComparison.forEach((d: any) => {
-        csvContent += `"${d.departmentName}",${d.systemSales.toFixed(2)},${d.declaredSales.toFixed(2)},${d.variance.toFixed(2)},${d.variancePercent.toFixed(2)}%,${d.cash.toFixed(2)},${d.pos.toFixed(2)},${d.transfer.toFixed(2)},${d.status}\n`;
+        csvContent += `"${d.departmentName}",${d.capturedSales.toFixed(2)},${d.declaredSales.toFixed(2)},${d.variance.toFixed(2)},${d.variancePercent.toFixed(2)}%,${d.cash.toFixed(2)},${d.pos.toFixed(2)},${d.transfer.toFixed(2)},${d.status}\n`;
       });
       csvContent += "\n";
     }
     
     if (selectedSections.includes("daily-breakdown") && dailyBreakdown?.length > 0) {
       csvContent += "=== DAILY BREAKDOWN ===\n";
-      csvContent += "Date,System Sales,Declared,Variance,Variance %,POS,Transfer,Cash,Stock Variance,Exceptions,TRUE,FALSE,MISMATCHED,PENDING\n";
+      csvContent += "Date,Captured Sales,Declared,Variance,Variance %,POS,Transfer,Cash,Stock Variance,Exceptions,TRUE,FALSE,MISMATCHED,PENDING\n";
       dailyBreakdown.forEach((d: any) => {
-        csvContent += `${d.date},${d.systemSales.toFixed(2)},${d.declared.toFixed(2)},${d.variance.toFixed(2)},${d.variancePercent.toFixed(2)}%,${d.pos.toFixed(2)},${d.transfer.toFixed(2)},${d.cash.toFixed(2)},${d.stockVariance.toFixed(2)},${d.exceptionsRaised},${d.outcomeTrue},${d.outcomeFalse},${d.outcomeMismatched},${d.outcomePending}\n`;
+        csvContent += `${d.date},${d.capturedSales.toFixed(2)},${d.declared.toFixed(2)},${d.variance.toFixed(2)},${d.variancePercent.toFixed(2)}%,${d.pos.toFixed(2)},${d.transfer.toFixed(2)},${d.cash.toFixed(2)},${d.stockVariance.toFixed(2)},${d.exceptionsRaised},${d.outcomeTrue},${d.outcomeFalse},${d.outcomeMismatched},${d.outcomePending}\n`;
       });
       csvContent += "\n";
     }
@@ -1012,15 +1015,15 @@ export default function Reports() {
   const { formatMoney } = useCurrency();
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-[1600px] mx-auto print:max-w-none">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
           <h1 className="text-2xl font-display font-bold" data-testid="text-page-title">Reports & Analytics</h1>
           <p className="text-muted-foreground">Generate comprehensive audit reports and schedules</p>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid lg:grid-cols-3 gap-8 print:hidden">
         <div className="lg:col-span-2 space-y-8">
           <Card>
             <CardHeader>
@@ -1222,12 +1225,12 @@ export default function Reports() {
 
       {/* Report Preview Modal */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden print:max-w-none print:max-h-none print:border-none print:shadow-none print:p-0">
+          <DialogHeader className="print:hidden">
             <DialogTitle>Report Preview</DialogTitle>
           </DialogHeader>
-          <ScrollArea className="h-[calc(90vh-200px)]">
-            <div ref={reportRef} className="p-8 bg-white text-black print:p-0" id="report-content">
+          <ScrollArea className="h-[calc(90vh-200px)] print:h-auto print:overflow-visible">
+            <div ref={reportRef} className="p-8 bg-white text-black print:p-0 print:m-0" id="report-content">
               {reportData && (
                 <div className="space-y-8">
                   {/* Cover Header */}
@@ -1259,7 +1262,7 @@ export default function Reports() {
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
                       <h3 className="font-bold text-lg text-blue-900 mb-3">Executive Summary</h3>
                       <p className="text-gray-700">
-                        System vs Declared variance is <span className="font-bold">{formatMoney(reportData.metrics.variance)}</span> ({reportData.metrics.variancePercent.toFixed(2)}%).
+                        Declared vs Captured variance is <span className="font-bold">{formatMoney(reportData.metrics.variance)}</span> ({reportData.metrics.variancePercent.toFixed(2)}%).
                         {reportData.topVarianceDrivers.length > 0 && (
                           <> Primary drivers: {reportData.topVarianceDrivers.join(", ")}.</>
                         )}
@@ -1292,8 +1295,8 @@ export default function Reports() {
                       <h3 className="font-bold text-lg mb-4">Metrics Dashboard (KPIs)</h3>
                       <div className="grid grid-cols-4 gap-4">
                         <MetricCard 
-                          label="Total Sales (System)" 
-                          value={formatMoney(reportData.metrics.totalSystemSales)} 
+                          label="Total Captured Sales" 
+                          value={formatMoney(reportData.metrics.totalCapturedSales)} 
                           icon={<DollarSign className="h-4 w-4" />}
                         />
                         <MetricCard 
@@ -1371,7 +1374,7 @@ export default function Reports() {
                       {/* Variance Statement KPI Block */}
                       <div className="grid grid-cols-3 gap-4">
                         <div className="border rounded-lg p-4 bg-emerald-50">
-                          <div className="text-xs text-muted-foreground mb-1">System Total (Captured)</div>
+                          <div className="text-xs text-muted-foreground mb-1">Captured Sales Total</div>
                           <div className="text-xl font-bold font-mono text-emerald-700">{formatMoney(reportData.reportedPayments?.totals?.totalCaptured ?? 0)}</div>
                         </div>
                         <div className="border rounded-lg p-4 bg-blue-50">
@@ -1522,7 +1525,7 @@ export default function Reports() {
                         <TableHeader>
                           <TableRow className="bg-gray-100">
                             <TableHead>Department</TableHead>
-                            <TableHead className="text-right">System Sales (₦)</TableHead>
+                            <TableHead className="text-right">Captured Sales (₦)</TableHead>
                             <TableHead className="text-right">% of Total</TableHead>
                             <TableHead className="text-right">Transactions</TableHead>
                           </TableRow>
@@ -1531,14 +1534,14 @@ export default function Reports() {
                           {reportData.salesByDepartment.map((d: any) => (
                             <TableRow key={d.departmentId}>
                               <TableCell className="font-medium">{d.departmentName}</TableCell>
-                              <TableCell className="text-right">{formatMoney(d.systemSales)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.capturedSales)}</TableCell>
                               <TableCell className="text-right">{d.percentOfTotal.toFixed(1)}%</TableCell>
                               <TableCell className="text-right">{d.transactions}</TableCell>
                             </TableRow>
                           ))}
                           <TableRow className="font-bold bg-gray-50">
                             <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{formatMoney(reportData.salesByDepartment.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.salesByDepartment.reduce((s: number, d: any) => s + d.capturedSales, 0))}</TableCell>
                             <TableCell className="text-right">100%</TableCell>
                             <TableCell className="text-right">{reportData.salesByDepartment.reduce((s: number, d: any) => s + d.transactions, 0)}</TableCell>
                           </TableRow>
@@ -1611,11 +1614,11 @@ export default function Reports() {
                   {/* Declared vs System Variance */}
                   {selectedSections.includes("declared-vs-system") && (
                     <div>
-                      <h3 className="font-bold text-lg mb-4">Declared vs System Variance</h3>
+                      <h3 className="font-bold text-lg mb-4">Declared vs Captured Variance</h3>
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-gray-100">
-                            <TableHead>System Total (₦)</TableHead>
+                            <TableHead>Captured Total (₦)</TableHead>
                             <TableHead>Declared Total (₦)</TableHead>
                             <TableHead>Variance (₦)</TableHead>
                             <TableHead>Variance (%)</TableHead>
@@ -1624,7 +1627,7 @@ export default function Reports() {
                         </TableHeader>
                         <TableBody>
                           <TableRow>
-                            <TableCell className="font-medium">{formatMoney(reportData.metrics.totalSystemSales)}</TableCell>
+                            <TableCell className="font-medium">{formatMoney(reportData.metrics.totalCapturedSales)}</TableCell>
                             <TableCell>{formatMoney(reportData.metrics.totalDeclared)}</TableCell>
                             <TableCell className={cn("font-bold", reportData.metrics.variance < 0 ? "text-red-600" : "text-green-600")}>
                               {formatMoney(reportData.metrics.variance)}
@@ -1651,7 +1654,7 @@ export default function Reports() {
                         <TableHeader>
                           <TableRow className="bg-gray-100">
                             <TableHead>Department</TableHead>
-                            <TableHead className="text-right">System Sales (₦)</TableHead>
+                            <TableHead className="text-right">Captured Sales (₦)</TableHead>
                             <TableHead className="text-right">Declared Sales (₦)</TableHead>
                             <TableHead className="text-right">Variance (₦)</TableHead>
                             <TableHead className="text-right">Variance (%)</TableHead>
@@ -1665,7 +1668,7 @@ export default function Reports() {
                           {reportData.departmentComparison.map((d: any) => (
                             <TableRow key={d.departmentId}>
                               <TableCell className="font-medium">{d.departmentName}</TableCell>
-                              <TableCell className="text-right">{formatMoney(d.systemSales)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(d.capturedSales)}</TableCell>
                               <TableCell className="text-right">{formatMoney(d.declaredSales)}</TableCell>
                               <TableCell className={cn("text-right font-medium", d.variance < 0 ? "text-red-600" : "text-green-600")}>
                                 {formatMoney(d.variance)}
@@ -1685,7 +1688,7 @@ export default function Reports() {
                           ))}
                           <TableRow className="font-bold bg-gray-50">
                             <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
+                            <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.capturedSales, 0))}</TableCell>
                             <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.declaredSales, 0))}</TableCell>
                             <TableCell className="text-right">{formatMoney(reportData.departmentComparison.reduce((s: number, d: any) => s + d.variance, 0))}</TableCell>
                             <TableCell></TableCell>
@@ -1708,7 +1711,7 @@ export default function Reports() {
                           <TableHeader>
                             <TableRow className="bg-gray-100">
                               <TableHead>Date</TableHead>
-                              <TableHead className="text-right">System Sales (₦)</TableHead>
+                              <TableHead className="text-right">Captured Sales (₦)</TableHead>
                               <TableHead className="text-right">Declared (₦)</TableHead>
                               <TableHead className="text-right">Variance (₦)</TableHead>
                               <TableHead className="text-right">Var %</TableHead>
@@ -1724,7 +1727,7 @@ export default function Reports() {
                             {reportData.dailyBreakdown.map((d: any) => (
                               <TableRow key={d.date}>
                                 <TableCell className="font-medium whitespace-nowrap">{d.displayDate}</TableCell>
-                                <TableCell className="text-right">{formatMoney(d.systemSales)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(d.capturedSales)}</TableCell>
                                 <TableCell className="text-right">{formatMoney(d.declared)}</TableCell>
                                 <TableCell className={cn("text-right", d.variance < 0 ? "text-red-600" : "text-green-600")}>
                                   {formatMoney(d.variance)}
@@ -1744,7 +1747,7 @@ export default function Reports() {
                             ))}
                             <TableRow className="font-bold bg-blue-50">
                               <TableCell>{reportType === "weekly" ? "WEEKLY" : "MONTHLY"} TOTAL</TableCell>
-                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.systemSales, 0))}</TableCell>
+                              <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.capturedSales, 0))}</TableCell>
                               <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.declared, 0))}</TableCell>
                               <TableCell className="text-right">{formatMoney(reportData.dailyBreakdown.reduce((s: number, d: any) => s + d.variance, 0))}</TableCell>
                               <TableCell></TableCell>
@@ -1984,7 +1987,7 @@ export default function Reports() {
                             <TableRow key={g.id}>
                               <TableCell className="font-mono text-xs">{g.grnNumber || g.id?.slice(0, 8) || "-"}</TableCell>
                               <TableCell className="whitespace-nowrap">{g.date ? format(new Date(g.date), "MMM d, yyyy") : "-"}</TableCell>
-                              <TableCell className="font-medium">{g.supplier || "-"}</TableCell>
+                              <TableCell className="font-medium">{g.supplierName || "-"}</TableCell>
                               <TableCell className="text-right font-medium">{formatMoney(parseFloat(g.amount ?? "0"))}</TableCell>
                               <TableCell>{g.invoiceNo || "-"}</TableCell>
                               <TableCell>
@@ -2333,7 +2336,7 @@ export default function Reports() {
                         <h4 className="font-semibold mb-2">Key Findings</h4>
                         <ul className="list-disc list-inside text-sm space-y-1 mb-4">
                           {Math.abs(reportData.metrics.variancePercent) > 2 && (
-                            <li>System vs Declared variance of {reportData.metrics.variancePercent.toFixed(2)}% requires attention</li>
+                            <li>Declared vs Captured variance of {reportData.metrics.variancePercent.toFixed(2)}% requires attention</li>
                           )}
                           {reportData.metrics.exceptionsOpen > 0 && (
                             <li>{reportData.metrics.exceptionsOpen} open exception(s) pending investigation</li>
@@ -2402,7 +2405,7 @@ export default function Reports() {
               )}
             </div>
           </ScrollArea>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 print:hidden">
             <Button variant="outline" onClick={() => setPreviewOpen(false)}>
               <X className="h-4 w-4 mr-2" /> Close
             </Button>
