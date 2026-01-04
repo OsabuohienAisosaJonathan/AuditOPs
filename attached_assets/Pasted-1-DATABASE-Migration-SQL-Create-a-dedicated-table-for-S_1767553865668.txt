@@ -1,0 +1,53 @@
+1) DATABASE (Migration SQL)
+
+Create a dedicated table for SRD daily ledger rows. This does not disturb your existing tables — it’s additive and can be used as the source of truth.
+
+-- FILE: migrations/xxxx_create_srd_ledger_daily.sql
+-- SRD Daily Ledger (one row per day per SRD per item)
+
+CREATE TABLE IF NOT EXISTS srd_ledger_daily (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  client_id UUID NOT NULL,
+  srd_id UUID NOT NULL,             -- main store or department store SRD id
+  srd_type TEXT NOT NULL,           -- 'MAIN' or 'DEPARTMENT'
+  item_id UUID NOT NULL,
+
+  ledger_date DATE NOT NULL,
+
+  -- Opening/Closing
+  opening_qty NUMERIC(18,2) NOT NULL DEFAULT 0,
+  closing_qty NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+  -- MAIN store movements (still safe to store for department rows as 0)
+  purchase_added_qty NUMERIC(18,2) NOT NULL DEFAULT 0,
+  returns_in_qty     NUMERIC(18,2) NOT NULL DEFAULT 0,  -- dept -> main returns received
+  req_dep_total_qty  NUMERIC(18,2) NOT NULL DEFAULT 0,  -- main -> dept requisitions issued
+
+  -- DEPARTMENT store movements
+  from_main_qty        NUMERIC(18,2) NOT NULL DEFAULT 0, -- received from main requisitions
+  inter_in_qty         NUMERIC(18,2) NOT NULL DEFAULT 0, -- received from other dept SRD
+  inter_out_qty        NUMERIC(18,2) NOT NULL DEFAULT 0, -- sent to other dept SRD
+  returns_out_to_main  NUMERIC(18,2) NOT NULL DEFAULT 0, -- dept -> main returns sent
+  sold_qty             NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+  -- Shared movements
+  waste_qty        NUMERIC(18,2) NOT NULL DEFAULT 0,
+  write_off_qty    NUMERIC(18,2) NOT NULL DEFAULT 0,
+  adjustment_qty   NUMERIC(18,2) NOT NULL DEFAULT 0, -- can be negative
+
+  -- Optional: audit fields
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Ensure exactly one row per day per SRD per item
+CREATE UNIQUE INDEX IF NOT EXISTS srd_ledger_daily_unique
+ON srd_ledger_daily (srd_id, item_id, ledger_date);
+
+-- Helpful indexes
+CREATE INDEX IF NOT EXISTS srd_ledger_daily_client_date_idx
+ON srd_ledger_daily (client_id, ledger_date);
+
+CREATE INDEX IF NOT EXISTS srd_ledger_daily_srd_date_idx
+ON srd_ledger_daily (srd_id, ledger_date);
