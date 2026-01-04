@@ -27,7 +27,7 @@ import { randomBytes } from "crypto";
 import { registerPlatformAdminRoutes } from "./platform-admin-routes";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
-import { backfillSrdLedger, backfillAllSrdsForClient, postMovementToLedgers } from "./srd-ledger-service";
+import { backfillSrdLedger, backfillAllSrdsForClient, postMovementToLedgers, recalculateForward } from "./srd-ledger-service";
 
 declare module "express-session" {
   interface SessionData {
@@ -3808,40 +3808,44 @@ export async function registerRoutes(
       });
       const stockCount = await storage.createStockCount(data);
       
-      // If storeDepartmentId is provided, also update storeStock.physicalClosingQty
+      // If storeDepartmentId is provided, update storeStock.physicalClosingQty
       // This connects Stock Counts to the SRD ledger
       if (storeDepartmentId && stockCountData.itemId && stockCountData.clientId && stockCountData.date) {
         const stockDate = new Date(stockCountData.date);
-        const existingStock = await storage.getStoreStockByItem(storeDepartmentId, stockCountData.itemId, stockDate);
-        
         const physicalCount = stockCountData.actualClosingQty || "0";
-        const opening = stockCountData.openingQty || "0";
-        const added = stockCountData.addedQty || "0";
-        const total = parseFloat(opening) + parseFloat(added);
-        const sold = total - parseFloat(physicalCount);
         
-        if (existingStock) {
-          // Update existing storeStock with physical closing
-          await storage.updateStoreStock(existingStock.id, { 
+        // First recalculate the ledger for the count date - this will create/update the row
+        // with correct opening, movements, and closing based on all source data
+        try {
+          await recalculateForward(stockCountData.clientId, storeDepartmentId, stockCountData.itemId, stockDate);
+          console.log(`[Stock Count] Ledger recalc for count date ${stockDate.toISOString().split('T')[0]}`);
+        } catch (err: any) {
+          console.error(`[Stock Count] Ledger recalc failed:`, err.message);
+        }
+        
+        // Now get the ledger row (which now exists with correct movements) and set physical closing
+        const ledgerRow = await storage.getStoreStockByItem(storeDepartmentId, stockCountData.itemId, stockDate);
+        if (ledgerRow) {
+          // Calculate variance = physicalClosing - expectedClosing
+          const expectedClosing = parseFloat(ledgerRow.closingQty || "0");
+          const physicalNum = parseFloat(physicalCount);
+          const variance = physicalNum - expectedClosing;
+          
+          await storage.updateStoreStock(ledgerRow.id, { 
             physicalClosingQty: physicalCount,
-            openingQty: opening,
+            varianceQty: variance.toFixed(2),
           });
-        } else {
-          // Create new storeStock record with physical closing
-          const item = await storage.getItem(stockCountData.itemId);
-          await storage.createStoreStock({
-            clientId: stockCountData.clientId,
-            storeDepartmentId,
-            itemId: stockCountData.itemId,
-            date: stockDate,
-            openingQty: opening,
-            addedQty: added,
-            issuedQty: "0",
-            closingQty: physicalCount,
-            physicalClosingQty: physicalCount,
-            costPriceSnapshot: item?.costPrice || "0.00",
-            createdBy: req.session.userId!,
-          });
+        }
+        
+        // Physical closing affects next day's opening - trigger forward recalculation
+        // from the next day so that opening(D+1) = physicalClosing(D)
+        const nextDay = new Date(stockDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        try {
+          await recalculateForward(stockCountData.clientId, storeDepartmentId, stockCountData.itemId, nextDay);
+          console.log(`[Stock Count] Forward recalc triggered from ${nextDay.toISOString().split('T')[0]}`);
+        } catch (err: any) {
+          console.error(`[Stock Count] Forward recalc failed:`, err.message);
         }
       }
       
@@ -3880,7 +3884,8 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Stock count not found" });
       }
       
-      // Find and reverse the associated storeStock record
+      // Find and clear the associated storeStock physicalClosingQty
+      let affectedSrdId: string | null = null;
       if (stockCount.storeDepartmentId) {
         // Use the stored storeDepartmentId (preferred)
         const storeStockRecord = await storage.getStoreStockByItem(
@@ -3892,6 +3897,7 @@ export async function registerRoutes(
           await storage.updateStoreStock(storeStockRecord.id, {
             physicalClosingQty: null,
           });
+          affectedSrdId = stockCount.storeDepartmentId;
         }
       } else {
         // Fallback for existing counts without storeDepartmentId:
@@ -3902,16 +3908,28 @@ export async function registerRoutes(
         for (const srd of deptStoreSrds) {
           const storeStockRecord = await storage.getStoreStockByItem(srd.id, stockCount.itemId, stockCount.date);
           if (storeStockRecord && storeStockRecord.physicalClosingQty !== null) {
-            // Found a matching record - clear it and break (only clear one)
             await storage.updateStoreStock(storeStockRecord.id, {
               physicalClosingQty: null,
             });
+            affectedSrdId = srd.id;
             break;
           }
         }
       }
       
       await storage.deleteStockCount(req.params.id);
+      
+      // Trigger forward recalculation from next day if we cleared a physical count
+      if (affectedSrdId) {
+        const nextDay = new Date(stockCount.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        try {
+          await recalculateForward(stockCount.clientId, affectedSrdId, stockCount.itemId, nextDay);
+          console.log(`[Stock Count Delete] Forward recalc triggered from ${nextDay.toISOString().split('T')[0]}`);
+        } catch (err: any) {
+          console.error(`[Stock Count Delete] Forward recalc failed:`, err.message);
+        }
+      }
       
       await storage.createAuditLog({
         userId: req.session.userId!,
@@ -4747,65 +4765,17 @@ export async function registerRoutes(
         createdBy: req.session.userId!,
       });
       
-      // Update stock in FROM SRD (decrease)
-      const existingFromStock = await storage.getStoreStockByItem(fromSrdId, itemId, parsedDate);
-      if (existingFromStock) {
-        const currentIssued = parseFloat(existingFromStock.issuedQty || "0");
-        const newIssued = currentIssued + parsedQty;
-        const opening = parseFloat(existingFromStock.openingQty || "0");
-        const added = parseFloat(existingFromStock.addedQty || "0");
-        const newClosing = opening + added - newIssued;
-        await storage.updateStoreStock(existingFromStock.id, {
-          issuedQty: newIssued.toString(),
-          closingQty: newClosing.toString(),
-        });
-      } else {
-        const prevClosing = await storage.getPreviousDayClosing(fromSrdId, itemId, parsedDate);
-        const opening = parseFloat(prevClosing);
-        await storage.createStoreStock({
-          clientId,
-          storeDepartmentId: fromSrdId,
-          itemId,
-          date: parsedDate,
-          openingQty: opening.toString(),
-          addedQty: "0",
-          issuedQty: parsedQty.toString(),
-          closingQty: (opening - parsedQty).toString(),
-          costPriceSnapshot: costPrice,
-          createdBy: req.session.userId!,
-        });
-      }
-      
-      // Update stock in TO SRD (increase)
-      const existingToStock = await storage.getStoreStockByItem(toSrdId, itemId, parsedDate);
-      if (existingToStock) {
-        const currentAdded = parseFloat(existingToStock.addedQty || "0");
-        const newAdded = currentAdded + parsedQty;
-        const opening = parseFloat(existingToStock.openingQty || "0");
-        const issued = parseFloat(existingToStock.issuedQty || "0");
-        const newClosing = opening + newAdded - issued;
-        await storage.updateStoreStock(existingToStock.id, {
-          addedQty: newAdded.toString(),
-          closingQty: newClosing.toString(),
-        });
-      } else {
-        const prevClosing = await storage.getPreviousDayClosing(toSrdId, itemId, parsedDate);
-        const opening = parseFloat(prevClosing);
-        await storage.createStoreStock({
-          clientId,
-          storeDepartmentId: toSrdId,
-          itemId,
-          date: parsedDate,
-          openingQty: opening.toString(),
-          addedQty: parsedQty.toString(),
-          issuedQty: "0",
-          closingQty: (opening + parsedQty).toString(),
-          costPriceSnapshot: costPrice,
-          createdBy: req.session.userId!,
-        });
-      }
-      
       console.log(`[SRD Transfer] RefId: ${refId}, From: ${fromSrdId}, To: ${toSrdId}, Item: ${item.name}, Qty: ${parsedQty}, Type: ${transferType || 'transfer'}`);
+      
+      // Recalculate ledger for BOTH affected SRDs using the design-rule approach
+      // The transfer record is already saved above, recalculateForward will pick it up
+      // from the srdTransfers table and correctly compute all ledger columns
+      try {
+        await recalculateForward(clientId, fromSrdId, itemId, parsedDate);
+        await recalculateForward(clientId, toSrdId, itemId, parsedDate);
+      } catch (err: any) {
+        console.error(`[SRD Transfer] Ledger recalc failed:`, err.message);
+      }
       
       res.json(transfer);
     } catch (error: any) {
@@ -4829,44 +4799,30 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Transfer already recalled" });
       }
       
-      // Reverse the stock movements for each transfer
-      for (const transfer of transfers) {
-        const parsedDate = new Date(transfer.transferDate);
-        const parsedQty = parseFloat(transfer.qty);
-        
-        // Reverse FROM SRD (add back)
-        const fromStock = await storage.getStoreStockByItem(transfer.fromSrdId, transfer.itemId, parsedDate);
-        if (fromStock) {
-          const currentIssued = parseFloat(fromStock.issuedQty || "0");
-          const newIssued = Math.max(0, currentIssued - parsedQty);
-          const opening = parseFloat(fromStock.openingQty || "0");
-          const added = parseFloat(fromStock.addedQty || "0");
-          const newClosing = opening + added - newIssued;
-          await storage.updateStoreStock(fromStock.id, {
-            issuedQty: newIssued.toString(),
-            closingQty: newClosing.toString(),
-          });
-        }
-        
-        // Reverse TO SRD (remove)
-        const toStock = await storage.getStoreStockByItem(transfer.toSrdId, transfer.itemId, parsedDate);
-        if (toStock) {
-          const currentAdded = parseFloat(toStock.addedQty || "0");
-          const newAdded = Math.max(0, currentAdded - parsedQty);
-          const opening = parseFloat(toStock.openingQty || "0");
-          const issued = parseFloat(toStock.issuedQty || "0");
-          const newClosing = opening + newAdded - issued;
-          await storage.updateStoreStock(toStock.id, {
-            addedQty: newAdded.toString(),
-            closingQty: newClosing.toString(),
-          });
-        }
-      }
+      // Collect affected SRDs and items for recalculation
+      const affectedData = transfers.map(t => ({
+        clientId: t.clientId,
+        fromSrdId: t.fromSrdId,
+        toSrdId: t.toSrdId,
+        itemId: t.itemId,
+        date: new Date(t.transferDate),
+      }));
       
-      // Mark transfers as recalled
+      // Mark transfers as recalled FIRST (so recalculateForward won't include them)
       await storage.recallSrdTransfer(refId);
       
       console.log(`[SRD Transfer Recall] RefId: ${refId}, Count: ${transfers.length}`);
+      
+      // Recalculate ledger for all affected SRDs - now that transfers are recalled,
+      // recalculateForward will compute correct totals without the recalled transfers
+      for (const data of affectedData) {
+        try {
+          await recalculateForward(data.clientId, data.fromSrdId, data.itemId, data.date);
+          await recalculateForward(data.clientId, data.toSrdId, data.itemId, data.date);
+        } catch (err: any) {
+          console.error(`[SRD Transfer Recall] Ledger recalc failed:`, err.message);
+        }
+      }
       
       res.json({ success: true, message: "Transfer recalled successfully" });
     } catch (error: any) {
@@ -5696,60 +5652,6 @@ export async function registerRoutes(
     }
   });
 
-  // Helper function to adjust store stock quantities (follows upsertStoreStock pattern)
-  const adjustStoreStock = async (
-    clientId: string, 
-    srdId: string, 
-    itemId: string, 
-    qtyChange: number, 
-    costPrice: string, 
-    date: Date
-  ) => {
-    const existing = await storage.getStoreStockByItem(srdId, itemId, date);
-    
-    if (existing) {
-      // Update existing record
-      const currentClosing = parseFloat(existing.closingQty || "0");
-      const newClosing = Math.max(0, currentClosing + qtyChange);
-      
-      // For additions (positive qty), update addedQty; for deductions, update issuedQty
-      if (qtyChange > 0) {
-        const currentAdded = parseFloat(existing.addedQty || "0");
-        await storage.updateStoreStock(existing.id, {
-          addedQty: String(currentAdded + qtyChange),
-          closingQty: String(newClosing),
-        });
-      } else {
-        const currentIssued = parseFloat(existing.issuedQty || "0");
-        await storage.updateStoreStock(existing.id, {
-          issuedQty: String(currentIssued + Math.abs(qtyChange)),
-          closingQty: String(newClosing),
-        });
-      }
-    } else {
-      // Get previous day's closing balance as opening
-      const openingQty = await storage.getPreviousDayClosing(srdId, itemId, date);
-      const openingQtyNum = parseFloat(openingQty);
-      
-      // Calculate closing based on opening + changes
-      const addedQty = qtyChange > 0 ? qtyChange : 0;
-      const issuedQty = qtyChange < 0 ? Math.abs(qtyChange) : 0;
-      const closingQty = Math.max(0, openingQtyNum + addedQty - issuedQty);
-      
-      await storage.createStoreStock({
-        clientId,
-        storeDepartmentId: srdId,
-        itemId,
-        date,
-        openingQty: openingQty,
-        addedQty: String(addedQty),
-        issuedQty: String(issuedQty),
-        closingQty: String(closingQty),
-        costPriceSnapshot: costPrice,
-      });
-    }
-  };
-
   // Get stock movement with lines
   app.get("/api/stock-movements/:id/with-lines", requireAuth, async (req, res) => {
     try {
@@ -5916,23 +5818,28 @@ export async function registerRoutes(
         totalValue: String(calculatedTotalValue),
       });
       
-      // Update store stock based on movement type
+      // Recalculate ledger for affected SRDs using the design-rule approach:
+      // Movement records are already saved above, now trigger forward recalculation
+      // which recomputes ledger rows from source data (movements, transfers, purchases)
       const clientId = movementData.clientId;
+      const affectedSrds = new Set<string>();
+      const affectedItems = new Set<string>();
+      
+      if (movementData.fromSrdId) affectedSrds.add(movementData.fromSrdId);
+      if (movementData.toSrdId) affectedSrds.add(movementData.toSrdId);
       for (const line of lines) {
-        const qty = Number(line.qty);
-        const unitCost = String(line.unitCost || 0);
-        
-        if (movementType === "transfer") {
-          // Deduct from source SRD
-          await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, -qty, unitCost, movementDate);
-          // Add to destination SRD
-          await adjustStoreStock(clientId, movementData.toSrdId, line.itemId, qty, unitCost, movementDate);
-        } else if (movementType === "adjustment") {
-          const direction = movementData.adjustmentDirection === "increase" ? 1 : -1;
-          await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, qty * direction, unitCost, movementDate);
-        } else if (movementType === "write_off" || movementType === "waste") {
-          // Deduct from source SRD
-          await adjustStoreStock(clientId, movementData.fromSrdId, line.itemId, -qty, unitCost, movementDate);
+        affectedItems.add(line.itemId);
+      }
+      
+      // Trigger forward recalculation for each SRD and item combination
+      // This ensures opening(D) = closing(D-1) and all movements are properly reflected
+      for (const srdId of Array.from(affectedSrds)) {
+        for (const itemId of Array.from(affectedItems)) {
+          try {
+            await recalculateForward(clientId, srdId, itemId, movementDate);
+          } catch (err: any) {
+            console.error(`[Stock Movement] Ledger recalc failed for SRD ${srdId}, item ${itemId}:`, err.message);
+          }
         }
       }
       
@@ -6029,23 +5936,25 @@ export async function registerRoutes(
       
       await storage.createStockMovementLinesBulk(reversalLines);
       
-      // Apply stock adjustments (reverse the original changes)
+      // Recalculate ledger for affected SRDs - the reversal movement is already saved above
+      // so recalculateForward will pick it up from the stockMovements table
       const clientId = origMovement.clientId;
+      const affectedSrds = new Set<string>();
+      const affectedItems = new Set<string>();
+      
+      if (origMovement.fromSrdId) affectedSrds.add(origMovement.fromSrdId);
+      if (origMovement.toSrdId) affectedSrds.add(origMovement.toSrdId);
       for (const line of origLines) {
-        const qty = Number(line.qty);
-        const unitCost = line.unitCost;
-        
-        if (origMovement.movementType === "transfer") {
-          // Reverse transfer: add back to original from, deduct from original to
-          await adjustStoreStock(clientId, origMovement.fromSrdId!, line.itemId, qty, unitCost, now);
-          await adjustStoreStock(clientId, origMovement.toSrdId!, line.itemId, -qty, unitCost, now);
-        } else if (origMovement.movementType === "adjustment") {
-          // Reverse adjustment
-          const direction = origMovement.adjustmentDirection === "increase" ? -1 : 1;
-          await adjustStoreStock(clientId, origMovement.fromSrdId!, line.itemId, qty * direction, unitCost, now);
-        } else if (origMovement.movementType === "write_off" || origMovement.movementType === "waste") {
-          // Restore stock
-          await adjustStoreStock(clientId, origMovement.fromSrdId!, line.itemId, qty, unitCost, now);
+        affectedItems.add(line.itemId);
+      }
+      
+      for (const srdId of Array.from(affectedSrds)) {
+        for (const itemId of Array.from(affectedItems)) {
+          try {
+            await recalculateForward(clientId, srdId, itemId, now);
+          } catch (err: any) {
+            console.error(`[Stock Movement Reversal] Ledger recalc failed for SRD ${srdId}, item ${itemId}:`, err.message);
+          }
         }
       }
       
@@ -7237,6 +7146,18 @@ export async function registerRoutes(
       
       const event = await storage.createPurchaseItemEvent(data);
       
+      // Trigger forward recalculation if purchase is linked to an SRD
+      const srdId = req.body.srdId;
+      if (srdId) {
+        const purchaseDate = new Date(date);
+        try {
+          await recalculateForward(clientId, srdId, itemId, purchaseDate);
+          console.log(`[Purchase Event] Forward recalc triggered for SRD ${srdId} from ${purchaseDate.toISOString().split('T')[0]}`);
+        } catch (err: any) {
+          console.error(`[Purchase Event] Forward recalc failed:`, err.message);
+        }
+      }
+      
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Created Purchase Event",
@@ -7254,9 +7175,22 @@ export async function registerRoutes(
 
   app.delete("/api/purchase-item-events/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
     try {
+      // Get the event first to trigger recalculation after delete
+      const eventToDelete = await storage.getPurchaseItemEvent(req.params.id);
+      
       const deleted = await storage.deletePurchaseItemEvent(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Purchase event not found" });
+      }
+      
+      // Trigger forward recalculation if purchase was linked to an SRD
+      if (eventToDelete && eventToDelete.srdId) {
+        try {
+          await recalculateForward(eventToDelete.clientId, eventToDelete.srdId, eventToDelete.itemId, eventToDelete.date);
+          console.log(`[Purchase Event Delete] Forward recalc triggered for SRD ${eventToDelete.srdId}`);
+        } catch (err: any) {
+          console.error(`[Purchase Event Delete] Forward recalc failed:`, err.message);
+        }
       }
       
       await storage.createAuditLog({

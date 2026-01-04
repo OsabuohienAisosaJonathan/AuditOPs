@@ -1,0 +1,122 @@
+Implement the design rule for SRD Stores.
+1) Core Design Rule (Applies to ALL SRD Stores)
+1.1. Ledger Row Structure A ledger row must exist for every: a) date b) srdStoreId (Main Store SRD or a Department Store SRD) c) itemId
+1.2. One Row Per Day For each (date, srdStoreId, itemId) there must be only one row.
+All postings for that date accumulate into that same row (no duplicates).
+1.3. Opening / Closing Carry-Over For each store and item: a) Opening(D) must always equal Closing(D-1)
+b) If there is no prior day row, Opening starts at 0
+1.4. Auto Backfill + Forward Recalc Whenever a user posts anything on a past date (e.g., 3+ days ago): a) Recalculate the ledger for that date
+b) Then propagate forward day-by-day for up to 90 days (or to the current selected end date) so that:
+Opening(next day) = Closing(previous day)
+Closing recomputes using that day’s movements
+This is the key fix that ensures “late purchase” or “late transfer” changes future totals correctly.
+2) Main Store SRD Ledger Logic
+2.1. Main Store SRD Columns (Movement Inputs)
+Your Main Store SRD ledger should treat these as the daily movement inputs:
+2.1.1. Opening (computed from previous day closing)
+2.1.2. Purchase/Added
+Sum of GRN purchases or any additions posted on that date.
+2.1.3. Returns In (optional but recommended)
+Stock returned from department SRDs back into Main Store SRD.
+2.1.4. Losses
+a) Waste (loss)
+b) Write-Off (damage/expired/lost)
+Both reduce stock.
+2.1.5. Req Dep (Requisition to departments)
+This is the Main Store “issues out” to department stores.
+It can be represented as: a) Dep1..Dep10 columns + ReqDepTotal OR
+b) one column ReqDepTotal (with optional drilldown)
+2.2. Main Store Closing Formula (Expected Closing)
+For each date row:
+2.2.1. Compute: a) ReqDepTotal = Dep1 + Dep2 + ... + Dep10 (if you store per-dep columns)
+2.2.2. Then:
+ClosingExpected = Opening + PurchaseAdded + ReturnsIn − Waste − WriteOff − ReqDepTotal
+This is the Main Store SRD closing used for carry-over.
+2.3. How Requisition Affects Department Stores (Link Rule)
+When Main Store posts requisition OUT to a department SRD: a) Main Store row increases ReqDep (for that dept)
+b) Department SRD row increases TransfersIn (or ReceivedFromMain) by same qty
+This must happen as one atomic movement (both sides).
+3) Department Store SRD Ledger Logic
+3.1. Department Store SRD Columns (Movement Inputs)
+A Department Store SRD ledger row should include:
+3.1.1. Opening (computed from previous day closing)
+3.1.2. Transfers In (From Main)
+Qty received from Main Store requisition.
+3.1.3. Inter-Department Transfers In
+Qty received from another department SRD.
+3.1.4. Inter-Department Transfers Out
+Qty sent to another department SRD.
+3.1.5. Returns Out (To Main)
+Qty returned to Main Store SRD.
+3.1.6. Losses
+a) Waste (loss)
+b) Write-Off (damage)
+Both reduce stock and must be stored as positive quantities but subtracted in closing.
+3.1.7. Adjustment If you have a single adjustment column: a) Positive value increases stock
+b) Negative value decreases stock
+3.1.8. Sold Qty sold (reduces stock).
+(If Sold is derived from POS sales, store it as the “system sold qty” for that date.)
+3.2. Department Store Closing Formula (Expected Closing)
+For each date row:
+ClosingExpected = Opening + TransfersInFromMain + InterDeptIn + Adjustment − (InterDeptOut + ReturnsOutToMain + Waste + WriteOff + Sold)
+This closing becomes the next day’s opening.
+4) Stock Movement Posting Rules (So “Movement Display” Actually Updates SRD Ledgers)
+For every movement record saved (transfer/adjustment/waste/write-off/requisition), the system must “post” it into the SRD ledger row(s) for that date.
+4.1. Purchase (GRN) posted to Main Store
+a) Main Store row: PurchaseAdded += qty
+b) Then trigger forward recalc from that date.
+4.2. Requisition Main → Department
+a) Main Store row: ReqDep[thatDept] += qty (or ReqDepTotal += qty)
+b) Department row: TransfersInFromMain += qty
+c) Then forward recalc for BOTH stores from that date.
+4.3. Return Department → Main
+a) Department row: ReturnsOutToMain += qty
+b) Main Store row: ReturnsIn += qty
+c) Then forward recalc for BOTH stores.
+4.4. Inter-Department Transfer DepA → DepB
+a) DepA row: InterDeptOut += qty
+b) DepB row: InterDeptIn += qty
+c) Then forward recalc for BOTH department stores.
+4.5. Waste
+a) Store row: Waste += qty
+b) Then forward recalc from that date for that store.
+4.6. Write-Off (Damage)
+a) Store row: WriteOff += qty
+b) Then forward recalc from that date for that store.
+4.7. Adjustment (+ / −)
+a) Store row: Adjustment += qty (allow negative)
+b) Then forward recalc from that date.
+5) Auto-Recalc Engine (The “Back and Fro” Logic)
+This is what makes “add purchase 3 days back” automatically update today.
+5.1. Trigger Conditions
+Run the recalculation whenever: a) A movement is created/edited/deleted
+b) A ledger cell is edited manually (purchase, transfer, waste, write-off, sold, adjustment, requisition)
+c) A backdated entry is posted
+5.2. Recalculation Range
+Given an edit on date X for a store+item: a) Start at X
+b) Look back up to 90 days to ensure correct opening chain (if needed)
+c) Recompute forward day-by-day until:
+X + 90 days, OR
+the current report end date, OR
+last existing ledger row date
+5.3. Recalculation Steps (Per Item, Per Store)
+For each day in the range: a) Ensure a row exists; if missing, create it with zeros for movement fields
+b) Set Opening(D) = Closing(D-1)
+c) Compute ClosingExpected(D) using the correct formula (Main Store or Department Store)
+d) Save the row only if values changed
+e) Continue to next day
+5.4. Key Outcome
+If user adds 50 bottles on 20th Dec, and previously 100 bottles were added on 25th Dec: a) Closing on 20th increases
+b) Opening on 21st increases
+c) That flows forward until 25th, causing that day’s totals to increase automatically
+d) And it continues to affect all future days.
+6) Edit + Delete + Reversal Rule (No Corruption)
+Whenever a movement is edited or deleted: a) Reverse its previous effect on the ledger row(s)
+b) Apply the new effect (if edited)
+c) Run forward recalculation from that date for all affected stores/items
+This prevents “ghost quantities” and ensures totals stay correct.
+7) What You Tell AI Builder to Implement
+7.1. Keep current SRD tables, do not redesign.
+7.2. Add missing columns only where required for the formulas above (especially on Main Store to receive returns/losses if missing).
+7.3. Add a single reusable “recalc function/service” that updates ledger rows forward up to 90 days.
+7.4. Every stock movement must post into ledger columns using the rules in Section 4.
