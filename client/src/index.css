@@ -295,6 +295,25 @@
     width: 100% !important;
   }
   
+  /* Prevent duplicate rendering of ScrollArea internals */
+  [data-radix-scroll-area-viewport] > div > div:not(:first-child) {
+    display: none !important;
+  }
+  
+  /* Hide any duplicate report-content elements (safety) */
+  #report-content ~ #report-content {
+    display: none !important;
+  }
+  
+  /* ScrollArea - show content directly, hide scrollbars */
+  [data-radix-scroll-area-viewport] {
+    overflow: visible !important;
+    height: auto !important;
+  }
+  [data-radix-scroll-area-scrollbar] {
+    display: none !important;
+  }
+  
   /* Page break utilities */
   .page-break-before {
     page-break-before: always;

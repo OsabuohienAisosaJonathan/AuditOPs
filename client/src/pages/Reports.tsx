@@ -724,12 +724,13 @@ export default function Reports() {
         ...totals,
         items: srdStock.map(stock => {
           const item = items.find(i => i.id === stock.itemId);
+          const { itemId: _itemId, ...stockWithoutItemId } = stock;
           return {
             itemId: stock.itemId,
             itemName: item?.name || "Unknown",
             category: item?.category || "Uncategorized",
             unit: item?.unit || "pcs",
-            ...stock,
+            ...stockWithoutItemId,
           };
         }),
       };
@@ -777,12 +778,13 @@ export default function Reports() {
         ...totals,
         items: srdStock.map(stock => {
           const item = items.find(i => i.id === stock.itemId);
+          const { itemId: _itemId, ...stockWithoutItemId } = stock;
           return {
             itemId: stock.itemId,
             itemName: item?.name || "Unknown",
             category: item?.category || "Uncategorized",
             unit: item?.unit || "pcs",
-            ...stock,
+            ...stockWithoutItemId,
           };
         }),
       };

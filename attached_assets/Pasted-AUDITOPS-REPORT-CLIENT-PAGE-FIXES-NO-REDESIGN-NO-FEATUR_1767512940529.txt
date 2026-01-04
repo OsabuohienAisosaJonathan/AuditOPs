@@ -1,0 +1,116 @@
+AUDITOPS – REPORT + CLIENT PAGE FIXES (NO REDESIGN, NO FEATURE ADDITIONS)
+
+Scope: Fix 5 specific issues only. Do NOT change database structure, routes, or existing report selections beyond what is required.
+
+========================================================
+1) REPORT BUG: DUPLICATE SECTIONS IN DOWNLOAD/PRINT
+========================================================
+Problem:
+When the user downloads or prints a report, the selected sections render twice (duplicate blocks).
+
+Task:
+A) Find where the report sections are assembled (likely an array map).
+B) Identify why sections are duplicated (common causes):
+   - sections list merged twice (e.g., selectedSections + selectedSections)
+   - report builder state duplicates keys
+   - render loop runs twice due to React key collisions or modal preview + pdf builder both rendering same blocks
+
+Fix requirements:
+1) Ensure each section renders exactly once.
+2) Use a unique section id (string constant) for keys and dedupe:
+   - Create a helper: dedupeSections(sections) using Set by section.id
+3) Ensure PDF/print uses the deduped list only.
+
+Deliverable:
+- Explain root cause found.
+- Provide code patch with markers.
+
+========================================================
+2) REPORT TITLE: CHANGE LABEL FOR 2ND HIT
+========================================================
+Problem:
+Report page currently shows "Department Comparison (2nd Hit)" but user wants it to replace the existing "Comparison (1nd Hit)" title in the report template area.
+
+Task:
+A) Locate the report template/section title for the comparison table.
+B) Replace the incorrect title so that the report comparison section is labeled:
+   "Department Comparison (2nd Hit)"
+C) Ensure 1st hit wording is not displayed where 2nd hit is intended.
+
+No logic change; only correct label text in report UI and PDF export.
+
+========================================================
+3) DECLARED VS SYSTEM VARIANCE WRONG ON REPORT
+========================================================
+Problem:
+Declared vs System variance is wrongly captured/calculated in the report.
+
+Task:
+A) Locate the calculation for variance displayed on the report page/PDF.
+B) Correct logic to:
+   varianceAmount = declaredTotal - systemTotal
+   variancePercent = systemTotal === 0 ? 0 : (varianceAmount / systemTotal) * 100
+
+C) Ensure signs are correct:
+   - If declared > system, varianceAmount positive (surplus)
+   - If declared < system, varianceAmount negative (shortage)
+
+D) Ensure the values used are correct sources:
+   - systemTotal must come from system captured sales
+   - declaredTotal must come from declared totals
+Do NOT mix payment method totals with sales totals.
+
+Add a quick sanity check:
+- Display both systemTotal and declaredTotal in the report summary table so user can verify.
+
+========================================================
+4) GRN REGISTER: SUPPLIER NAME MAPPING IN REPORT
+========================================================
+Problem:
+GRN section in report does not show supplier name properly in its column.
+
+Task:
+A) Find how GRN rows are fetched for report.
+B) GRN rows likely have supplierId, but report needs supplierName.
+
+Fix:
+1) When building GRN report rows, join suppliers:
+   - Fetch suppliers for current organization/client
+   - Map supplierId -> supplierName
+2) Populate GRN report column "Supplier" using supplierName.
+3) If supplier missing, show "Unknown Supplier".
+
+Ensure join is scoped correctly by organization/client to avoid cross-tenant leak.
+
+========================================================
+5) CLIENT PAGE: CLIENT NAME LETTER LIMIT (20 MAX)
+========================================================
+Requirement:
+On the Clients page, enforce client name maximum 20 characters.
+
+Implementation:
+A) In UI:
+1) In Add Client + Edit Client forms:
+   - enforce maxLength=20 on input
+   - show helper text "Max 20 characters"
+2) When listing clients:
+   - display truncated name if longer than 20 (safe fallback):
+     e.g., "DASCO ENTERPRISE LIM..." (use ellipsis)
+
+B) In backend validation (important):
+Add server-side validation so longer names are rejected or trimmed consistently.
+Preferred: Reject with clear error message: "Client name must be 20 characters or less."
+
+========================================================
+OUTPUT FORMAT REQUIRED
+========================================================
+1) List the exact file paths edited.
+2) For each edited file, print the first 10–15 lines to confirm correct file.
+3) Provide code patches with START/END markers.
+4) Include a quick checklist to confirm fixes:
+   - Report exports no duplicates
+   - 2nd Hit title correct
+   - Declared/System variance correct for sample data
+   - GRN supplier names show correctly
+   - Client names limited to 20 chars
+END
