@@ -48,14 +48,16 @@ export async function apiRequest(
     clear();
     
     if (res.status === 401) {
-      // Try to refresh session before redirecting
+      // Try to refresh session before giving up
       const refreshed = await attemptSilentRefresh();
       if (refreshed) {
         // Retry the request
         return apiRequest(method, url, data);
       }
+      // Notify auth context of session expiration - no hard redirect
       handle401Redirect();
-      return new Promise(() => {});
+      // Throw error instead of hanging - let UI handle auth state
+      throw new ApiError(401, "Session expired", { code: "SESSION_EXPIRED" });
     }
     
     await throwIfResNotOk(res);
@@ -123,29 +125,29 @@ export const getQueryFn: <T>(options: {
           return null;
         }
         
-        // Try to refresh session before redirecting
+        // Try to refresh session before giving up
         const refreshed = await attemptSilentRefresh();
         if (refreshed) {
           // Retry the request with a new controller
           console.debug(`[Query] Retrying request after session refresh: ${queryKeyStr}`);
-          const { controller: retryController, clear: retryClear, isTimedOut: retryTimedOut } = createTimeoutController();
+          const { controller: retryController, clear: retryClear } = createTimeoutController();
           try {
             res = await makeFetchAttempt(queryKeyStr, requestId + "-retry", retryController);
             retryClear();
             
             if (res.status === 401) {
-              // Still 401 after refresh - redirect to login
+              // Still 401 after refresh - notify auth context, no hard redirect
               handle401Redirect();
-              return new Promise(() => {});
+              throw new ApiError(401, "Session expired", { code: "SESSION_EXPIRED" });
             }
           } catch (retryError) {
             retryClear();
             throw retryError;
           }
         } else {
-          // Refresh failed - redirect to login
+          // Refresh failed - notify auth context, no hard redirect
           handle401Redirect();
-          return new Promise(() => {});
+          throw new ApiError(401, "Session expired", { code: "SESSION_EXPIRED" });
         }
       }
 

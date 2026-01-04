@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
-import { authApi, type User, resetRedirectState } from "./api";
+import { authApi, type User, resetRedirectState, setSessionExpiredCallback } from "./api";
 import { logAuthEvent } from "./auth-debug";
 
 interface AuthContextType {
@@ -20,6 +20,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const clearAuthError = useCallback(() => setAuthError(null), []);
+  
+  // Register callback for session expiration from API layer
+  // This allows 401 errors to update auth state without hard redirects
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      logAuthEvent("SESSION_EXPIRED_CALLBACK", { message: "Session expired, clearing user state" });
+      setUser(null);
+      setAuthError(null); // Don't show error - just show login page
+    };
+    
+    setSessionExpiredCallback(handleSessionExpired);
+    
+    return () => {
+      setSessionExpiredCallback(null);
+    };
+  }, []);
 
   const refreshUser = useCallback(async () => {
     logAuthEvent("VERIFY_START", { endpoint: "/auth/me" });

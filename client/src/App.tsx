@@ -45,13 +45,8 @@ function ProtectedRoute({ component: Component, requiredRole }: { component: Rea
   const { user, isLoading, authError, clearAuthError } = useAuth();
   const [, setLocation] = useLocation();
 
-  useEffect(() => {
-    // Only redirect to login if we're done loading, no user, and no auth error
-    // (auth errors like timeout should show error UI, not redirect)
-    if (!isLoading && !user && !authError) {
-      setLocation("/login");
-    }
-  }, [user, isLoading, authError, setLocation]);
+  // NO automatic redirect - just render Login component inline if not authenticated
+  // This prevents redirect loops when session cookies aren't working
 
   // Show skeleton while checking session
   if (isLoading) {
@@ -102,8 +97,9 @@ function ProtectedRoute({ component: Component, requiredRole }: { component: Rea
     );
   }
 
+  // Not authenticated - render Login component directly (no redirect)
   if (!user) {
-    return null;
+    return <Login />;
   }
 
   if (requiredRole && user.role !== requiredRole) {

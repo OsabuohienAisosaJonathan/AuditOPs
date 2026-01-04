@@ -469,20 +469,45 @@ export async function attemptSilentRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
+// Session expired callback - set by auth context to update state without hard redirect
+let onSessionExpiredCallback: (() => void) | null = null;
+
+export function setSessionExpiredCallback(callback: (() => void) | null) {
+  onSessionExpiredCallback = callback;
+}
+
 export function handle401Redirect() {
+  // Use a debounce approach instead of permanent flag
+  // Allow re-triggering after a short delay to handle legitimate session expiry
   if (isRedirecting) return;
   
   const currentPath = window.location.pathname;
   if (!PUBLIC_PATHS.includes(currentPath)) {
     isRedirecting = true;
-    logAuthEvent("REDIRECT_LOGIN", { message: `Redirecting from ${currentPath}` });
+    logAuthEvent("SESSION_EXPIRED", { message: `Session expired on ${currentPath}` });
     
+    // Clear query cache
     if (queryClientRef) {
       queryClientRef.clear();
     }
     
+    // Notify auth context to update state - no hard redirect
+    // The auth context will set user=null, and App.tsx route guards will show login
+    if (onSessionExpiredCallback) {
+      onSessionExpiredCallback();
+    }
+    
+    // Show toast only once
     toast.error("Session expired, please log in again");
-    window.location.href = "/login";
+    
+    // Reset flag after brief delay to allow future 401 handling
+    // This is needed since we're not doing a hard redirect anymore
+    setTimeout(() => {
+      isRedirecting = false;
+    }, 2000);
+    
+    // DO NOT redirect here - let the auth context and route guards handle it
+    // This prevents redirect loops when cookies aren't working
   }
 }
 
