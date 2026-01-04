@@ -39,146 +39,161 @@ import ClientAccess from "@/pages/ClientAccess";
 import ItemPurchases from "@/pages/ItemPurchases";
 import AppLayout from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { useEffect } from "react";
 
-function ProtectedRoute({ component: Component, requiredRole }: { component: React.ComponentType; requiredRole?: string }) {
-  const { user, isLoading, authError, clearAuthError } = useAuth();
-  const [, setLocation] = useLocation();
-
-  // NO automatic redirect - just render Login component inline if not authenticated
-  // This prevents redirect loops when session cookies aren't working
-
-  // Show skeleton while checking session
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-          <p className="text-muted-foreground">Checking session...</p>
-        </div>
+function AuthLoadingScreen() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="text-center space-y-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+        <p className="text-muted-foreground">Checking session...</p>
       </div>
-    );
-  }
-
-  // Show error state if auth failed due to timeout/network
-  if (authError) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center space-y-4 p-6 max-w-md">
-          <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
-            <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-foreground">
-            {authError === "timeout" ? "Connection Timeout" : "Connection Problem"}
-          </h2>
-          <p className="text-muted-foreground">
-            {authError === "timeout" 
-              ? "The server took too long to respond. Please try again."
-              : "Unable to verify your session. Please check your connection."}
-          </p>
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => { clearAuthError(); window.location.reload(); }}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-            >
-              Retry
-            </button>
-            <button
-              onClick={() => { clearAuthError(); setLocation("/login"); }}
-              className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              Go to Login
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Not authenticated - render Login component directly (no redirect)
-  if (!user) {
-    return <Login />;
-  }
-
-  if (requiredRole && user.role !== requiredRole) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-destructive mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">You don't have permission to access this page.</p>
-        </div>
-      </div>
-    );
-  }
-
-  return <Component />;
+    </div>
+  );
 }
 
-function Router() {
+function AuthErrorScreen({ error, onRetry, onGoToLogin }: { error: string; onRetry: () => void; onGoToLogin: () => void }) {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="text-center space-y-4 p-6 max-w-md">
+        <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+          <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-semibold text-foreground">
+          {error === "timeout" ? "Connection Timeout" : "Connection Problem"}
+        </h2>
+        <p className="text-muted-foreground">
+          {error === "timeout" 
+            ? "The server took too long to respond. Please try again."
+            : "Unable to verify your session. Please check your connection."}
+        </p>
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={onRetry}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          >
+            Retry
+          </button>
+          <button
+            onClick={onGoToLogin}
+            className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccessDeniedScreen() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="text-center">
+        <h2 className="text-xl font-semibold text-destructive mb-2">Access Denied</h2>
+        <p className="text-muted-foreground">You don't have permission to access this page.</p>
+      </div>
+    </div>
+  );
+}
+
+
+function PublicRoutes() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route path="/login" component={Login} />
+      <Route path="/signup" component={Signup} />
+      <Route path="/check-email" component={CheckEmail} />
+      <Route path="/verify-email" component={VerifyEmail} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/about" component={About} />
+      <Route path="/contact" component={Contact} />
+      <Route path="/setup" component={Setup} />
+    </Switch>
+  );
+}
+
+function ProtectedRoutes() {
   return (
     <AppLayout>
       <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/login" component={Login} />
-        <Route path="/signup" component={Signup} />
-        <Route path="/check-email" component={CheckEmail} />
-        <Route path="/verify-email" component={VerifyEmail} />
-        <Route path="/forgot-password" component={ForgotPassword} />
-        <Route path="/reset-password" component={ResetPassword} />
-        <Route path="/about" component={About} />
-        <Route path="/contact" component={Contact} />
-        <Route path="/setup" component={Setup} />
-        <Route path="/dashboard">
-          <ProtectedRoute component={Dashboard} />
-        </Route>
-        <Route path="/audit-workspace">
-          <ProtectedRoute component={AuditWorkspace} />
-        </Route>
-        <Route path="/clients">
-          <ProtectedRoute component={Clients} />
-        </Route>
-        <Route path="/sales-capture">
-          <ProtectedRoute component={SalesCapture} />
-        </Route>
-        <Route path="/inventory">
-          <ProtectedRoute component={Inventory} />
-        </Route>
-        <Route path="/inventory-ledger">
-          <ProtectedRoute component={InventoryLedger} />
-        </Route>
-        <Route path="/item-purchases">
-          <ProtectedRoute component={ItemPurchases} />
-        </Route>
-        <Route path="/reconciliation">
-          <ProtectedRoute component={Reconciliation} />
-        </Route>
-        <Route path="/exceptions">
-          <ProtectedRoute component={Exceptions} />
-        </Route>
-        <Route path="/reports">
-          <ProtectedRoute component={Reports} />
-        </Route>
-        <Route path="/settings">
-          <ProtectedRoute component={Settings} />
-        </Route>
-        <Route path="/audit-trail">
-          <ProtectedRoute component={AuditTrail} />
-        </Route>
+        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/audit-workspace" component={AuditWorkspace} />
+        <Route path="/clients" component={Clients} />
+        <Route path="/sales-capture" component={SalesCapture} />
+        <Route path="/inventory" component={Inventory} />
+        <Route path="/inventory-ledger" component={InventoryLedger} />
+        <Route path="/item-purchases" component={ItemPurchases} />
+        <Route path="/reconciliation" component={Reconciliation} />
+        <Route path="/exceptions" component={Exceptions} />
+        <Route path="/reports" component={Reports} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/audit-trail" component={AuditTrail} />
         <Route path="/users">
-          <ProtectedRoute component={UserManagement} requiredRole="super_admin" />
+          <AdminRoute component={UserManagement} />
         </Route>
         <Route path="/admin-activity">
-          <ProtectedRoute component={AdminActivityLog} requiredRole="super_admin" />
+          <AdminRoute component={AdminActivityLog} />
         </Route>
         <Route path="/client-access">
-          <ProtectedRoute component={ClientAccess} requiredRole="super_admin" />
+          <AdminRoute component={ClientAccess} />
         </Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
   );
+}
+
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const { user } = useAuth();
+  
+  if (user?.role !== "super_admin") {
+    return <AccessDeniedScreen />;
+  }
+  
+  return <Component />;
+}
+
+function Router() {
+  const [location] = useLocation();
+  const { user, isLoading, authError, clearAuthError } = useAuth();
+  
+  // Define public routes that don't need auth
+  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
+  const isPublicRoute = publicRoutes.includes(location);
+  
+  // For public routes, render without auth check
+  if (isPublicRoute) {
+    return <PublicRoutes />;
+  }
+  
+  // For protected routes, check auth first
+  // Show loading while checking
+  if (isLoading) {
+    return <AuthLoadingScreen />;
+  }
+  
+  // Show error screen for network issues
+  if (authError) {
+    return (
+      <AuthErrorScreen 
+        error={authError}
+        onRetry={() => { clearAuthError(); window.location.reload(); }}
+        onGoToLogin={() => { clearAuthError(); window.location.href = "/login"; }}
+      />
+    );
+  }
+  
+  // Not authenticated - show Login page ONLY (no layout, no dashboard)
+  if (!user) {
+    return <Login />;
+  }
+  
+  // Authenticated - render protected routes with layout
+  return <ProtectedRoutes />;
 }
 
 function App() {
