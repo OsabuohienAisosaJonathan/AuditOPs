@@ -825,6 +825,11 @@ export const billingApi = {
       method: "POST",
       body: JSON.stringify({ planName }),
     }),
+  updateSubscription: (data: { planName?: string; billingPeriod?: string; slotsPurchased?: number; status?: string }) =>
+    fetchApi<any>("/subscription", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
 };
 
 // Data Export types

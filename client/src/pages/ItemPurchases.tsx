@@ -16,8 +16,34 @@ import { format, startOfMonth, endOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/lib/client-context";
 import { useCurrency } from "@/lib/currency-context";
+import { useEntitlements } from "@/lib/entitlements-context";
+import { LockedPageScreen } from "@/components/LockedPageScreen";
 
 export default function ItemPurchases() {
+  const { entitlements, isLoading: entitlementsLoading } = useEntitlements();
+  
+  if (entitlementsLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+  
+  if (!entitlements?.canAccessPurchasesRegisterPage) {
+    return (
+      <LockedPageScreen
+        feature="Purchases Register"
+        requiredPlan="Growth"
+        description="Access to the Purchases Register is available on Growth plans and above."
+      />
+    );
+  }
+  
+  return <ItemPurchasesContent />;
+}
+
+function ItemPurchasesContent() {
   const queryClient = useQueryClient();
   const { formatMoney } = useCurrency();
   const { clients, selectedClientId: contextClientId } = useClientContext();

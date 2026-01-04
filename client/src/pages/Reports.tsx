@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, BarChart3, PieChart, Table as TableIcon, AlertCircle, Printer, X, Eye, TrendingUp, TrendingDown, DollarSign, Package, AlertTriangle, CheckCircle2, Award, Calendar } from "lucide-react";
+import { FileText, Download, BarChart3, PieChart, Table as TableIcon, AlertCircle, Printer, X, Eye, TrendingUp, TrendingDown, DollarSign, Package, AlertTriangle, CheckCircle2, Award, Calendar, Lock } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportsApi, salesEntriesApi, departmentsApi, exceptionsApi, stockMovementsApi, SalesEntry, Exception as ExceptionType, StockMovement, departmentComparisonApi, DepartmentComparison, purchaseItemEventsApi, PurchaseItemEvent, grnApi, GoodsReceivedNote, receivablesApi, Receivable, surplusesApi, Surplus, storeNamesApi, itemsApi, paymentDeclarationsApi, PaymentDeclaration, auditLogsApi, AuditLog } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
@@ -31,7 +31,16 @@ const REPORT_TYPES = [
   { value: "exceptions", label: "Exceptions Report" },
 ];
 
-const SECTIONS = {
+type SectionDef = {
+  id: string;
+  label: string;
+  default?: boolean;
+  helper?: string;
+  lockedBy?: 'canAccessPurchasesRegisterPage' | 'canDownloadMainStoreLedgerSummary' | 'canDownloadSecondHitFullTable';
+  requiredPlan?: string;
+};
+
+const SECTIONS: { existing: SectionDef[]; new: SectionDef[] } = {
   existing: [
     { id: "executive-summary", label: "Executive Summary", default: true },
     { id: "metrics-dashboard", label: "Metrics Dashboard (KPIs)", default: true },
@@ -43,7 +52,7 @@ const SECTIONS = {
     { id: "payment-methods", label: "Payment Methods Breakdown (Overall)" },
     { id: "payment-matrix", label: "Payment Methods by Department (Matrix)" },
     { id: "declared-vs-system", label: "Declared vs Captured Variance" },
-    { id: "department-comparison-full", label: "Department Comparison (1st Hit) - Full Table", helper: "Matches Reconciliation page 1st Hit Comparison exactly" },
+    { id: "department-comparison-full", label: "Department Comparison (1st Hit) - Full Table", helper: "Matches Reconciliation page 1st Hit Comparison exactly", lockedBy: "canDownloadSecondHitFullTable", requiredPlan: "Business" },
     { id: "department-comparison", label: "Department Comparison (1st Hit)" },
     { id: "daily-breakdown", label: "Daily Breakdown (Weekly/Monthly)" },
     { id: "stock-report", label: "Stock Report & Variance (SRDs)" },
@@ -51,11 +60,11 @@ const SECTIONS = {
     { id: "reconciliation-summary", label: "Reconciliation Summary" },
     { id: "audit-evidence", label: "Audit Trail Evidence" },
     { id: "auditor-remarks", label: "Auditor Remarks & Recommendations" },
-    { id: "purchases-register", label: "Purchases Register", helper: "All item purchases with supplier and cost details" },
+    { id: "purchases-register", label: "Purchases Register", helper: "All item purchases with supplier and cost details", lockedBy: "canAccessPurchasesRegisterPage", requiredPlan: "Growth" },
     { id: "grn-register", label: "GRN Register", helper: "Goods Received Notes with supplier and status" },
     { id: "receivables-register", label: "Receivables", helper: "Cash shortages from department comparison" },
     { id: "surplus-register", label: "Surplus", helper: "Excess cash from department comparison" },
-    { id: "srd-main-store", label: "SRD Main Store Ledger Summary", helper: "Main Store inventory with variance tracking" },
+    { id: "srd-main-store", label: "SRD Main Store Ledger Summary", helper: "Main Store inventory with variance tracking", lockedBy: "canDownloadMainStoreLedgerSummary", requiredPlan: "Business" },
   ],
 };
 
@@ -87,7 +96,20 @@ export default function Reports() {
   const { selectedClientId, clients } = useClientContext();
   const clientId = selectedClientId || clients?.[0]?.id || "";
   const selectedClient = clients?.find(c => c.id === clientId);
-  const { checkAndShowLocked } = useEntitlements();
+  const { checkAndShowLocked, entitlements, showLockedModal } = useEntitlements();
+  
+  const isSectionLocked = (section: SectionDef): boolean => {
+    if (!section.lockedBy || !entitlements) return false;
+    return !(entitlements as any)[section.lockedBy];
+  };
+  
+  const handleSectionClick = (section: SectionDef) => {
+    if (isSectionLocked(section)) {
+      showLockedModal(section.label, section.requiredPlan || "Growth", `${section.label} is available on ${section.requiredPlan || "Growth"} plans and above.`);
+      return;
+    }
+    toggleSection(section.id);
+  };
 
   const getDateRange = () => {
     const today = new Date();
@@ -1106,24 +1128,39 @@ export default function Reports() {
                 <div className="space-y-3">
                   <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Extended Sections</div>
                   <div className="grid grid-cols-2 gap-3">
-                    {SECTIONS.new.map(section => (
-                      <div 
-                        key={section.id}
-                        className={cn(
-                          "flex items-center space-x-2 border p-3 rounded hover:bg-muted/50 transition-colors cursor-pointer",
-                          selectedSections.includes(section.id) && "bg-primary/5 border-primary/30"
-                        )}
-                        onClick={() => toggleSection(section.id)}
-                      >
-                        <Checkbox 
-                          id={`sec-${section.id}`} 
-                          checked={selectedSections.includes(section.id)}
-                          onCheckedChange={() => toggleSection(section.id)}
-                          data-testid={`checkbox-${section.id}`}
-                        />
-                        <label htmlFor={`sec-${section.id}`} className="text-sm font-medium leading-none cursor-pointer flex-1">{section.label}</label>
-                      </div>
-                    ))}
+                    {SECTIONS.new.map(section => {
+                      const locked = isSectionLocked(section);
+                      return (
+                        <div 
+                          key={section.id}
+                          className={cn(
+                            "flex items-center space-x-2 border p-3 rounded transition-colors cursor-pointer",
+                            locked 
+                              ? "opacity-60 bg-muted/30 border-dashed" 
+                              : "hover:bg-muted/50",
+                            selectedSections.includes(section.id) && !locked && "bg-primary/5 border-primary/30"
+                          )}
+                          onClick={() => handleSectionClick(section)}
+                        >
+                          {locked ? (
+                            <Lock className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                          ) : (
+                            <Checkbox 
+                              id={`sec-${section.id}`} 
+                              checked={selectedSections.includes(section.id)}
+                              onCheckedChange={() => handleSectionClick(section)}
+                              data-testid={`checkbox-${section.id}`}
+                            />
+                          )}
+                          <label htmlFor={`sec-${section.id}`} className={cn("text-sm font-medium leading-none cursor-pointer flex-1", locked && "text-muted-foreground")}>{section.label}</label>
+                          {locked && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
+                              {section.requiredPlan}+
+                            </Badge>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
