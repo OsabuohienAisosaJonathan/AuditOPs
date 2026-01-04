@@ -515,8 +515,8 @@ export default function Inventory() {
                       <Plus className="h-4 w-4" /> Add Item
                     </Button>
                   </DialogTrigger>
-                    <DialogContent className="max-h-[85vh] flex flex-col">
-                      <DialogHeader>
+                    <DialogContent className="max-h-[85vh] flex flex-col overflow-hidden">
+                      <DialogHeader className="flex-shrink-0">
                         <DialogTitle>Create New Item</DialogTitle>
                         <DialogDescription>Add a new inventory item.</DialogDescription>
                       </DialogHeader>
@@ -1485,8 +1485,8 @@ export default function Inventory() {
 
       {/* Edit Item Dialog */}
       <Dialog open={editItemOpen} onOpenChange={setEditItemOpen}>
-        <DialogContent className="max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Edit Item</DialogTitle>
             <DialogDescription>Update the inventory item details.</DialogDescription>
           </DialogHeader>
