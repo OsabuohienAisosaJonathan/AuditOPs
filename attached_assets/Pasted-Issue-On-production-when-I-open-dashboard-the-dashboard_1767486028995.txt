@@ -1,0 +1,26 @@
+Issue: On production, when I open /dashboard, the dashboard UI loads but the login page is still rendered on top/alongside it. The login page is supposed to disappear completely once authenticated. This looks like an auth-guard + layout/rendering problem.
+What to do:
+Deploy approach (must follow this)
+Push code changes through the normal deploy flow, then make sure production env vars + domain/cookie/auth settings match what the code expects.
+Do not “force-push dev environment configs” into production. Only deploy code + correctly set production configs.
+Fix the overlaid layout (core bug)
+Ensure /dashboard shows either: a) the dashboard (when authenticated), or b) the login page (when unauthenticated), but never both.
+Remove/stop any logic that renders or mounts the login component inside dashboard layout (or any shared layout that wraps dashboard).
+The dashboard layout/components must not render at all if the user is not authenticated.
+Implement a single, clean auth gate
+Use one consistent guard method (pick one and apply everywhere): a) Middleware / server-side redirect for protected routes like /dashboard, or
+b) app/dashboard/layout auth check that redirects unauthenticated users before rendering UI.
+Avoid “client-side flash” where dashboard renders briefly before redirect.
+Stop production login bounce (login → instantly back to login)
+Verify production cookie/session persistence:
+Cookies must be set for the correct domain (miauditops.com)
+Secure cookies enabled under HTTPS
+SameSite set appropriately (usually Lax)
+Confirm production env variables:
+APP_URL / BASE_URL / NEXTAUTH_URL (or equivalent) matches the production domain
+auth secret is set in production
+API base URL is not pointing to localhost/dev
+Acceptance tests (must pass)
+Unauthenticated user opening /dashboard → redirected to sign-in without dashboard appearing.
+Authenticated user opening /dashboard → full dashboard shows, no login UI rendered anywhere.
+After login in production → user remains in dashboard (no loop).

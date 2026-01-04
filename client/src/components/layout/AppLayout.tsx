@@ -297,13 +297,28 @@ const SIDEBAR_STATE_KEY = "miemploya-sidebar-collapsed";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const { user, isLoading } = useAuth();
   const [defaultOpen] = useState(() => {
     const stored = localStorage.getItem(SIDEBAR_STATE_KEY);
     return stored !== "true";
   });
   
   const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
+  
+  // For public routes, never show sidebar layout
   if (publicRoutes.includes(location)) return <>{children}</>;
+  
+  // CRITICAL: For protected routes, only show sidebar layout when authenticated
+  // If not authenticated (user is null and not loading), render without layout
+  // This prevents the sidebar from appearing alongside the login form
+  if (!isLoading && !user) {
+    return <>{children}</>;
+  }
+  
+  // While loading auth, also skip layout to prevent flash
+  if (isLoading) {
+    return <>{children}</>;
+  }
   
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
