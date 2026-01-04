@@ -1393,6 +1393,71 @@ export async function registerRoutes(
     }
   });
 
+  // Update subscription plan (super admin only - manual mode)
+  app.patch("/api/subscription", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user || !user.organizationId) {
+        return res.status(404).json({ error: "User not found or not in organization" });
+      }
+      
+      const { planName, billingPeriod, slotsPurchased, status } = req.body;
+      
+      // Validate plan name
+      const validPlans = ["starter", "growth", "business", "enterprise"];
+      if (planName && !validPlans.includes(planName)) {
+        return res.status(400).json({ error: `Invalid plan. Must be one of: ${validPlans.join(", ")}` });
+      }
+      
+      // Validate billing period
+      const validPeriods = ["monthly", "quarterly", "yearly"];
+      if (billingPeriod && !validPeriods.includes(billingPeriod)) {
+        return res.status(400).json({ error: `Invalid billing period. Must be one of: ${validPeriods.join(", ")}` });
+      }
+      
+      // Validate status
+      const validStatuses = ["trial", "active", "past_due", "suspended", "cancelled"];
+      if (status && !validStatuses.includes(status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+      }
+      
+      // Get existing subscription or create new one
+      let subscription = await storage.getSubscription(user.organizationId);
+      
+      const updateData: any = {};
+      if (planName) updateData.planName = planName;
+      if (billingPeriod) updateData.billingPeriod = billingPeriod;
+      if (slotsPurchased !== undefined) updateData.slotsPurchased = slotsPurchased;
+      if (status) updateData.status = status;
+      
+      if (subscription) {
+        subscription = await storage.updateSubscription(subscription.id, updateData);
+      } else {
+        // Create new subscription if none exists
+        subscription = await storage.createSubscription({
+          organizationId: user.organizationId,
+          planName: planName || "starter",
+          billingPeriod: billingPeriod || "monthly",
+          slotsPurchased: slotsPurchased || 1,
+          status: status || "trial",
+          startDate: new Date(),
+        });
+      }
+      
+      // Log admin activity
+      await storage.createAdminActivityLog({
+        actorId: req.session.userId!,
+        actionType: "subscription_updated",
+        reason: `Plan updated to: ${planName || subscription?.planName}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(subscription);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get organization details
   app.get("/api/organization", requireAuth, async (req, res) => {
     try {
