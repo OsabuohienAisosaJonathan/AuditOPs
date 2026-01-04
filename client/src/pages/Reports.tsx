@@ -43,8 +43,8 @@ const SECTIONS = {
     { id: "payment-methods", label: "Payment Methods Breakdown (Overall)" },
     { id: "payment-matrix", label: "Payment Methods by Department (Matrix)" },
     { id: "declared-vs-system", label: "Declared vs Captured Variance" },
-    { id: "department-comparison-full", label: "Department Comparison (2nd Hit) - Full Table", helper: "Matches Reconciliation page 2nd Hit Comparison exactly" },
-    { id: "department-comparison", label: "Department Comparison (2nd Hit)" },
+    { id: "department-comparison-full", label: "Department Comparison (1st Hit) - Full Table", helper: "Matches Reconciliation page 1st Hit Comparison exactly" },
+    { id: "department-comparison", label: "Department Comparison (1st Hit)" },
     { id: "daily-breakdown", label: "Daily Breakdown (Weekly/Monthly)" },
     { id: "stock-report", label: "Stock Report & Variance (SRDs)" },
     { id: "stock-movements", label: "Stock Movements Summary" },
@@ -1648,10 +1648,10 @@ export default function Reports() {
                     </div>
                   )}
 
-                  {/* Department Comparison (2nd Hit) */}
+                  {/* Department Comparison (1st Hit) */}
                   {selectedSections.includes("department-comparison") && reportData.departmentComparison?.length > 0 && (
                     <div>
-                      <h3 className="font-bold text-lg mb-4">Department Comparison (2nd Hit)</h3>
+                      <h3 className="font-bold text-lg mb-4">Department Comparison (1st Hit)</h3>
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-gray-100">
@@ -1854,11 +1854,11 @@ export default function Reports() {
                     </div>
                   )}
 
-                  {/* Department Comparison (2nd Hit) - Full Table (Real API Data) */}
+                  {/* Department Comparison (1st Hit) - Full Table (Real API Data) */}
                   {selectedSections.includes("department-comparison-full") && reportData.departmentComparisonFull?.length > 0 && (
                     <div className="page-break-before">
-                      <h3 className="font-bold text-lg mb-4">Department Comparison (2nd Hit) - Full Table</h3>
-                      <p className="text-sm text-gray-500 mb-2">Data source: Reconciliation 2nd Hit Comparison API</p>
+                      <h3 className="font-bold text-lg mb-4">Department Comparison (1st Hit) - Full Table</h3>
+                      <p className="text-sm text-gray-500 mb-2">Data source: Reconciliation 1st Hit Comparison API</p>
                       <div className="overflow-x-auto">
                         <Table className="text-sm">
                           <TableHeader>
