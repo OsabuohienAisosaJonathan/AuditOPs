@@ -5,7 +5,9 @@ import { getTenantEntitlements, checkClientCreationLimit, checkSrdCreationLimit,
 import { hash, compare } from "bcrypt";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import MemoryStore from "memorystore";
 import { pool } from "./db";
+import { CachedSessionStore } from "./cached-session-store";
 import { 
   insertUserSchema, insertClientSchema, insertCategorySchema, insertDepartmentSchema, 
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, insertStockMovementLineSchema,
@@ -183,33 +185,59 @@ export async function registerRoutes(
   
   console.log(`[SESSION CONFIG] Production: ${isProduction}, CookieDomain: ${cookieDomain || 'not set'}, SecureCookies: ${useSecureCookies}`);
   
-  // Create session store with DISABLED automatic pruning
-  // We'll run pruning manually in a background interval with error isolation
-  const sessionStore = new PgStore({
-    pool: pool,
-    tableName: "session",
-    createTableIfMissing: true,
-    pruneSessionInterval: false, // DISABLE automatic pruning - prevents DB pressure during requests
-  });
+  // Session store setup with in-memory caching layer
+  // This dramatically reduces DB pressure by caching sessions and batching writes
+  const MemoryStoreFactory = MemoryStore(session);
   
-  // Background session pruning - runs every 30 minutes, isolated from request path
-  const SESSION_PRUNE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-  setInterval(async () => {
-    try {
-      console.log("[Session Prune] Starting background session cleanup...");
-      const startTime = Date.now();
-      // Use a manual query to delete expired sessions instead of pruneSessions
-      // This gives us more control and better error handling
-      const result = await pool.query(
-        `DELETE FROM session WHERE expire < NOW()`
-      );
-      const duration = Date.now() - startTime;
-      console.log(`[Session Prune] Cleaned up ${result.rowCount || 0} expired sessions in ${duration}ms`);
-    } catch (err: any) {
-      // Log error but NEVER crash the server
-      console.error("[Session Prune] Failed to prune sessions:", err.message);
-    }
-  }, SESSION_PRUNE_INTERVAL_MS);
+  let sessionStore: session.Store;
+  
+  // In development, prefer pure memory store to completely avoid DB session issues
+  // In production, use PostgreSQL with caching layer for persistence across restarts
+  if (isProduction) {
+    // Production: PostgreSQL store with in-memory cache layer
+    const pgStore = new PgStore({
+      pool: pool,
+      tableName: "session",
+      createTableIfMissing: true,
+      pruneSessionInterval: false, // DISABLE automatic pruning - we do it manually
+    });
+    
+    // Wrap PostgreSQL store with caching layer
+    // - Reads from cache for 30 seconds before hitting DB
+    // - Writes batched every 30 seconds
+    sessionStore = new CachedSessionStore(pgStore, {
+      cacheTtlMs: 30000, // Cache reads for 30 seconds
+      syncIntervalMs: 30000, // Sync writes every 30 seconds
+    });
+    
+    console.log("[Session Store] Using PostgreSQL with memory cache layer (production)");
+  } else {
+    // Development: Pure memory store - no DB dependency for sessions
+    // Sessions won't persist across server restarts, but that's fine for dev
+    sessionStore = new MemoryStoreFactory({
+      checkPeriod: 86400000, // Prune expired entries every 24h
+    });
+    
+    console.log("[Session Store] Using pure memory store (development)");
+  }
+  
+  // Background session pruning for production PostgreSQL - runs every 30 minutes
+  if (isProduction) {
+    const SESSION_PRUNE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+    setInterval(async () => {
+      try {
+        console.log("[Session Prune] Starting background session cleanup...");
+        const startTime = Date.now();
+        const result = await pool.query(
+          `DELETE FROM session WHERE expire < NOW()`
+        );
+        const duration = Date.now() - startTime;
+        console.log(`[Session Prune] Cleaned up ${result.rowCount || 0} expired sessions in ${duration}ms`);
+      } catch (err: any) {
+        console.error("[Session Prune] Failed to prune sessions:", err.message);
+      }
+    }, SESSION_PRUNE_INTERVAL_MS);
+  }
   
   app.use(
     session({

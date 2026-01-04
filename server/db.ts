@@ -115,11 +115,12 @@ function ensureDatabase() {
     
     _pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      // CRITICAL: Reduced pool for serverless DB stability
-      max: 5, // Small pool to avoid exhausting serverless DB
+      // Pool size balanced for serverless DB with session caching
+      // Session store now uses memory cache, so DB load is much lower
+      max: 8, // Moderate pool - session cache reduces pressure
       min: 0, // Allow pool to shrink to 0 when idle
       idleTimeoutMillis: 30000, // Close idle connections after 30s
-      connectionTimeoutMillis: 4000, // Fast fail - 4s max wait for connection
+      connectionTimeoutMillis: 5000, // 5s max wait for connection
       statement_timeout: 20000, // Statement timeout: 20s
       keepAlive: true, // Enable TCP keepalive
       keepAliveInitialDelayMillis: 10000, // Start keepalive after 10s idle
