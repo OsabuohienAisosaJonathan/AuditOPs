@@ -1913,33 +1913,27 @@ export default function InventoryLedger() {
                                     {displaySold !== null ? displaySold.toFixed(2) : <span className="text-muted-foreground">—</span>}
                                   </TableCell>
                                   <TableCell className="text-right bg-muted/30 p-1">
-                                    {(() => {
-                                      const editedClosing = ledgerEdits[row.itemId]?.closing;
-                                      if (editedClosing !== undefined || !row.awaitingCount) {
-                                        // Show value (edited or actual)
-                                        const displayValue = editedClosing !== undefined 
-                                          ? parseFloat(editedClosing) 
-                                          : displayClosing;
-                                        return <span className="font-medium">{displayValue?.toFixed(2)}</span>;
-                                      }
-                                      // Show input for awaiting count
-                                      return (
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          min="0"
-                                          placeholder="Enter count"
-                                          className={cn(
-                                            "h-8 w-24 text-right bg-amber-50 border-amber-300",
-                                            isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed"
-                                          )}
-                                          onChange={(e) => handleCellEdit(row.itemId, "closing", e.target.value)}
-                                          disabled={isPastDate && !isSuperAdmin}
-                                          title={isPastDate && !isSuperAdmin ? "Only Super Admin can edit past day records" : "Enter physical closing count"}
-                                          data-testid={`input-dept-closing-${row.itemId}`}
-                                        />
-                                      );
-                                    })()}
+                                    {row.awaitingCount ? (
+                                      // Show input for awaiting count (stays visible during editing)
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="Enter count"
+                                        value={ledgerEdits[row.itemId]?.closing ?? ""}
+                                        className={cn(
+                                          "h-8 w-24 text-right bg-amber-50 border-amber-300",
+                                          isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed"
+                                        )}
+                                        onChange={(e) => handleCellEdit(row.itemId, "closing", e.target.value)}
+                                        disabled={isPastDate && !isSuperAdmin}
+                                        title={isPastDate && !isSuperAdmin ? "Only Super Admin can edit past day records" : "Enter physical closing count"}
+                                        data-testid={`input-dept-closing-${row.itemId}`}
+                                      />
+                                    ) : (
+                                      // Show static value when count exists
+                                      <span className="font-medium">{displayClosing?.toFixed(2)}</span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-right">{row.sellingPrice.toFixed(2)}</TableCell>
                                   <TableCell className="text-right bg-green-50 font-medium text-green-700">
