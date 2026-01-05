@@ -1203,16 +1203,23 @@ function PurchasesTab({ grns, clientId, departmentId, dateStr, totalPurchases }:
   );
 }
 
+interface MainStoreLedgerRow {
+  id: string;
+  itemId: string;
+  openingQty: string;
+  addedQty: string;
+  issuedQty: string;
+  transfersInQty: string;
+  closingQty: string;
+  costPriceSnapshot: string;
+}
+
 function StoreTab({ clientId, departments, items, dateStr }: {
   clientId: string | null;
   departments: Department[];
   items: Item[];
   dateStr: string;
 }) {
-  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
-  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
-  const [noteText, setNoteText] = useState("");
-  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
   // Fetch inventory departments (SRDs) for proper From/To names
@@ -1226,86 +1233,6 @@ function StoreTab({ clientId, departments, items, dateStr }: {
     enabled: !!clientId,
   });
 
-  // Fetch store names for display
-  const { data: storeNames = [] } = useQuery<StoreName[]>({
-    queryKey: ["store-names", clientId],
-    queryFn: async () => {
-      const res = await fetch(`/api/clients/${clientId}/store-names`);
-      if (!res.ok) throw new Error("Failed to fetch store names");
-      return res.json();
-    },
-    enabled: !!clientId,
-  });
-
-  const { data: storeIssues = [] } = useQuery({
-    queryKey: ["store-issues", clientId, dateStr],
-    queryFn: () => clientId ? storeIssuesApi.getAll(clientId, dateStr) : Promise.resolve([]),
-    enabled: !!clientId,
-  });
-
-  // Fetch store issue lines for all issues
-  const { data: storeIssueLines = [] } = useQuery<StoreIssueLine[]>({
-    queryKey: ["store-issue-lines", clientId, dateStr],
-    queryFn: async () => {
-      if (!clientId || storeIssues.length === 0) return [];
-      const allLines: StoreIssueLine[] = [];
-      for (const issue of storeIssues) {
-        const res = await fetch(`/api/store-issues/${issue.id}/lines`);
-        if (res.ok) {
-          const lines = await res.json();
-          allLines.push(...lines);
-        }
-      }
-      return allLines;
-    },
-    enabled: !!clientId && storeIssues.length > 0,
-  });
-
-  // Mutation for updating notes
-  const updateNotesMutation = useMutation({
-    mutationFn: async ({ issueId, notes }: { issueId: string; notes: string }) => {
-      const res = await fetch(`/api/store-issues/${issueId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
-      if (!res.ok) throw new Error("Failed to update notes");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-issues"] });
-      setNoteDialogOpen(false);
-      setSelectedIssueId(null);
-      setNoteText("");
-      toast.success("Notes saved successfully");
-    },
-    onError: (error: any) => toast.error(error.message || "Failed to save notes"),
-  });
-
-  // Helper to get SRD name
-  const getSrdName = (id: string) => {
-    const srd = inventoryDepts.find(d => d.id === id);
-    if (!srd) return "Unknown";
-    const storeName = storeNames.find(sn => sn.id === srd.storeNameId);
-    return storeName?.name || "Unknown";
-  };
-
-  const getItemName = (id: string) => items.find(i => i.id === id)?.name || "Unknown";
-
-  // Get lines for a specific issue
-  const getLinesForIssue = (issueId: string) => storeIssueLines.filter(l => l.storeIssueId === issueId);
-
-  const handleOpenNoteDialog = (issueId: string, currentNotes: string | null) => {
-    setSelectedIssueId(issueId);
-    setNoteText(currentNotes || "");
-    setNoteDialogOpen(true);
-  };
-
-  const handleSaveNote = () => {
-    if (!selectedIssueId) return;
-    updateNotesMutation.mutate({ issueId: selectedIssueId, notes: noteText });
-  };
-
   // Find the Main Store SRD for this client
   const mainStoreSrd = useMemo(() => {
     const mainStores = inventoryDepts.filter(d => d.inventoryType === "MAIN_STORE" && d.status === "active");
@@ -1315,12 +1242,72 @@ function StoreTab({ clientId, departments, items, dateStr }: {
     return mainStores[0] || null;
   }, [inventoryDepts]);
 
+  // Fetch Main Store ledger data (storeStock for the Main Store SRD)
+  const { data: mainStoreLedger = [], isLoading: ledgerLoading } = useQuery<MainStoreLedgerRow[]>({
+    queryKey: ["main-store-ledger", clientId, mainStoreSrd?.id, dateStr],
+    queryFn: async () => {
+      if (!clientId || !mainStoreSrd) return [];
+      const res = await fetch(`/api/clients/${clientId}/store-stock?departmentId=${mainStoreSrd.id}&date=${dateStr}`);
+      if (!res.ok) throw new Error("Failed to fetch Main Store ledger");
+      return res.json();
+    },
+    enabled: !!clientId && !!mainStoreSrd,
+  });
+
+  // Filter ledger to only items with activity (non-zero values)
+  const ledgerWithActivity = useMemo(() => {
+    return mainStoreLedger.filter(row => {
+      const opening = parseFloat(row.openingQty || "0");
+      const added = parseFloat(row.addedQty || "0");
+      const issued = parseFloat(row.issuedQty || "0");
+      const returns = parseFloat(row.transfersInQty || "0");
+      const closing = parseFloat(row.closingQty || "0");
+      return opening !== 0 || added !== 0 || issued !== 0 || returns !== 0 || closing !== 0;
+    });
+  }, [mainStoreLedger]);
+
+  const getItemDetails = (itemId: string) => {
+    const item = items.find(i => i.id === itemId);
+    return {
+      name: item?.name || "Unknown",
+      category: item?.category || "-",
+      costPrice: parseFloat(item?.costPrice || "0"),
+    };
+  };
+
+  // Calculate totals
+  const totals = useMemo(() => {
+    let totalOpening = 0;
+    let totalAdded = 0;
+    let totalIssued = 0;
+    let totalReturns = 0;
+    let totalClosing = 0;
+    let totalValue = 0;
+
+    for (const row of ledgerWithActivity) {
+      const opening = parseFloat(row.openingQty || "0");
+      const added = parseFloat(row.addedQty || "0");
+      const issued = parseFloat(row.issuedQty || "0");
+      const returns = parseFloat(row.transfersInQty || "0");
+      const closing = parseFloat(row.closingQty || "0");
+      const unitCost = parseFloat(row.costPriceSnapshot || "0");
+
+      totalOpening += opening;
+      totalAdded += added;
+      totalIssued += issued;
+      totalReturns += returns;
+      totalClosing += closing;
+      totalValue += closing * unitCost;
+    }
+
+    return { totalOpening, totalAdded, totalIssued, totalReturns, totalClosing, totalValue };
+  }, [ledgerWithActivity]);
+
   const handleGoToMainStore = () => {
     if (!mainStoreSrd) {
       toast.error("No Main Store SRD found for this client. Create one in Inventory Ledger first.");
       return;
     }
-    // Navigate to Inventory Ledger with the Main Store SRD selected
     setLocation(`/inventory-ledger?srdId=${mainStoreSrd.id}&clientId=${clientId}`);
   };
 
@@ -1330,7 +1317,7 @@ function StoreTab({ clientId, departments, items, dateStr }: {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Store Issues</CardTitle>
-            <CardDescription>View items issued from Main Store to Department Stores</CardDescription>
+            <CardDescription>Main Store SR-D Ledger - Items issued to Department Stores (Req Dep)</CardDescription>
           </div>
           <Button 
             onClick={handleGoToMainStore} 
@@ -1345,134 +1332,101 @@ function StoreTab({ clientId, departments, items, dateStr }: {
         </div>
       </CardHeader>
       <CardContent className="px-0">
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>From</TableHead>
-                <TableHead>To</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Notes</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {storeIssues.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    No store issues recorded today. Issues are made from the Main Store SRD in Inventory Ledger.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                storeIssues.flatMap((issue) => {
-                  const lines = getLinesForIssue(issue.id);
-                  if (lines.length === 0) {
-                    return (
-                      <TableRow key={issue.id} data-testid={`row-store-issue-${issue.id}`}>
-                        <TableCell>{format(new Date(issue.issueDate), "MMM d, yyyy")}</TableCell>
-                        <TableCell className="font-medium">{getSrdName(issue.fromDepartmentId)}</TableCell>
-                        <TableCell className="font-medium">{getSrdName(issue.toDepartmentId)}</TableCell>
-                        <TableCell className="text-muted-foreground">-</TableCell>
-                        <TableCell className="text-right text-muted-foreground">-</TableCell>
-                        <TableCell>
-                          <Badge variant={issue.status === "posted" ? "default" : "secondary"}>
-                            {issue.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => handleOpenNoteDialog(issue.id, issue.notes)}
-                            className="text-xs"
-                            data-testid={`button-note-${issue.id}`}
-                          >
-                            {issue.notes ? <span className="truncate max-w-[100px]">{issue.notes}</span> : <span className="text-muted-foreground">Add note</span>}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }
-                  return lines.map((line, idx) => (
-                    <TableRow key={`${issue.id}-${line.id}`} data-testid={`row-store-issue-line-${line.id}`}>
-                      {idx === 0 ? (
-                        <>
-                          <TableCell rowSpan={lines.length}>{format(new Date(issue.issueDate), "MMM d, yyyy")}</TableCell>
-                          <TableCell rowSpan={lines.length} className="font-medium">{getSrdName(issue.fromDepartmentId)}</TableCell>
-                          <TableCell rowSpan={lines.length} className="font-medium">{getSrdName(issue.toDepartmentId)}</TableCell>
-                        </>
-                      ) : null}
-                      <TableCell>{getItemName(line.itemId)}</TableCell>
-                      <TableCell className="text-right font-mono">{Number(line.qtyIssued).toFixed(2)}</TableCell>
-                      {idx === 0 ? (
-                        <>
-                          <TableCell rowSpan={lines.length}>
-                            <Badge variant={issue.status === "posted" ? "default" : "secondary"}>
-                              {issue.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell rowSpan={lines.length}>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => handleOpenNoteDialog(issue.id, issue.notes)}
-                              className="text-xs"
-                              data-testid={`button-note-${issue.id}`}
-                            >
-                              {issue.notes ? <span className="truncate max-w-[100px]">{issue.notes}</span> : <span className="text-muted-foreground">Add note</span>}
-                            </Button>
-                          </TableCell>
-                        </>
-                      ) : null}
-                    </TableRow>
-                  ));
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-6 p-4 bg-muted/30 rounded-lg">
-          <h4 className="text-sm font-semibold mb-2">Issue Summary</h4>
-          <p className="text-sm text-muted-foreground">
-            Total issues today: <span className="font-mono font-medium">{storeIssues.length}</span>
-          </p>
-        </div>
-      </CardContent>
-
-      {/* Notes Dialog */}
-      <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Issue Notes</DialogTitle>
-            <DialogDescription>Add or edit notes for this store issue</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="issueNote">Note</Label>
-            <Textarea
-              id="issueNote"
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Enter any notes about this issue..."
-              rows={4}
-              data-testid="textarea-issue-note"
-            />
+        {!mainStoreSrd ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No Main Store SRD found for this client. Create one in Inventory Ledger first.
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setNoteDialogOpen(false)}>Cancel</Button>
-            <Button 
-              onClick={handleSaveNote}
-              disabled={updateNotesMutation.isPending}
-              data-testid="button-save-note"
-            >
-              {updateNotesMutation.isPending && <Spinner className="h-4 w-4 mr-2" />}
-              Save Note
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        ) : ledgerLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner className="h-6 w-6" />
+            <span className="ml-2 text-muted-foreground">Loading Main Store ledger...</span>
+          </div>
+        ) : (
+          <>
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    <TableHead>Item Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Opening</TableHead>
+                    <TableHead className="text-right">Purchase/Added</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Req Dep</TableHead>
+                    <TableHead className="text-right">Returns</TableHead>
+                    <TableHead className="text-right">Closing</TableHead>
+                    <TableHead className="text-right">Unit Cost</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ledgerWithActivity.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                        No stock activity in Main Store for this date.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    ledgerWithActivity.map((row) => {
+                      const { name, category, costPrice: itemCost } = getItemDetails(row.itemId);
+                      const opening = parseFloat(row.openingQty || "0");
+                      const added = parseFloat(row.addedQty || "0");
+                      const issued = parseFloat(row.issuedQty || "0");
+                      const returns = parseFloat(row.transfersInQty || "0");
+                      const closing = parseFloat(row.closingQty || "0");
+                      const unitCost = parseFloat(row.costPriceSnapshot || "0") || itemCost;
+                      const total = opening + added + returns;
+                      const value = closing * unitCost;
+
+                      return (
+                        <TableRow key={row.id} data-testid={`row-store-issue-${row.id}`}>
+                          <TableCell className="font-medium">{name}</TableCell>
+                          <TableCell>{category}</TableCell>
+                          <TableCell className="text-right font-mono">{opening.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono">{added.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono font-semibold">{total.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono text-amber-600">{issued.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono text-emerald-600">{returns.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono font-semibold">{closing.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">₦{unitCost.toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono font-semibold">₦{value.toLocaleString()}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="mt-6 p-4 bg-muted/30 rounded-lg grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground uppercase">Opening</div>
+                <div className="font-mono font-bold">{totals.totalOpening.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground uppercase">Added</div>
+                <div className="font-mono font-bold">{totals.totalAdded.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground uppercase">Req Dep</div>
+                <div className="font-mono font-bold text-amber-600">{totals.totalIssued.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground uppercase">Returns</div>
+                <div className="font-mono font-bold text-emerald-600">{totals.totalReturns.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground uppercase">Closing</div>
+                <div className="font-mono font-bold">{totals.totalClosing.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground uppercase">Total Value</div>
+                <div className="font-mono font-bold">₦{totals.totalValue.toLocaleString()}</div>
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
     </Card>
   );
 }
