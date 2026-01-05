@@ -232,8 +232,14 @@ async function getMovementsForDate(
           if (movement.fromSrdId === srdId && movement.toSrdId && movement.toSrdId !== srdId) {
             const toType = await getSrdType(movement.toSrdId);
             const fromType = await getSrdType(srdId);
-            if (fromType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
+            if (fromType === "MAIN_STORE" && toType === "DEPARTMENT_STORE") {
+              // Main Store issuing to Department: issuedQty (Req Dep)
+              summary.issuedQty += qty;
+            } else if (fromType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
               summary.interDeptOutQty += qty;
+            } else if (fromType === "DEPARTMENT_STORE" && toType === "MAIN_STORE") {
+              // Department returning to Main Store
+              summary.transfersOutQty += qty;
             } else {
               summary.transfersOutQty += qty;
             }
@@ -241,8 +247,14 @@ async function getMovementsForDate(
           if (movement.toSrdId === srdId && movement.fromSrdId && movement.fromSrdId !== srdId) {
             const fromType = await getSrdType(movement.fromSrdId);
             const toType = await getSrdType(srdId);
-            if (fromType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
+            if (fromType === "MAIN_STORE" && toType === "DEPARTMENT_STORE") {
+              // Department receiving from Main Store: addedQty (not transfer)
+              summary.addedQty += qty;
+            } else if (fromType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
               summary.interDeptInQty += qty;
+            } else if (fromType === "DEPARTMENT_STORE" && toType === "MAIN_STORE") {
+              // Main Store receiving return from Department
+              summary.transfersInQty += qty;
             } else {
               summary.transfersInQty += qty;
             }

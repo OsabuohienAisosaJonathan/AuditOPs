@@ -1,0 +1,76 @@
+PROMPT: RESTORE-FIRST + FIX STORE ISSUES + FIX LEDGER POSTING MAP + ENSURE MOVEMENT↔LEDGER CONSISTENCY
+
+0) RESTORE-FIRST RULE (MANDATORY)
+Before making ANY adjustments, search the codebase for the most recent previously working implementation of these modules (in Audit Workspace):
+A. Store Issues page
+B. Stock Count flow
+C. Record Stock Movement flow
+D. Department Store SR-D Ledger logic (Added/Transfers/Sold/Closing)
+E. Main Store SR-D Ledger logic (Purchase/Req Dep/Returns/Losses/Closing)
+If you find a previously working version in git history, local files, old branches, or commented code:
+1) Restore that working version into DEVELOPMENT exactly as it was.
+2) Run quick sanity checks (pages load, data displays, posting updates ledgers).
+3) ABORT the rest of this prompt if the restored version already fixes the issues below.
+If no working version exists OR the restored version still has the bugs, proceed with the fixes below.
+
+1) STORE ISSUES PAGE: PULL CORRECT DATA SOURCE
+On Audit Workspace > Store Issues page:
+A) Ensure Store Issues pulls its item rows and key columns from MAIN STORE SR-D LEDGER (not from inventory master list).
+B) The Store Issues table must display only items that exist in Main Store SR-D ledger for the selected client + date range.
+C) Columns required (minimum):
+- Item Name, Category, Opening, Purchase/Added, Total, Req Dep (to this Dept), Closing (expected), Unit Cost (if available), Value.
+D) If any required values are missing in Store Issues, join against the Main Store SR-D ledger source and compute totals the same way the ledger does.
+
+2) FIX WRONG COLUMN MAPPING (MAIN STORE → DEPARTMENT STORE ISSUE POSTING)
+Bug: When issuing stock from Main Store SR-D to a Department Store, the quantity currently appears in the Department ledger “Transfer” column. This is wrong.
+Correct behavior:
+A) Main Store SR-D:
+- The issued quantity must post into the “Req Dep” bucket for that specific department (Dep1–Dep10, or mapped deptId column).
+- This reduces Main Store expected closing accordingly (as part of Req Dep totals).
+B) Department Store SR-D:
+- The SAME issued quantity must post into the Department ledger “Added” column (NOT Transfer).
+- This increases the Department Total and Closing accordingly.
+C) The Department “Transfer” column must be reserved ONLY for inter-department transfers (Dept→Dept), not Main→Dept issues.
+
+Implementation rules:
+1) Identify the exact backend handler/endpoint that records “Issue from Main Store to Department.”
+2) Update the posting translator so it writes:
+- Main Store ledger: reqDep_{departmentId or depIndex} += qty
+- Department ledger: added += qty
+3) Backfill/repair historical records already posted incorrectly:
+- For each affected Department ledger row, move qty from transfer → added for eventType="main_issue" (or equivalent flag).
+- Ensure totals/closing are re-computed after repair.
+
+3) STOCK MOVEMENT MUST ALWAYS UPDATE THE RIGHT LEDGERS (SOURCE OF TRUTH)
+For ALL stock movement types:
+- main_to_department_issue
+- inter_department_transfer
+- department_return_to_main
+- adjustment (increase/decrease)
+- waste
+- write_off
+Ensure:
+A) Each movement creates/updates a movement record WITH eventType, sourceSRD, targetSRD (if applicable), itemId, qty, date, description.
+B) The movement translator updates the correct ledger columns for BOTH source and destination when applicable.
+C) Ledger math must be deterministic and consistent:
+- Department ClosingExpected = Opening + Added + TransfersIn - TransfersOut - Waste - WriteOff - Sold ± Adjustments
+- Main Store ClosingExpected = Opening + Purchase/Added + ReturnsIn - Losses - ReqDepTotal ± Adjustments
+D) The UI “Stock Movements” table must show full description + qty + direction + value (if cost exists), and what columns were affected.
+
+4) OUTPUT REQUIRED (NO GUESSING)
+A) List exact file paths edited.
+B) For each edited file, print first 10–15 lines to confirm correct file.
+C) Provide patches with clear START/END markers.
+D) Provide a test checklist:
+1) Main → Dept issue posts to Dept Added (not Transfer) and to Main ReqDep
+2) Dept → Dept transfer posts to Transfer columns (in/out)
+3) Dept return → Main posts to Main Returns and Dept TransfersOut (or ReturnsOut logic if you have it)
+4) Adjustment/waste/write-off correctly affect closing on both ledger tables
+5) Store Issues page displays correct items and values from Main Store ledger
+
+IMPORTANT CONSTRAINTS
+- DO NOT redesign the backend or rename existing routes.
+- Fix the bug in-place, minimally, and safely.
+- Do NOT introduce any new competing “count” system; only fix posting + data pulls + mapping.
+END PROMPT
+```0
