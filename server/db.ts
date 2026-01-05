@@ -120,8 +120,8 @@ function ensureDatabase() {
       max: 8, // Moderate pool - session cache reduces pressure
       min: 0, // Allow pool to shrink to 0 when idle
       idleTimeoutMillis: 30000, // Close idle connections after 30s
-      connectionTimeoutMillis: 5000, // 5s max wait for connection
-      statement_timeout: 20000, // Statement timeout: 20s
+      connectionTimeoutMillis: 10000, // 10s max wait for connection
+      statement_timeout: 15000, // Statement timeout: 15s
       keepAlive: true, // Enable TCP keepalive
       keepAliveInitialDelayMillis: 10000, // Start keepalive after 10s idle
       allowExitOnIdle: true, // Allow process to exit when pool is idle
@@ -141,23 +141,7 @@ function ensureDatabase() {
       const stats = getPoolStats();
       console.log('[DB Pool] New connection established', stats);
       
-      // Intercept client queries to detect timeouts
-      const originalQuery = client.query.bind(client);
-      (client as any).query = async function(...args: any[]) {
-        const startTime = Date.now();
-        try {
-          const result = await originalQuery(...args);
-          recordDbSuccess();
-          return result;
-        } catch (err: any) {
-          const duration = Date.now() - startTime;
-          if (err.message.includes('timeout') || duration > 15000) {
-            console.error(`[DB Pool] Query timeout after ${duration}ms:`, err.message);
-            recordDbTimeout();
-          }
-          throw err;
-        }
-      };
+      // Note: Query timing/timeout tracking is handled at pool level via error events
     });
     
     _pool.on('remove', () => {
