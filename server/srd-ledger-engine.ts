@@ -262,16 +262,15 @@ export class SrdLedgerEngine {
       const earliestDate = formatDateYMD(new Date(Math.min(oldDate.getTime(), newDate.getTime())));
 
       // Collect all unique SRDs affected
-      const affectedSrds = new Set<string>();
-      if (oldMovement.fromSrdId) affectedSrds.add(oldMovement.fromSrdId);
-      if (oldMovement.toSrdId) affectedSrds.add(oldMovement.toSrdId);
-      if (newMovement.fromSrdId) affectedSrds.add(newMovement.fromSrdId);
-      if (newMovement.toSrdId) affectedSrds.add(newMovement.toSrdId);
+      const affectedSrds: string[] = [];
+      if (oldMovement.fromSrdId && !affectedSrds.includes(oldMovement.fromSrdId)) affectedSrds.push(oldMovement.fromSrdId);
+      if (oldMovement.toSrdId && !affectedSrds.includes(oldMovement.toSrdId)) affectedSrds.push(oldMovement.toSrdId);
+      if (newMovement.fromSrdId && !affectedSrds.includes(newMovement.fromSrdId)) affectedSrds.push(newMovement.fromSrdId);
+      if (newMovement.toSrdId && !affectedSrds.includes(newMovement.toSrdId)) affectedSrds.push(newMovement.toSrdId);
 
       // Collect all unique items affected
-      const affectedItems = new Set<string>();
-      affectedItems.add(oldMovement.itemId);
-      affectedItems.add(newMovement.itemId);
+      const affectedItems: string[] = [oldMovement.itemId];
+      if (newMovement.itemId !== oldMovement.itemId) affectedItems.push(newMovement.itemId);
 
       // Recalc all affected SRDs starting from the earliest date
       for (const srdId of affectedSrds) {

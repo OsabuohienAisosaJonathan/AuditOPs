@@ -1,0 +1,59 @@
+PROMPT (Backdated auto-recalc for SR-D ledgers)
+We have an SR-D Ledger system (Main Store SR-D and Department Stores SR-D). Current issue: when a transaction is posted with an earlier date (backdated), the ledger does NOT recompute forward, so closing balances remain wrong.
+Goal
+Whenever any SR-D affecting transaction is created/edited/deleted with a date in the past (up to 90 days back), automatically recompute daily ledger balances from that transaction date up to “today” for the same:
+clientId
+storeDepartmentId (Main Store or Dept Store SR-D)
+itemId
+This must work for ALL transaction types that affect SR-D quantities: A) Purchases / GRN (stock in) B) Transfers in / transfers out (SRD transfers between stores) C) Requisition / issues to outlet (stock out) D) Waste / damage / write-off (stock out) E) Adjustments (can be + or -) F) Any other “input” modules that change stock
+Required behavior (example)
+If the ledger already had:
+20 Dec: Purchase +10 Coke Later user adds:
+09 Dec: Purchase +5 Coke System must:
+Insert/record the 09 Dec transaction
+Recompute ledger from 09 Dec forward, so:
+09 Dec closing includes +5
+20 Dec opening/closing reflect the earlier +5 (so 20 Dec becomes +15 cumulative effect)
+All future days up to today must reflect the corrected opening/closing.
+Implementation requirements
+Define a single function/service: recomputeSrdLedgerRange({ clientId, storeDepartmentId, itemId, startDate, endDate }).
+startDate must be min(transactionDate, earliestAffectedDate) and capped to max 90 days назад.
+Recompute must be deterministic and idempotent:
+It should not double count.
+It should use the transaction tables as source of truth.
+Daily ledger rows:
+One row per day per (clientId, storeDepartmentId, itemId).
+Each day stores: openingQty, inQty, outQty, adjustmentsQty, closingQty (or your existing column naming).
+Recompute algorithm: A) Find openingQty for startDate:
+Use previous day closingQty if exists
+Else 0 (or earliest known opening if you have “initial stock” table) B) For each day D from startDate to endDate:
+Compute all IN for that day: purchases + transfers_in + positive adjustments + any other in sources
+Compute all OUT for that day: issues/requisitions + transfers_out + waste + writeoff + negative adjustments + any other out sources
+closingQty = openingQty + totalIn - totalOut
+Next day openingQty = closingQty C) Upsert the ledger row for day D.
+Trigger points (must call recompute):
+After CREATE/UPDATE/DELETE of any SR-D affecting record.
+If date changes during UPDATE, recompute from min(oldDate, newDate).
+Performance / safety:
+Only recompute the affected itemId(s).
+Use DB transactions.
+Use bulk operations where possible.
+Add a queue/debounce so multiple writes in the same minute recompute once (optional but preferred).
+Multi-tenant safety:
+Always filter by clientId + storeDepartmentId.
+Never allow data mixing between owners.
+UI:
+After posting backdated entries, UI should show corrected balances without manual refresh issues.
+If recompute is async, return “Recalculating…” status and poll until done.
+Output required from you
+List exact file paths edited.
+Show first 10–15 lines of each edited file so I can find it.
+Provide code patches with START/END markers.
+Provide a test checklist:
+Backdate purchase → balances correct to today
+Backdate transfer in/out → balances correct
+Backdate waste/write-off → balances correct
+Edit a past transaction qty/date → balances correct
+Delete a past transaction → balances correct
+Works for both Main Store SR-D and Department Stores SR-D
+Do not redesign UI. Only implement the backdated auto-correction logic and required API updates.
