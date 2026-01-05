@@ -1,0 +1,46 @@
+PROMPT: MOVE PLATFORM ADMIN OUT OF TENANT APP + CLEAN UP WRONG ADMIN UI
+You built “admin controls” inside the tenant application (Settings/Dashboard). This is wrong. Fix it properly by separating Platform Admin Console from the Tenant App.
+A) REMOVE WRONG ADMIN UI FROM TENANT APP (CLEANUP)
+Find and REMOVE/DELETE/UNROUTE any “Admin” pages/components placed inside:
+tenant Settings page
+tenant Dashboard
+tenant Sidebar navigation
+any tenant route like /dashboard/admin, /settings/admin, etc.
+Ensure tenants only see tenant features (clients, inventory, audit workspace, reports, settings).
+If any “admin role controls” were added into tenant settings UI, remove them completely.
+B) CREATE A SEPARATE PLATFORM ADMIN CONSOLE
+Create a dedicated route namespace:
+/admin (Platform Admin Console)
+Create a separate layout for /admin:
+Admin header + admin sidebar
+NO tenant sidebar
+Clear branding: “MiAuditOps Admin”
+Admin pages should include: a) Admin Dashboard (metrics: total owners, active subscriptions, expiring soon, failed logins/errors) b) Owners / Users Management (search, filter, view) c) Organizations/Tenants (view tenant profile, plan, limits) d) Billing Controls (manual override plan, extend expiry date, suspend/reactivate) e) Audit Log (track platform admin actions)
+C) STRICT ACCESS CONTROL (SECURITY)
+Only users with role platform_admin (or super_admin_platform) can access /admin.
+Add a centralized guard/middleware:
+If not logged in → redirect to /account/signin
+If logged in but not platform admin → return 404 (or “Not Found”) to hide existence
+Do NOT allow tenant “super_admin” to access platform admin unless explicitly flagged as platform admin.
+D) PLATFORM ADMIN APIs MUST BE SEPARATE
+Create new API namespace:
+/api/admin/* (platform admin endpoints only)
+Each /api/admin/* endpoint must enforce platform_admin role.
+Do NOT reuse tenant endpoints like /api/clients for platform tasks.
+When editing a tenant’s plan/limits/expiry, always scope actions by organizationId and write an audit log entry.
+E) DO NOT BREAK EXISTING TENANT SETTINGS
+Tenant Settings remains for:
+Company Profile (name/address/email/phone)
+Default currency
+Audit preferences
+Theme
+Remove only the wrongly placed platform-admin parts from tenant settings.
+F) REQUIRED OUTPUT (MUST FOLLOW)
+List exact file paths changed/removed/added
+For each edited file, print first 10–15 lines to confirm correct file
+Provide clear start/end markers for code patches
+Confirm /admin is not visible or accessible to normal tenant users
+Test checklist:
+tenant user cannot open /admin (gets 404)
+platform admin can open /admin and manage users/tenants
+tenant Settings no longer contains platform admin controls END PROMPT
