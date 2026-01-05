@@ -47,6 +47,7 @@ import PlatformAdminUsers from "@/pages/platform-admin/PlatformAdminUsers";
 import PlatformAdminBilling from "@/pages/platform-admin/PlatformAdminBilling";
 import PlatformAdminLogs from "@/pages/platform-admin/PlatformAdminLogs";
 import PlatformAdminEntitlements from "@/pages/platform-admin/PlatformAdminEntitlements";
+import Bootstrap from "@/pages/Bootstrap";
 
 function AuthLoadingScreen() {
   return (
@@ -120,6 +121,7 @@ function PublicRoutes() {
       <Route path="/about" component={About} />
       <Route path="/contact" component={Contact} />
       <Route path="/setup" component={Setup} />
+      <Route path="/bootstrap" component={Bootstrap} />
     </Switch>
   );
 }
