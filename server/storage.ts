@@ -387,15 +387,23 @@ export class DbStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const startTime = Date.now();
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    logDbTiming("getUserByUsername", startTime, { username });
+    // Case-insensitive username lookup
+    const normalizedUsername = username.trim().toLowerCase();
+    const [user] = await db.select().from(users).where(
+      sql`LOWER(${users.username}) = ${normalizedUsername}`
+    );
+    logDbTiming("getUserByUsername", startTime, { username: normalizedUsername });
     return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const startTime = Date.now();
-    const [user] = await db.select().from(users).where(eq(users.email, email));
-    logDbTiming("getUserByEmail", startTime, { email });
+    // Case-insensitive email lookup
+    const normalizedEmail = email.trim().toLowerCase();
+    const [user] = await db.select().from(users).where(
+      sql`LOWER(${users.email}) = ${normalizedEmail}`
+    );
+    logDbTiming("getUserByEmail", startTime, { email: normalizedEmail });
     return user;
   }
 

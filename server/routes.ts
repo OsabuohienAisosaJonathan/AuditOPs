@@ -663,21 +663,28 @@ export async function registerRoutes(
     
     try {
       const { username, password } = req.body;
-      const identifier = username || req.ip;
+      
+      // Normalize input: trim whitespace and lowercase for case-insensitive matching
+      const normalizedInput = (username || '').trim().toLowerCase();
+      const identifier = normalizedInput || req.ip;
       
       // Log incoming request diagnostics
-      logAuthDiagnostic(req, res, 'LOGIN_ATTEMPT', { username });
+      logAuthDiagnostic(req, res, 'LOGIN_ATTEMPT', { username: normalizedInput });
+      
+      if (!normalizedInput) {
+        return res.status(400).json({ error: "Username or email is required" });
+      }
       
       const rateLimit = checkRateLimit(identifier);
       if (!rateLimit.allowed) {
         return res.status(429).json({ error: `Too many login attempts. Please try again in ${LOCKOUT_MINUTES} minutes.` });
       }
 
-      // Timing: User lookup
+      // Timing: User lookup (case-insensitive)
       const userLookupStart = Date.now();
-      let user = await storage.getUserByUsername(username);
+      let user = await storage.getUserByUsername(normalizedInput);
       if (!user) {
-        user = await storage.getUserByEmail(username);
+        user = await storage.getUserByEmail(normalizedInput);
       }
       timings.userLookup = Date.now() - userLookupStart;
 
@@ -1422,6 +1429,167 @@ export async function registerRoutes(
       res.json({ success: true, message: "Password has been reset successfully. You can now log in." });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============== ADMIN BOOTSTRAP ENDPOINT ==============
+  // Protected endpoint to create or update the super admin user
+  // Requires ADMIN_BOOTSTRAP_KEY in production, or dev environment
+  app.post("/api/admin/bootstrap", async (req, res) => {
+    try {
+      const isDev = process.env.NODE_ENV !== 'production';
+      const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY;
+      const providedKey = req.headers['x-admin-bootstrap-key'] || req.body.bootstrapKey;
+      
+      // Security check: In production, require ADMIN_BOOTSTRAP_KEY
+      if (!isDev) {
+        if (!bootstrapKey) {
+          console.log('[ADMIN BOOTSTRAP] Rejected: ADMIN_BOOTSTRAP_KEY not configured');
+          return res.status(403).json({ error: "Admin bootstrap not configured for production" });
+        }
+        if (providedKey !== bootstrapKey) {
+          console.log('[ADMIN BOOTSTRAP] Rejected: Invalid bootstrap key provided');
+          return res.status(403).json({ error: "Invalid bootstrap key" });
+        }
+      }
+      
+      const { email, username, password, fullName, organizationId } = req.body;
+      
+      // Validate required fields
+      if (!email?.trim()) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      if (!password?.trim()) {
+        return res.status(400).json({ error: "Password is required" });
+      }
+      
+      // Validate password strength
+      if (!isStrongPassword(password)) {
+        return res.status(400).json({ 
+          error: "Password must be at least 8 characters with uppercase, lowercase, and a number" 
+        });
+      }
+      
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedUsername = (username || email).trim().toLowerCase();
+      
+      // Check for existing users
+      const users = await storage.getUsers();
+      
+      // Priority: If target email already exists AND is super_admin, update that user
+      // Otherwise, find any super_admin to update, or create new
+      const existingUserWithEmail = users.find(u => u.email?.toLowerCase() === normalizedEmail);
+      let existingSuperAdmin: any = null;
+      
+      if (existingUserWithEmail && existingUserWithEmail.role === 'super_admin') {
+        // Target email is already a super_admin - update that user
+        existingSuperAdmin = existingUserWithEmail;
+      } else if (existingUserWithEmail) {
+        // Target email exists but is NOT super_admin - promote to super_admin
+        existingSuperAdmin = existingUserWithEmail;
+        console.log(`[ADMIN BOOTSTRAP] Promoting existing user ${existingUserWithEmail.id} to super_admin`);
+      } else {
+        // No user with target email - find any existing super_admin or create new
+        existingSuperAdmin = users.find(u => u.role === 'super_admin');
+      }
+      
+      // Hash the password
+      const hashedPassword = await hash(password, 12);
+      
+      if (existingSuperAdmin) {
+        // Update existing user (either matching email or first super_admin)
+        console.log(`[ADMIN BOOTSTRAP] Updating user: ${existingSuperAdmin.id} (${existingSuperAdmin.email})`);
+        
+        // Check if new email conflicts with another user (only if changing email)
+        if (existingSuperAdmin.email?.toLowerCase() !== normalizedEmail) {
+          const emailConflict = users.find(u => 
+            u.id !== existingSuperAdmin.id && 
+            u.email?.toLowerCase() === normalizedEmail
+          );
+          if (emailConflict) {
+            return res.status(400).json({ error: "Email already in use by another user" });
+          }
+        }
+        
+        const updateData: any = {
+          email: normalizedEmail,
+          username: normalizedUsername,
+          password: hashedPassword,
+          role: "super_admin", // Ensure super_admin role (for promotion case)
+          emailVerified: true,
+          mustChangePassword: false,
+          loginAttempts: 0,
+          lockedUntil: null,
+          status: "active",
+        };
+        
+        if (fullName?.trim()) {
+          updateData.fullName = fullName.trim();
+        }
+        if (organizationId) {
+          updateData.organizationId = organizationId;
+        }
+        
+        await storage.updateUser(existingSuperAdmin.id, updateData);
+        
+        await storage.createAuditLog({
+          userId: existingSuperAdmin.id,
+          action: "Super Admin Credentials Updated",
+          entity: "User",
+          entityId: existingSuperAdmin.id,
+          details: `Super admin email/password updated via bootstrap (dev=${isDev})`,
+          ipAddress: req.ip || "Unknown",
+        });
+        
+        console.log(`[ADMIN BOOTSTRAP] Super admin updated successfully`);
+        res.json({ 
+          success: true, 
+          message: "Super admin credentials updated",
+          userId: existingSuperAdmin.id,
+          email: normalizedEmail,
+        });
+      } else {
+        // Create new super admin
+        console.log(`[ADMIN BOOTSTRAP] Creating new super admin`);
+        
+        // Check email uniqueness
+        const emailExists = users.find(u => u.email?.toLowerCase() === normalizedEmail);
+        if (emailExists) {
+          return res.status(400).json({ error: "Email already in use" });
+        }
+        
+        const newUser = await storage.createUser({
+          email: normalizedEmail,
+          username: normalizedUsername,
+          password: hashedPassword,
+          fullName: fullName?.trim() || "Super Admin",
+          role: "super_admin",
+          status: "active",
+          emailVerified: true,
+          mustChangePassword: false,
+          organizationId: organizationId || null,
+        });
+        
+        await storage.createAuditLog({
+          userId: newUser.id,
+          action: "Super Admin Created",
+          entity: "User",
+          entityId: newUser.id,
+          details: `New super admin created via bootstrap (dev=${isDev})`,
+          ipAddress: req.ip || "Unknown",
+        });
+        
+        console.log(`[ADMIN BOOTSTRAP] Super admin created: ${newUser.id}`);
+        res.json({ 
+          success: true, 
+          message: "Super admin created",
+          userId: newUser.id,
+          email: normalizedEmail,
+        });
+      }
+    } catch (error: any) {
+      console.error('[ADMIN BOOTSTRAP] Error:', error.message);
+      res.status(500).json({ error: error.message });
     }
   });
 
