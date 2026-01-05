@@ -18,7 +18,7 @@ export default function PlatformAdminLogin() {
 
   useEffect(() => {
     if (!isLoading && admin) {
-      setLocation("/platform-admin");
+      setLocation("/admin");
     }
   }, [admin, isLoading, setLocation]);
 
@@ -29,7 +29,7 @@ export default function PlatformAdminLogin() {
 
     try {
       await login(email, password);
-      setLocation("/platform-admin");
+      setLocation("/admin");
     } catch (err: any) {
       setError(err.message || "Login failed");
     } finally {

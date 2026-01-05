@@ -17,13 +17,13 @@ import {
 } from "lucide-react";
 
 async function fetchDashboardStats() {
-  const response = await fetch("/api/platform-admin/dashboard/stats", { credentials: "include" });
+  const response = await fetch("/api/admin/dashboard/stats", { credentials: "include" });
   if (!response.ok) throw new Error("Failed to fetch stats");
   return response.json();
 }
 
 async function fetchExpiringSubscriptions() {
-  const response = await fetch("/api/platform-admin/dashboard/expiring?days=30", { credentials: "include" });
+  const response = await fetch("/api/admin/dashboard/expiring?days=30", { credentials: "include" });
   if (!response.ok) throw new Error("Failed to fetch expiring subscriptions");
   return response.json();
 }
@@ -164,28 +164,28 @@ export default function PlatformAdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
-                <Link href="/platform-admin/organizations">
+                <Link href="/admin/organizations">
                   <Button variant="outline" className="w-full justify-start" data-testid="button-view-orgs">
                     <Building2 className="w-4 h-4 mr-2" />
                     View Organizations
                     <ArrowRight className="w-4 h-4 ml-auto" />
                   </Button>
                 </Link>
-                <Link href="/platform-admin/users">
+                <Link href="/admin/users">
                   <Button variant="outline" className="w-full justify-start" data-testid="button-view-users">
                     <Users className="w-4 h-4 mr-2" />
                     Manage Users
                     <ArrowRight className="w-4 h-4 ml-auto" />
                   </Button>
                 </Link>
-                <Link href="/platform-admin/billing">
+                <Link href="/admin/billing">
                   <Button variant="outline" className="w-full justify-start" data-testid="button-manage-billing">
                     <TrendingUp className="w-4 h-4 mr-2" />
                     Billing Management
                     <ArrowRight className="w-4 h-4 ml-auto" />
                   </Button>
                 </Link>
-                <Link href="/platform-admin/logs">
+                <Link href="/admin/logs">
                   <Button variant="outline" className="w-full justify-start" data-testid="button-view-logs">
                     <Clock className="w-4 h-4 mr-2" />
                     Audit Logs

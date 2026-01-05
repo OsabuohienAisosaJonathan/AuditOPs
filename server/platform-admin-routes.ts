@@ -64,7 +64,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // AUTHENTICATION
   // =====================================================
 
-  app.post("/api/platform-admin/auth/login", async (req, res) => {
+  app.post("/api/admin/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
       
@@ -115,7 +115,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/auth/logout", requirePlatformAdmin, async (req, res) => {
+  app.post("/api/admin/auth/logout", requirePlatformAdmin, async (req, res) => {
     const adminId = req.session.platformAdminId!;
     await logAdminAction(adminId, "logout", "platform_admin", adminId, null, null, null, req);
     
@@ -125,7 +125,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     return res.json({ message: "Logged out" });
   });
 
-  app.get("/api/platform-admin/auth/me", requirePlatformAdmin, async (req, res) => {
+  app.get("/api/admin/auth/me", requirePlatformAdmin, async (req, res) => {
     const admin = await platformAdminStorage.getPlatformAdminById(req.session.platformAdminId!);
     if (!admin) {
       req.session.platformAdminId = undefined;
@@ -144,7 +144,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // DASHBOARD
   // =====================================================
 
-  app.get("/api/platform-admin/dashboard/stats", requirePlatformAdmin, async (req, res) => {
+  app.get("/api/admin/dashboard/stats", requirePlatformAdmin, async (req, res) => {
     try {
       const stats = await platformAdminStorage.getPlatformStats();
       return res.json(stats);
@@ -154,7 +154,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.get("/api/platform-admin/dashboard/expiring", requirePlatformAdmin, async (req, res) => {
+  app.get("/api/admin/dashboard/expiring", requirePlatformAdmin, async (req, res) => {
     try {
       const days = parseInt(req.query.days as string) || 30;
       const expiring = await platformAdminStorage.getExpiringSubscriptions(days);
@@ -169,7 +169,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // ORGANIZATIONS
   // =====================================================
 
-  app.get("/api/platform-admin/organizations", requirePlatformAdminPermission("view_orgs"), async (req, res) => {
+  app.get("/api/admin/organizations", requirePlatformAdminPermission("view_orgs"), async (req, res) => {
     try {
       const { status, planName, search, limit, offset } = req.query;
       const result = await platformAdminStorage.getAllOrganizations({
@@ -186,7 +186,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.get("/api/platform-admin/organizations/:id", requirePlatformAdminPermission("view_orgs"), async (req, res) => {
+  app.get("/api/admin/organizations/:id", requirePlatformAdminPermission("view_orgs"), async (req, res) => {
     try {
       const org = await platformAdminStorage.getOrganizationWithDetails(req.params.id);
       if (!org) {
@@ -199,7 +199,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/organizations/:id/suspend", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+  app.post("/api/admin/organizations/:id/suspend", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
     try {
       const { reason } = req.body;
       const orgBefore = await platformAdminStorage.getOrganizationWithDetails(req.params.id);
@@ -216,7 +216,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/organizations/:id/unsuspend", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+  app.post("/api/admin/organizations/:id/unsuspend", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
     try {
       const orgBefore = await platformAdminStorage.getOrganizationWithDetails(req.params.id);
       
@@ -232,7 +232,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/platform-admin/organizations/:id", async (req, res) => {
+  app.delete("/api/admin/organizations/:id", async (req, res) => {
     if (req.session.platformAdminRole !== "platform_super_admin") {
       return res.status(403).json({ message: "Only Platform Super Admin can delete organizations" });
     }
@@ -255,7 +255,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // USERS
   // =====================================================
 
-  app.get("/api/platform-admin/users", requirePlatformAdminPermission("view_users"), async (req, res) => {
+  app.get("/api/admin/users", requirePlatformAdminPermission("view_users"), async (req, res) => {
     try {
       const { organizationId, role, status, search, limit, offset } = req.query;
       const result = await platformAdminStorage.getAllUsers({
@@ -273,7 +273,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/users/:id/lock", requirePlatformAdminPermission("lock_user"), async (req, res) => {
+  app.post("/api/admin/users/:id/lock", requirePlatformAdminPermission("lock_user"), async (req, res) => {
     try {
       const { reason } = req.body;
       const userBefore = await storage.getUser(req.params.id);
@@ -293,7 +293,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/users/:id/unlock", requirePlatformAdminPermission("unlock_user"), async (req, res) => {
+  app.post("/api/admin/users/:id/unlock", requirePlatformAdminPermission("unlock_user"), async (req, res) => {
     try {
       const userBefore = await storage.getUser(req.params.id);
       
@@ -311,7 +311,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/users/:id/resend-verification", requirePlatformAdminPermission("resend_verification"), async (req, res) => {
+  app.post("/api/admin/users/:id/resend-verification", requirePlatformAdminPermission("resend_verification"), async (req, res) => {
     try {
       const user = await storage.getUser(req.params.id);
       if (!user) {
@@ -334,7 +334,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/users/:id/send-password-reset", requirePlatformAdminPermission("reset_password"), async (req, res) => {
+  app.post("/api/admin/users/:id/send-password-reset", requirePlatformAdminPermission("reset_password"), async (req, res) => {
     try {
       const user = await storage.getUser(req.params.id);
       if (!user) {
@@ -361,7 +361,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // BILLING & SUBSCRIPTIONS
   // =====================================================
 
-  app.patch("/api/platform-admin/organizations/:id/subscription", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+  app.patch("/api/admin/organizations/:id/subscription", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
     try {
       const { planName, billingPeriod, status, expiresAt, nextBillingDate, provider, notes } = req.body;
       
@@ -395,7 +395,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/organizations/:id/grant-free-access", requirePlatformAdminPermission("grant_free_access"), async (req, res) => {
+  app.post("/api/admin/organizations/:id/grant-free-access", requirePlatformAdminPermission("grant_free_access"), async (req, res) => {
     try {
       const { planName, expiresAt, notes } = req.body;
       
@@ -427,7 +427,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/organizations/:id/extend-subscription", requirePlatformAdminPermission("extend_subscription"), async (req, res) => {
+  app.post("/api/admin/organizations/:id/extend-subscription", requirePlatformAdminPermission("extend_subscription"), async (req, res) => {
     try {
       const { days, newExpiresAt, notes } = req.body;
       
@@ -465,7 +465,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // AUDIT LOGS
   // =====================================================
 
-  app.get("/api/platform-admin/audit-logs", requirePlatformAdminPermission("view_logs"), async (req, res) => {
+  app.get("/api/admin/audit-logs", requirePlatformAdminPermission("view_logs"), async (req, res) => {
     try {
       const { adminId, targetType, limit, offset } = req.query;
       const result = await platformAdminStorage.getPlatformAdminAuditLogs({
@@ -485,7 +485,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // PLATFORM ADMIN USER MANAGEMENT
   // =====================================================
 
-  app.get("/api/platform-admin/admins", async (req, res) => {
+  app.get("/api/admin/admins", async (req, res) => {
     if (req.session.platformAdminRole !== "platform_super_admin") {
       return res.status(403).json({ message: "Only Platform Super Admin can view admin list" });
     }
@@ -507,7 +507,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/platform-admin/admins", async (req, res) => {
+  app.post("/api/admin/admins", async (req, res) => {
     if (req.session.platformAdminRole !== "platform_super_admin") {
       return res.status(403).json({ message: "Only Platform Super Admin can create admins" });
     }
@@ -549,7 +549,7 @@ export function registerPlatformAdminRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/platform-admin/admins/:id", async (req, res) => {
+  app.delete("/api/admin/admins/:id", async (req, res) => {
     if (req.session.platformAdminRole !== "platform_super_admin") {
       return res.status(403).json({ message: "Only Platform Super Admin can delete admins" });
     }
@@ -576,7 +576,7 @@ export function registerPlatformAdminRoutes(app: Express) {
   // BOOTSTRAP FIRST PLATFORM ADMIN
   // =====================================================
 
-  app.post("/api/platform-admin/bootstrap", async (req, res) => {
+  app.post("/api/admin/bootstrap", async (req, res) => {
     try {
       const admins = await platformAdminStorage.getAllPlatformAdmins();
       if (admins.length > 0) {

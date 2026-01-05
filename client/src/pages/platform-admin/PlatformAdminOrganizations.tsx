@@ -47,7 +47,7 @@ import {
 
 async function fetchOrganizations(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
-  const response = await fetch(`/api/platform-admin/organizations?${query}`, { credentials: "include" });
+  const response = await fetch(`/api/admin/organizations?${query}`, { credentials: "include" });
   if (!response.ok) throw new Error("Failed to fetch organizations");
   return response.json();
 }
@@ -73,7 +73,7 @@ export default function PlatformAdminOrganizations() {
 
   const suspendMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      const response = await fetch(`/api/platform-admin/organizations/${id}/suspend`, {
+      const response = await fetch(`/api/admin/organizations/${id}/suspend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -93,7 +93,7 @@ export default function PlatformAdminOrganizations() {
 
   const unsuspendMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/platform-admin/organizations/${id}/unsuspend`, {
+      const response = await fetch(`/api/admin/organizations/${id}/unsuspend`, {
         method: "POST",
         credentials: "include",
       });
@@ -108,7 +108,7 @@ export default function PlatformAdminOrganizations() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/platform-admin/organizations/${id}`, {
+      const response = await fetch(`/api/admin/organizations/${id}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -248,7 +248,7 @@ export default function PlatformAdminOrganizations() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Link href={`/platform-admin/organizations/${org.id}`}>
+                          <Link href={`/admin/organizations/${org.id}`}>
                             <Button variant="ghost" size="sm" data-testid={`button-view-${org.id}`}>
                               <Eye className="w-4 h-4" />
                             </Button>

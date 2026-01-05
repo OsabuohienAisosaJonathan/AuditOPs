@@ -45,7 +45,7 @@ import {
 
 async function fetchUsers(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
-  const response = await fetch(`/api/platform-admin/users?${query}`, { credentials: "include" });
+  const response = await fetch(`/api/admin/users?${query}`, { credentials: "include" });
   if (!response.ok) throw new Error("Failed to fetch users");
   return response.json();
 }
@@ -70,7 +70,7 @@ export default function PlatformAdminUsers() {
 
   const lockMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      const response = await fetch(`/api/platform-admin/users/${id}/lock`, {
+      const response = await fetch(`/api/admin/users/${id}/lock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -90,7 +90,7 @@ export default function PlatformAdminUsers() {
 
   const unlockMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/platform-admin/users/${id}/unlock`, {
+      const response = await fetch(`/api/admin/users/${id}/unlock`, {
         method: "POST",
         credentials: "include",
       });
@@ -105,7 +105,7 @@ export default function PlatformAdminUsers() {
 
   const resendVerificationMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/platform-admin/users/${id}/resend-verification`, {
+      const response = await fetch(`/api/admin/users/${id}/resend-verification`, {
         method: "POST",
         credentials: "include",
       });
@@ -117,7 +117,7 @@ export default function PlatformAdminUsers() {
 
   const sendPasswordResetMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/platform-admin/users/${id}/send-password-reset`, {
+      const response = await fetch(`/api/admin/users/${id}/send-password-reset`, {
         method: "POST",
         credentials: "include",
       });

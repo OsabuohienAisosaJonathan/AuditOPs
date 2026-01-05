@@ -173,31 +173,36 @@ function PlatformAdminRoutes() {
   const { admin, isLoading } = usePlatformAdminAuth();
   const [location] = useLocation();
 
-  // Always show login page for login route
-  if (location === "/platform-admin/login") {
-    return <PlatformAdminLogin />;
-  }
-
   // Show loading while checking auth - prevents flash of protected content
   if (isLoading) {
     return <AuthLoadingScreen />;
   }
 
-  // Not authenticated - redirect to login
+  // Login page only accessible with secret parameter or if already authenticated
+  if (location === "/admin/login") {
+    const params = new URLSearchParams(window.location.search);
+    const hasAccess = params.get("access") === "miauditops" || admin;
+    if (hasAccess) {
+      return <PlatformAdminLogin />;
+    }
+    return <NotFound />;
+  }
+
+  // Not authenticated - show 404 to hide admin existence
   if (!admin) {
-    return <PlatformAdminLogin />;
+    return <NotFound />;
   }
 
   // Authenticated - show protected routes
   return (
     <Switch>
-      <Route path="/platform-admin" component={PlatformAdminDashboard} />
-      <Route path="/platform-admin/organizations/:id" component={PlatformAdminOrganizations} />
-      <Route path="/platform-admin/organizations" component={PlatformAdminOrganizations} />
-      <Route path="/platform-admin/users" component={PlatformAdminUsers} />
-      <Route path="/platform-admin/billing" component={PlatformAdminBilling} />
-      <Route path="/platform-admin/logs" component={PlatformAdminLogs} />
-      <Route path="/platform-admin/entitlements" component={PlatformAdminEntitlements} />
+      <Route path="/admin" component={PlatformAdminDashboard} />
+      <Route path="/admin/organizations/:id" component={PlatformAdminOrganizations} />
+      <Route path="/admin/organizations" component={PlatformAdminOrganizations} />
+      <Route path="/admin/users" component={PlatformAdminUsers} />
+      <Route path="/admin/billing" component={PlatformAdminBilling} />
+      <Route path="/admin/logs" component={PlatformAdminLogs} />
+      <Route path="/admin/entitlements" component={PlatformAdminEntitlements} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -208,7 +213,7 @@ function Router() {
   const { user, isLoading, authError, clearAuthError } = useAuth();
   
   // Platform admin routes are completely separate
-  if (location.startsWith("/platform-admin")) {
+  if (location.startsWith("/admin")) {
     return (
       <PlatformAdminAuthProvider>
         <PlatformAdminRoutes />

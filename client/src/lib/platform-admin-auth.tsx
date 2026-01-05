@@ -23,7 +23,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
 
   const checkAuth = async () => {
     try {
-      const response = await fetch("/api/platform-admin/auth/me", { credentials: "include" });
+      const response = await fetch("/api/admin/auth/me", { credentials: "include" });
       if (response.ok) {
         const data = await response.json();
         setAdmin(data);
@@ -38,7 +38,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
   };
 
   const login = async (email: string, password: string) => {
-    const response = await fetch("/api/platform-admin/auth/login", {
+    const response = await fetch("/api/admin/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -55,7 +55,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
   };
 
   const logout = async () => {
-    await fetch("/api/platform-admin/auth/logout", {
+    await fetch("/api/admin/auth/logout", {
       method: "POST",
       credentials: "include",
     });

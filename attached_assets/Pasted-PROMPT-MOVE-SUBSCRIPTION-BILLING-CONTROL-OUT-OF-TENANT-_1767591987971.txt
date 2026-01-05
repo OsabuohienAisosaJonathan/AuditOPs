@@ -1,0 +1,80 @@
+PROMPT: MOVE SUBSCRIPTION/BILLING CONTROL OUT OF TENANT SETTINGS INTO PLATFORM ADMIN CONSOLE
+You previously built platform admin controls inside the tenant app and also placed subscription/billing controls in tenant Settings. This must be corrected.
+A) PLATFORM ADMIN CONSOLE ONLY (NOT INSIDE TENANT APP)
+Create/ensure a separate platform admin console at:
+/admin
+/admin must use its own AdminLayout and must NOT reuse tenant sidebar/layout.
+Add strict guard:
+Only role platform_admin (or miauditops_admin) can access /admin.
+Non-admin users get 404 (Not Found), not “Unauthorized”.
+B) REMOVE BILLING/SUBSCRIPTION CONTROLS FROM TENANT SETTINGS
+In tenant Settings, REMOVE:
+upgrade buttons
+plan change UI
+extend expiry UI
+any billing cycle selection UI
+any “activate subscription” UI
+Replace with a READ-ONLY card only (optional but recommended):
+Current Plan
+Status (Active/Expired/Suspended)
+Expiry Date
+Message: “Contact MiAuditOps Admin to upgrade/extend.”
+Ensure tenant cannot change plan/expiry from anywhere inside tenant app.
+C) IMPLEMENT THESE FEATURES INSIDE /admin (INTEGRATE ALL)
+Create these admin console pages:
+Admin Dashboard
+Total tenants
+Active tenants
+Expiring in 7/14/30 days
+Suspended/Expired count
+Recent errors (top 10)
+Slow endpoints snapshot
+Tenants (Organizations)
+Table list with search/filter
+Tenant profile page:
+org details
+owners list
+plan + entitlements
+status + dates
+Owners (Users)
+Create owner manually
+Assign to organization
+Force password reset
+Lock/unlock user
+Manual email verify option (if needed)
+Billing & Subscription (ADMIN CONTROL)
+Set plan: Starter/Growth/Business/Enterprise
+Set billing cycle (monthly/quarterly/yearly) for recordkeeping
+Set status: Active/PastDue/Suspended/Expired
+Set expiry date and next billing date
+Extend subscription (add days)
+Plan change history (audit log)
+“No free trial”: new tenants default to INACTIVE until admin sets Active + expiry
+Feature Gating / Entitlements
+Enforce entitlements per plan:
+maxClients
+maxSrdDepartmentsPerClient
+report download/print permissions
+Purchases Register access
+Dept Comparison (2nd Hit) access
+Main Store Ledger Summary report access
+Platform Audit Log
+Record every admin action: adminUserId, actionType, targetType(user/org), targetId, before/after snapshot, createdAt
+Provide export
+D) API + DB RULES (DO NOT BREAK BACKEND)
+Create /api/admin/* endpoints only for platform admin.
+Never modify tenant endpoints to do platform admin work.
+All admin actions must be server-side validated for platform_admin role.
+Add only additive DB tables if needed:
+platform_admin_audit_log
+subscriptions or organization_subscriptions (if not already)
+No destructive migration without safety checks.
+E) REQUIRED OUTPUT
+List exact file paths edited/created
+Print first 10–15 lines of each edited file
+Provide code patches with clear START/END markers
+Provide test checklist:
+tenant cannot see upgrade/extend in Settings
+tenant cannot access /admin (404)
+platform admin can update plan/expiry and it reflects in tenant entitlements
+new tenant has NO free trial and starts inactive until admin activates END PROMPT

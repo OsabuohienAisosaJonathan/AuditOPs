@@ -613,10 +613,10 @@ export default function Settings() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex justify-end">
-                    <Button variant="outline" onClick={() => toast.info("Please contact sales to upgrade your plan")}>
-                      Upgrade Plan
-                    </Button>
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      To upgrade, extend, or modify your subscription, please contact your MiAuditOps administrator.
+                    </p>
                   </div>
                 </>
               )}
