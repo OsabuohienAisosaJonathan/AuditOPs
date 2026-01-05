@@ -1849,7 +1849,10 @@ export default function InventoryLedger() {
                                 const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
                                 // Adjusted total = Opening + Added + Received - Issued Out - Losses
                                 const displayTotal = displayOpening + row.added + row.totalReceived - row.totalIssuedOut - row.waste - row.writeOff;
-                                const displayClosing = row.closing;
+                                const editedClosingValue = ledgerEdits[row.itemId]?.closing;
+                                const displayClosing = editedClosingValue !== undefined 
+                                  ? parseFloat(editedClosingValue) 
+                                  : row.closing;
                                 const displaySold = displayClosing !== null ? displayTotal - displayClosing : null;
                                 const displayAmountSold = displaySold !== null ? displaySold * row.sellingPrice : null;
                                 
@@ -1909,15 +1912,34 @@ export default function InventoryLedger() {
                                   <TableCell className="text-right">
                                     {displaySold !== null ? displaySold.toFixed(2) : <span className="text-muted-foreground">—</span>}
                                   </TableCell>
-                                  <TableCell className="text-right bg-muted/30">
-                                    {row.awaitingCount ? (
-                                      <span className="flex items-center justify-end gap-1 text-amber-600">
-                                        <AlertCircle className="h-3.5 w-3.5" />
-                                        Awaiting Count
-                                      </span>
-                                    ) : (
-                                      <span className="font-medium">{displayClosing?.toFixed(2)}</span>
-                                    )}
+                                  <TableCell className="text-right bg-muted/30 p-1">
+                                    {(() => {
+                                      const editedClosing = ledgerEdits[row.itemId]?.closing;
+                                      if (editedClosing !== undefined || !row.awaitingCount) {
+                                        // Show value (edited or actual)
+                                        const displayValue = editedClosing !== undefined 
+                                          ? parseFloat(editedClosing) 
+                                          : displayClosing;
+                                        return <span className="font-medium">{displayValue?.toFixed(2)}</span>;
+                                      }
+                                      // Show input for awaiting count
+                                      return (
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          placeholder="Enter count"
+                                          className={cn(
+                                            "h-8 w-24 text-right bg-amber-50 border-amber-300",
+                                            isPastDate && !isSuperAdmin && "bg-muted cursor-not-allowed"
+                                          )}
+                                          onChange={(e) => handleCellEdit(row.itemId, "closing", e.target.value)}
+                                          disabled={isPastDate && !isSuperAdmin}
+                                          title={isPastDate && !isSuperAdmin ? "Only Super Admin can edit past day records" : "Enter physical closing count"}
+                                          data-testid={`input-dept-closing-${row.itemId}`}
+                                        />
+                                      );
+                                    })()}
                                   </TableCell>
                                   <TableCell className="text-right">{row.sellingPrice.toFixed(2)}</TableCell>
                                   <TableCell className="text-right bg-green-50 font-medium text-green-700">
