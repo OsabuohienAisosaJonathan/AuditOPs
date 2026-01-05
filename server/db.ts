@@ -3,6 +3,18 @@ import pkg from "pg";
 const { Pool } = pkg;
 import * as schema from "@shared/schema";
 
+// Startup diagnostic: Log env var presence (SAFE - never logs values)
+console.log('[DB STARTUP] Environment check:', {
+  DATABASE_URL: !!process.env.DATABASE_URL,
+  PGHOST: !!process.env.PGHOST,
+  PGPORT: !!process.env.PGPORT,
+  PGUSER: !!process.env.PGUSER,
+  PGPASSWORD: !!process.env.PGPASSWORD,
+  PGDATABASE: !!process.env.PGDATABASE,
+  NODE_ENV: process.env.NODE_ENV || 'not set',
+  APP_URL: !!process.env.APP_URL,
+});
+
 let _pool: pkg.Pool | null = null;
 let _db: NodePgDatabase<typeof schema> | null = null;
 let _initPromise: Promise<void> | null = null;
@@ -101,23 +113,28 @@ async function connectWithRetry(pool: pkg.Pool, maxRetries = 2): Promise<void> {
 }
 
 function ensureDatabase() {
+  // REQUIRE DATABASE_URL - fail fast with clear error
   if (!process.env.DATABASE_URL) {
-    throw new Error(
-      "DATABASE_URL must be set. Did you forget to provision a database?",
-    );
+    const errorMsg = isProduction
+      ? "DATABASE_URL is missing in production secrets. Add it in the Secrets panel."
+      : "DATABASE_URL must be set. Did you forget to provision a database?";
+    console.error(`[DB FATAL] ${errorMsg}`);
+    throw new Error(errorMsg);
   }
   
-  // Log DB connection info at first init (safe, no secrets)
+  // SINGLETON: Only create pool once
   if (!_pool) {
     const dbUrl = new URL(process.env.DATABASE_URL);
     const isPooled = dbUrl.hostname.includes('pooler') || dbUrl.port === '6543';
-    console.log(`[DB Config] host=${dbUrl.hostname}, pooled=${isPooled}, ssl=${dbUrl.searchParams.get('sslmode') || 'default'}`);
+    console.log(`[DB Config] host=${dbUrl.hostname}, pooled=${isPooled}, ssl=${dbUrl.searchParams.get('sslmode') || 'default'}, env=${isProduction ? 'production' : 'development'}`);
+    
+    // Production: smaller pool to prevent connection storms
+    // Development: slightly larger for faster local testing
+    const maxConnections = isProduction ? 5 : 8;
     
     _pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      // Pool size balanced for serverless DB with session caching
-      // Session store now uses memory cache, so DB load is much lower
-      max: 8, // Moderate pool - session cache reduces pressure
+      max: maxConnections, // 5 in production, 8 in development
       min: 0, // Allow pool to shrink to 0 when idle
       idleTimeoutMillis: 30000, // Close idle connections after 30s
       connectionTimeoutMillis: 10000, // 10s max wait for connection
@@ -126,6 +143,8 @@ function ensureDatabase() {
       keepAliveInitialDelayMillis: 10000, // Start keepalive after 10s idle
       allowExitOnIdle: true, // Allow process to exit when pool is idle
     });
+    
+    console.log(`[DB Pool] Created singleton pool with max=${maxConnections} connections`);
     
     // Log pool errors and detect timeout patterns
     _pool.on('error', (err) => {
@@ -136,12 +155,10 @@ function ensureDatabase() {
       }
     });
     
-    // Log pool connection events in production too for debugging
-    _pool.on('connect', (client) => {
+    // Log pool connection events
+    _pool.on('connect', () => {
       const stats = getPoolStats();
       console.log('[DB Pool] New connection established', stats);
-      
-      // Note: Query timing/timeout tracking is handled at pool level via error events
     });
     
     _pool.on('remove', () => {
@@ -169,9 +186,20 @@ export async function initializePool(): Promise<void> {
   return _initPromise;
 }
 
-// Health check - fast timeout for monitoring
+// Health check - fast timeout for monitoring (SELECT 1 with 2s timeout)
 export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number; error?: string; poolStats?: ReturnType<typeof getPoolStats> }> {
   const startTime = Date.now();
+  
+  // If DATABASE_URL is missing, return error immediately
+  if (!process.env.DATABASE_URL) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      error: 'DATABASE_URL not configured',
+      poolStats: null,
+    };
+  }
+  
   try {
     const { pool } = ensureDatabase();
     
