@@ -214,6 +214,23 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // Lightweight health check endpoint for deployment health checks
+  // This MUST be before serveStatic to ensure it responds quickly
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: Date.now() });
+  });
+  
+  // Root health check for Replit deployment (returns minimal HTML quickly)
+  app.get("/", (req, res, next) => {
+    // If this is a health check probe (no Accept header or accepts JSON), respond quickly
+    const acceptHeader = req.headers.accept || "";
+    if (!acceptHeader || acceptHeader.includes("application/json") || req.headers["user-agent"]?.includes("health")) {
+      return res.status(200).send("OK");
+    }
+    // Otherwise, let static file serving handle it (for browser requests)
+    next();
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
