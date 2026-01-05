@@ -1,0 +1,60 @@
+MAIN STORE SR-D LEDGER CLEANUP (REMOVE COUNT/VARIANCE COLUMNS + EXPECTED BECOMES CLOSING)
+
+Goal:
+Remove these columns from the SRD Main Store Ledger UI and logic:
+1) Awaiting Count
+2) Variance (Qty)
+3) Variance Value (₦)
+4) Count Value (₦)
+
+And: “ClosingExpected” should now be the official “Closing” value shown in the table (rename everywhere).
+
+A) UI REMOVAL (MAIN STORE SR-D LEDGER PAGE ONLY)
+1) Locate the Main Store SR-D Ledger table component/page and remove:
+   - the 4 count/variance-related columns from the table header and body
+   - any “Count progress X/Y counted” indicator
+   - any “Save Count” button/actions related to AwaitingCount
+   - any badges like “Awaiting Count”
+2) Remove any data fetching / API calls that exist ONLY to support those removed columns.
+
+IMPORTANT: Do NOT remove stock count features from Audit Workspace or other Count pages.
+This task is ONLY: Main Store SR-D Ledger table cleanup.
+
+B) LOGIC CHANGE (EXPECTED -> CLOSING)
+1) If code currently uses:
+   - closingExpected
+   - expectedClosing
+   - computedClosing
+   Rename the display label AND variable naming to “closing”.
+2) Ensure the “closing” value remains computed using the existing ledger math.
+3) Do NOT change carry-over logic. Opening should still be derived from previous day closing where applicable.
+
+C) NEW MAIN STORE CLOSING FORMULA (KEEP EXISTING LEDGER BEHAVIOR)
+Main Store Closing should remain:
+
+Closing = Opening
+        + Added/Purchases
+        + Returns (Dept → Main)   [if you already track this]
+        - Losses (Waste + Write-off)
+        - Total Requisition to Departments (Dep1..Dep10 totals)
+
+Notes:
+- Req Dep Total must remain accurate whether Dep columns are expanded/collapsed.
+- Loss totals must remain accurate whether loss columns are expanded/collapsed.
+
+D) COLLAPSE / EXPAND MUST STILL WORK (IF IT ALREADY EXISTS)
+Keep collapse/expand for:
+- Req Dep group (Dep1–Dep10) -> collapsible into Req Dep Total
+- Losses group (Waste + Write-off) -> collapsible into Losses Total
+Removing count columns must not break table widths or responsiveness.
+
+E) OUTPUT REQUIRED
+1) Show exact file paths edited.
+2) For each file edited, print the first 10–15 lines to confirm correct file.
+3) Provide code patches with clear START/END markers.
+4) Provide a short test checklist:
+   - Main Store ledger loads
+   - Closing displays correctly
+   - Collapse/expand still works
+   - No missing references to AwaitingCount/Variance variables
+END
