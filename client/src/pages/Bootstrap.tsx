@@ -19,6 +19,7 @@ export default function Bootstrap() {
     password: "",
     confirmPassword: "",
     fullName: "",
+    bootstrapKey: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,6 +47,7 @@ export default function Bootstrap() {
           username: formData.username || formData.email,
           password: formData.password,
           fullName: formData.fullName,
+          bootstrapKey: formData.bootstrapKey || undefined,
         }),
       });
       
@@ -101,6 +103,21 @@ export default function Bootstrap() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="bootstrapKey">Bootstrap Key (required in production)</Label>
+              <Input
+                id="bootstrapKey"
+                type="password"
+                data-testid="input-bootstrap-key"
+                placeholder="Enter the ADMIN_BOOTSTRAP_KEY secret"
+                value={formData.bootstrapKey}
+                onChange={(e) => setFormData({ ...formData, bootstrapKey: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank in development. Required for production setup.
+              </p>
+            </div>
             
             <div className="space-y-2">
               <Label htmlFor="fullName">Full Name</Label>
