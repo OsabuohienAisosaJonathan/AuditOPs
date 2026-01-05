@@ -503,29 +503,30 @@ export default function InventoryLedger() {
     },
   });
 
-  // Legacy: Create store issue (backward compatibility)
+  // Create issue via SRD transfers for proper ledger posting (Main→Dept → Added column)
   const createIssueMutation = useMutation({
     mutationFn: async (data: { itemId: string; toDeptId: string; qty: number }) => {
-      const res = await fetch(`/api/clients/${selectedClientId}/store-issues`, {
+      const res = await fetch(`/api/clients/${selectedClientId}/srd-transfers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fromDepartmentId: selectedInvDept,
-          toDepartmentId: data.toDeptId,
-          issueDate: selectedDate,
-          lines: [{ itemId: data.itemId, qtyIssued: data.qty }],
+          fromSrdId: selectedInvDept,
+          toSrdId: data.toDeptId,
+          itemId: data.itemId,
+          qty: data.qty,
+          transferDate: selectedDate,
+          transferType: "issue",
         }),
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Failed to create issue");
+        throw new Error(err.error || "Failed to issue stock");
       }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
-      queryClient.invalidateQueries({ queryKey: ["store-issues"] });
-      queryClient.invalidateQueries({ queryKey: ["store-issue-lines"] });
+      queryClient.invalidateQueries({ queryKey: ["srd-transfers"] });
       setIssueDialogOpen(false);
       setIssueItemId(null);
       setIssueToDeptId(null);

@@ -147,13 +147,13 @@ async function getMovementsForDate(
   );
   
   // Track processed transfers to avoid double-counting with stockMovements
-  const processedTransferKeys = new Set<string>();
+  // Use transfer ID for unique identification (allows multiple same-day transfers)
+  const processedTransferIds = new Set<string>();
   
   for (const t of transfers) {
     const qty = parseDecimal(t.qty);
-    // Create unique key to track this transfer
-    const transferKey = `${t.fromSrdId}|${t.toSrdId}|${itemId}`;
-    processedTransferKeys.add(transferKey);
+    // Track by transfer ID for unique identification
+    processedTransferIds.add(t.id);
     
     if (t.fromSrdId === srdId) {
       const toType = await getSrdType(t.toSrdId);
@@ -235,12 +235,9 @@ async function getMovementsForDate(
           }
           break;
         case "transfer":
-          // Check if this transfer was already counted via srdTransfers to avoid double-counting
-          const movementTransferKey = `${movement.fromSrdId}|${movement.toSrdId}|${itemId}`;
-          if (processedTransferKeys.has(movementTransferKey)) {
-            // Skip - already processed via srdTransfers
-            break;
-          }
+          // stockMovements with type "transfer" are separate from srdTransfers
+          // Both systems are mutually exclusive, so no de-duplication needed here
+          // The dedup was previously incorrect - srdTransfers use their own IDs
           
           if (movement.fromSrdId === srdId && movement.toSrdId && movement.toSrdId !== srdId) {
             const toType = await getSrdType(movement.toSrdId);
