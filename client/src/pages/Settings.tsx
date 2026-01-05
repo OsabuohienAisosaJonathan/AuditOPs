@@ -14,95 +14,11 @@ import { useCurrency } from "@/lib/currency-context";
 import { useAuth } from "@/lib/auth-context";
 import { useEntitlements } from "@/lib/entitlements-context";
 import { toast } from "sonner";
-import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun, Bell, Download, FileText, Clock, Shield, Calendar } from "lucide-react";
+import { Building2, Check, Loader2, User, Settings2, CreditCard, Moon, Sun, Bell, Download, FileText, Clock, Calendar } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { format, subDays } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-
-function AdminSubscriptionControls({ currentPlan, currentStatus, onPlanChange }: { currentPlan: string; currentStatus: string; onPlanChange?: () => void }) {
-  const queryClient = useQueryClient();
-  const [selectedPlan, setSelectedPlan] = useState(currentPlan);
-  const [selectedStatus, setSelectedStatus] = useState(currentStatus);
-  
-  const updateSubscriptionMutation = useMutation({
-    mutationFn: billingApi.updateSubscription,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["billing-plan"] });
-      toast.success("Subscription updated successfully");
-      if (onPlanChange) {
-        onPlanChange();
-      }
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to update subscription");
-    },
-  });
-  
-  const handleSave = () => {
-    updateSubscriptionMutation.mutate({
-      planName: selectedPlan,
-      status: selectedStatus,
-    });
-  };
-  
-  const hasChanges = selectedPlan !== currentPlan || selectedStatus !== currentStatus;
-  
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Shield className="h-5 w-5 text-muted-foreground" />
-          <CardTitle>Admin Controls</CardTitle>
-        </div>
-        <CardDescription>Manually manage subscription settings (super admin only)</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Subscription Plan</Label>
-            <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-              <SelectTrigger data-testid="select-admin-plan">
-                <SelectValue placeholder="Select plan" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="starter">Starter</SelectItem>
-                <SelectItem value="growth">Growth</SelectItem>
-                <SelectItem value="business">Business</SelectItem>
-                <SelectItem value="enterprise">Enterprise</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Subscription Status</Label>
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger data-testid="select-admin-status">
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="trial">Trial</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="past_due">Past Due</SelectItem>
-                <SelectItem value="suspended">Suspended</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex justify-end">
-          <Button 
-            onClick={handleSave} 
-            disabled={!hasChanges || updateSubscriptionMutation.isPending}
-            data-testid="button-save-subscription"
-          >
-            {updateSubscriptionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Changes
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function DataExportCard() {
   const [isExporting, setIsExporting] = useState(false);
@@ -706,14 +622,6 @@ export default function Settings() {
               )}
             </CardContent>
           </Card>
-        )}
-
-        {isSuperAdmin && (
-          <AdminSubscriptionControls 
-            currentPlan={billingData?.plan || "starter"}
-            currentStatus={billingData?.status || "trial"}
-            onPlanChange={refreshEntitlements}
-          />
         )}
 
         <Card>
