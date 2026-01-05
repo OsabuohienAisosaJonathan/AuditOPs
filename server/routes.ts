@@ -3681,27 +3681,34 @@ export async function registerRoutes(
           );
           
           // Record purchase item event for the register
-          // Only log if we have a valid cost price
-          if (item.costPrice && parseFloat(item.costPrice) > 0) {
-            const qty = parseFloat(purchaseQty);
-            const unitCost = parseFloat(purchaseCostPrice);
-            const totalCost = qty * unitCost;
-            await storage.createPurchaseItemEvent({
-              clientId: item.clientId,
-              srdId: mainStoreInvDept.id,
-              itemId: item.id,
-              date: targetDate,
-              qty: purchaseQty,
-              unitCostAtPurchase: purchaseCostPrice,
-              totalCost: totalCost.toFixed(2),
-              supplierName: null,
-              invoiceNo: null,
-              notes: `Auto-logged from inventory purchase capture`,
-              createdBy: req.session.userId!,
-            });
-          }
+          // Always create the event - recalculateForward reads from purchaseItemEvents
+          const qty = parseFloat(purchaseQty);
+          const unitCost = parseFloat(purchaseCostPrice);
+          const totalCost = qty * unitCost;
+          await storage.createPurchaseItemEvent({
+            clientId: item.clientId,
+            srdId: mainStoreInvDept.id,
+            itemId: item.id,
+            date: targetDate,
+            qty: purchaseQty,
+            unitCostAtPurchase: purchaseCostPrice,
+            totalCost: totalCost.toFixed(2),
+            supplierName: null,
+            invoiceNo: null,
+            notes: `Auto-logged from inventory purchase capture`,
+            createdBy: req.session.userId!,
+          });
           
           const dateStr = targetDate.toISOString().split('T')[0];
+          
+          // Trigger forward recalculation for backdated purchases
+          try {
+            await recalculateForward(item.clientId, mainStoreInvDept.id, item.id, targetDate);
+            console.log(`[Purchase Capture] Forward recalc triggered from ${dateStr}`);
+          } catch (recalcErr: any) {
+            console.error(`[Purchase Capture] Forward recalc failed:`, recalcErr.message);
+          }
+          
           await storage.createAuditLog({
             userId: req.session.userId!,
             action: "Item Purchase Captured",
