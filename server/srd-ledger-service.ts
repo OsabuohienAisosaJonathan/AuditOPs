@@ -101,9 +101,9 @@ async function getLastClosingBefore(
   ).orderBy(desc(storeStock.date)).limit(1);
   
   if (prev) {
-    const closing = prev.physicalClosingQty !== null 
-      ? parseDecimal(prev.physicalClosingQty)
-      : parseDecimal(prev.closingQty);
+    // CRITICAL: Always use calculated closing for forward propagation
+    // This ensures backdated corrections flow through to all future dates
+    const closing = parseDecimal(prev.closingQty);
     return { closing, sourceDate: prev.date };
   }
   
@@ -406,10 +406,10 @@ export async function backfillSrdLedger(params: LedgerRecalcParams): Promise<{
           }
           result.rowsProcessed++;
           
-          const physicalClosing = updatedRow.physicalClosingQty !== null 
-            ? parseDecimal(updatedRow.physicalClosingQty)
-            : parseDecimal(updatedRow.closingQty);
-          currentOpening = physicalClosing;
+          // CRITICAL: Always use calculated closing for the next day's opening
+          // This ensures backdated corrections properly propagate forward
+          // physicalClosingQty is for variance tracking only - it should NOT break the chain
+          currentOpening = parseDecimal(updatedRow.closingQty);
           
         } catch (err: any) {
           result.errors.push(`Item ${item.id} on ${dateKey}: ${err.message}`);
