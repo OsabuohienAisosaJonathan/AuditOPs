@@ -156,6 +156,16 @@ export default function Login() {
 
     try {
       const user = await login(username, password);
+      
+      if (user.mustChangePassword) {
+        toast({
+          title: "Password Change Required",
+          description: "Please set a new password to continue.",
+        });
+        setLocation("/change-password");
+        return;
+      }
+      
       toast({
         title: "Welcome back!",
         description: `Signed in as ${user.fullName}`,

@@ -48,6 +48,7 @@ import PlatformAdminBilling from "@/pages/platform-admin/PlatformAdminBilling";
 import PlatformAdminLogs from "@/pages/platform-admin/PlatformAdminLogs";
 import PlatformAdminEntitlements from "@/pages/platform-admin/PlatformAdminEntitlements";
 import Bootstrap from "@/pages/Bootstrap";
+import ChangePassword from "@/pages/ChangePassword";
 
 function AuthLoadingScreen() {
   return (
@@ -122,6 +123,7 @@ function PublicRoutes() {
       <Route path="/contact" component={Contact} />
       <Route path="/setup" component={Setup} />
       <Route path="/bootstrap" component={Bootstrap} />
+      <Route path="/change-password" component={ChangePassword} />
     </Switch>
   );
 }
@@ -215,7 +217,7 @@ function Router() {
   }
   
   // Define public routes that don't need auth
-  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email", "/bootstrap"];
+  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email", "/bootstrap", "/change-password"];
   const isPublicRoute = publicRoutes.includes(location);
   
   // For public routes, render without auth check

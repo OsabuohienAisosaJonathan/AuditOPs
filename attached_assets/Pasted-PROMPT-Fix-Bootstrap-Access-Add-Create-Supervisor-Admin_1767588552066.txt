@@ -1,0 +1,61 @@
+PROMPT: Fix Bootstrap Access + Add “Create Supervisor Admin” (No More Bootstrap Stress)
+GOAL
+I can’t access the bootstrap route to set credentials for Supervisor Admin.
+Implement a safer flow:
+Super Admin can create Supervisor Admin inside the app (User Management UI).
+Keep a secure emergency bootstrap method that works from Replit Shell (CLI), not from a public webpage.
+A) ADD SUPERVISOR ADMIN CREATION INSIDE THE APP (Recommended primary method)
+In Settings → User Management, add a button: “Create Admin User”
+Form fields:
+Full Name
+Email (required)
+Role dropdown: supervisor_admin (and others if already supported)
+On submit:
+Backend creates user with role supervisor_admin
+System generates a temporary password
+Set mustChangePassword = true
+Send the temp password via email (or show one-time copy modal if email not ready)
+On first login:
+If mustChangePassword=true, redirect to “Set New Password” page
+After setting password, flip mustChangePassword=false
+Security rule: Only super_admin can create/edit/delete admins.
+B) KEEP BOOTSTRAP, BUT MAKE IT RELIABLE + SAFE
+Instead of a public endpoint, implement a CLI script:
+Create script: scripts/bootstrap-admin.ts (or .js)
+It should:
+Find/create Super Admin
+Optional: Find/create Supervisor Admin
+Set username/email + password
+It reads secrets from env:
+BOOTSTRAP_SUPERADMIN_EMAIL
+BOOTSTRAP_SUPERADMIN_PASSWORD
+BOOTSTRAP_SUPERVISOR_EMAIL
+BOOTSTRAP_SUPERVISOR_PASSWORD
+Run it from Replit shell:
+node scripts/bootstrap-admin.js
+or pnpm bootstrap:admin
+This avoids all “route access” problems.
+C) IF YOU STILL KEEP HTTP BOOTSTRAP ENDPOINT (Optional)
+If you keep an endpoint, it must be:
+Available in production ONLY when ADMIN_BOOTSTRAP_KEY is set.
+Requires header: x-admin-bootstrap-key: <ADMIN_BOOTSTRAP_KEY>
+Must not be protected by normal session auth middleware.
+Must return clear errors:
+403 if key missing/invalid
+400 if body missing
+200 with success summary (no sensitive values returned)
+D) OUTPUT REQUIRED
+Show exact file paths edited
+Print first 10–15 lines of each edited file
+Provide code patches with START/END markers
+Provide test checklist:
+super_admin can create supervisor_admin from UI
+supervisor_admin forced to change password on first login
+CLI bootstrap creates/updates admin credentials
+no non-admin can create admin users
+IMPORTANT CONSTRAINTS
+Do NOT break existing auth/session logic.
+Do NOT delete existing DB tables.
+Reuse existing user table/roles if present.
+If a role enum exists, add supervisor_admin safely.
+END PROMPT
