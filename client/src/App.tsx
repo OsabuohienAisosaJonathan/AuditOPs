@@ -247,6 +247,11 @@ function Router() {
     return <Login />;
   }
   
+  // Authenticated but must change password - force redirect to change password page
+  if (user.mustChangePassword) {
+    return <ChangePassword />;
+  }
+  
   // Authenticated - render protected routes with layout
   return <ProtectedRoutes />;
 }
