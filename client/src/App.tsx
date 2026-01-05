@@ -215,7 +215,7 @@ function Router() {
   }
   
   // Define public routes that don't need auth
-  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email"];
+  const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email", "/bootstrap"];
   const isPublicRoute = publicRoutes.includes(location);
   
   // For public routes, render without auth check
