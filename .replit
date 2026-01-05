@@ -44,6 +44,7 @@ mockupState = "FULLSTACK"
 [userenv]
 
 [userenv.shared]
+DATABASE_URL = "postgresql://neondb_owner:npg_0cZoXI2uznri@ep-damp-sound-ahl7oi2o.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
 [userenv.production]
 APP_URL = "https://miauditops.com"
