@@ -548,7 +548,7 @@ export default function Inventory() {
                           status: "active",
                           serialTracking: newItemSerialTracking as "none" | "serial" | "batch" | "lot" | "imei",
                           serialNotes: formData.get("serialNotes") as string || null,
-                          supplierId: newItemSupplierId || null,
+                          supplierId: newItemSupplierId && newItemSupplierId !== "__none__" ? newItemSupplierId : null,
                         });
                         setNewItemCategoryId("");
                         setNewItemSupplierId("");
@@ -600,7 +600,7 @@ export default function Inventory() {
                                   <SelectValue placeholder="Select a supplier (optional)" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">None</SelectItem>
+                                  <SelectItem value="__none__">None</SelectItem>
                                   {suppliers?.map(s => (
                                     <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                                   ))}

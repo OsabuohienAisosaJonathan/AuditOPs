@@ -125,6 +125,7 @@ export interface Item {
   id: string;
   clientId: string;
   categoryId: string | null;
+  supplierId: string | null;
   name: string;
   sku: string | null;
   category: string;
