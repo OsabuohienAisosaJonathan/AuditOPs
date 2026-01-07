@@ -179,6 +179,7 @@ async function getMovementsForDate(
       }
     } else {
       // Transfer: uses Transfer columns (Dept->Main, Dept->Dept)
+      // Per document: Main->Dept should NEVER be "transfer" type, but handle legacy data
       // Normalize inventoryType for comparison (handle lowercase, uppercase, variations)
       const normalizedSrdType = srdType?.toUpperCase().replace(/[_\s-]/g, '') || '';
       const isMainStore = normalizedSrdType.includes('MAIN');
@@ -190,7 +191,10 @@ async function getMovementsForDate(
         const toIsMain = normalizedToType.includes('MAIN');
         const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
         
-        if (isDeptStore && toIsMain) {
+        if (isMainStore && toIsDept) {
+          // LEGACY FIX: Main→Dept typed as "transfer" should use Issue columns
+          summary.issuedQty += qty;
+        } else if (isDeptStore && toIsMain) {
           // Department returning to Main Store
           summary.transfersOutQty += qty;
         } else if (isDeptStore && toIsDept) {
@@ -208,7 +212,10 @@ async function getMovementsForDate(
         const fromIsMain = normalizedFromType.includes('MAIN');
         const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
         
-        if (fromIsDept && isMainStore) {
+        if (fromIsMain && isDeptStore) {
+          // LEGACY FIX: Main→Dept typed as "transfer" should use Added column
+          summary.addedQty += qty;
+        } else if (fromIsDept && isMainStore) {
           // Main Store receiving return from Department
           summary.transfersInQty += qty;
         } else if (fromIsDept && isDeptStore) {
@@ -293,18 +300,23 @@ async function getMovementsForDate(
           }
           break;
         case "transfer":
-          // stockMovements with type "transfer" use Transfer columns only (not Added/Issued)
+          // Per document: Transfer is ONLY for Dept→Main or Dept→Dept
+          // Main→Dept with type="transfer" is legacy data that should be treated as Issue
           // Normalize inventoryType for comparison
           if (movement.fromSrdId === srdId && movement.toSrdId && movement.toSrdId !== srdId) {
             const toType = await getSrdType(movement.toSrdId);
             const fromType = await getSrdType(srdId);
             const normalizedFromType = fromType?.toUpperCase().replace(/[_\s-]/g, '') || '';
             const normalizedToType = toType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+            const fromIsMain = normalizedFromType.includes('MAIN');
             const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
             const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
             const toIsMain = normalizedToType.includes('MAIN');
             
-            if (fromIsDept && toIsDept) {
+            if (fromIsMain && toIsDept) {
+              // LEGACY FIX: Main→Dept typed as "transfer" should use Issue columns
+              summary.issuedQty += qty;
+            } else if (fromIsDept && toIsDept) {
               summary.interDeptOutQty += qty;
             } else if (fromIsDept && toIsMain) {
               summary.transfersOutQty += qty;
@@ -317,11 +329,15 @@ async function getMovementsForDate(
             const toType = await getSrdType(srdId);
             const normalizedFromType = fromType?.toUpperCase().replace(/[_\s-]/g, '') || '';
             const normalizedToType = toType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+            const fromIsMain = normalizedFromType.includes('MAIN');
             const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
             const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
             const toIsMain = normalizedToType.includes('MAIN');
             
-            if (fromIsDept && toIsDept) {
+            if (fromIsMain && toIsDept) {
+              // LEGACY FIX: Main→Dept typed as "transfer" should use Added column for Dept
+              summary.addedQty += qty;
+            } else if (fromIsDept && toIsDept) {
               summary.interDeptInQty += qty;
             } else if (fromIsDept && toIsMain) {
               summary.transfersInQty += qty;

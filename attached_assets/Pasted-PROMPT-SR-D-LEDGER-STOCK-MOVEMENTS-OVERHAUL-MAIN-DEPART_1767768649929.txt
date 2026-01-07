@@ -1,0 +1,184 @@
+PROMPT: SR-D LEDGER + STOCK MOVEMENTS OVERHAUL (MAIN + DEPARTMENTS) — REBUILD ONE TRUE MOVEMENT ENGINE + RECOMPUTE LEDGERS (FIX ISSUE→ADDED, TRANSFERS/ADJUSTMENTS MAPPING, AND ENSURE ISSUE SHOWS IN MOVEMENTS TABLE)
+
+CONTEXT / CURRENT PROBLEM:
+We have conflicting/buggy logic paths:
+1) “Issue” from SR-D MAIN ledger is supposed to issue stock to a Department SR-D and land in Department “ADDED”, but it is wrongly landing in “TRANSFER” columns (especially on Main).
+2) Transfers/Adjustments created from Stock Movements page sometimes affect “ADDED” incorrectly.
+3) An “Issue” must also appear in Stock Movements table (so there are 2 entry points: Stock Movement page + Main Ledger Issue button), BUT they must not double count.
+4) We need a clean rebuild of the mapping/logic so posting backwards (older date) also corrects forward balances.
+
+NON-NEGOTIABLE GOAL:
+Overhaul the SR-D ledger computation and stock movement posting so BOTH Main Store and Department Store ledgers are always correct, consistent, editable, reversible, and backward-date safe.
+
+HARD RULE: DO NOT BREAK THE APP
+1) Do not delete tables.
+2) Do not remove/rename existing API routes.
+3) Only refactor logic + add minimal safe fields/tables if needed.
+4) Keep existing UI pages; just fix the logic.
+
+====================================================================
+A) ONE MOVEMENT ENGINE (SINGLE SOURCE OF TRUTH)
+====================================================================
+1) Create/confirm a single backend service function:
+   createMovementEvent(payload) → movementEventId
+   - All write actions must call this:
+     a) Issue button on Main SR-D ledger
+     b) Stock Movements page (transfer/adjustment/waste/write-off)
+     c) Any future posting endpoints
+2) Add a field to movement records (if not already present):
+   - movementType: ISSUE | TRANSFER | ADJUSTMENT | WASTE | WRITE_OFF
+   - source: "main_ledger_issue" | "stock_movement_page" | etc.
+   - idempotencyKey (string) for duplication prevention
+
+3) Idempotency:
+   For Main Ledger “Issue” clicks, generate:
+   issue:${date}:${mainSrdId}:${toDeptSrdId}:${itemId}:${qty}:${createdBy}
+   If key exists, DO NOT create another record.
+
+4) Stock Movements Table must read ONLY from movement events.
+   This means ISSUE events must appear there automatically.
+
+====================================================================
+B) STRICT COLUMN MAPPING (THE FIX YOU REQUESTED)
+====================================================================
+We are rebuilding the mapping. These are the only allowed mappings:
+
+B1) ISSUE (Main → Department)  [created only by “Issue” button]
+- MAIN SR-D LEDGER:
+  1) MUST NOT touch Main Transfer columns at all.
+  2) MUST reduce stock via a dedicated “Req Dep” bucket (or “Issue Out” bucket).
+     - If your Main ledger already has Dep1–Dep10 columns (Req Dep), then:
+       ReqDep[targetDeptIndex] += qty
+     - Else store under ReqDepTotal (but keep per dept if it exists)
+- DEPARTMENT SR-D LEDGER:
+  1) MUST add stock into “ADDED” column.
+  2) MUST NOT touch Department TransferIn column for issues.
+
+B2) TRANSFER (Department → Main)  [created only by Stock Movements page]
+- DEPARTMENT SR-D LEDGER:
+  TransferOut += qty  (NOT Added)
+- MAIN SR-D LEDGER:
+  Returns/InwardFromDept += qty  (NOT Purchase/Added and NOT TransferOut)
+  (Use your “Returns” / “Return Inward” concept for dept→main inbound)
+
+B3) TRANSFER (Department → Department)  [created only by Stock Movements page]
+- FROM dept: TransferOut += qty
+- TO dept: TransferIn += qty
+- DO NOT touch Added.
+
+B4) ADJUSTMENT (any SRD)  [Stock Movements page]
+- Only Adjustment column changes (+ or −)
+- DO NOT touch Added/Transfer/Purchase.
+
+B5) WASTE / WRITE_OFF (any SRD)
+- Only Loss columns change (Waste / WriteOff)
+- DO NOT touch Added/Transfer/Purchase.
+
+====================================================================
+C) LEDGER COMPUTATION MUST BE REBUILT (BACK-DATED SAFE)
+====================================================================
+We need the ledger to auto-correct forward if user posts in the past.
+
+1) Define “Expected Closing” per SRD row per day as:
+   Closing = Opening
+           + Purchase/Added/Receipts (depending on store type)
+           + TransfersIn (only when appropriate)
+           + ReturnsIn (for main store)
+           + Adjustments (+/−)
+           − Sold/IssuedOut/RequisitionsOut
+           − TransfersOut
+           − Waste
+           − WriteOff
+
+2) Opening for date D must always equal Closing of date D-1 (same item, same SRD).
+3) If any transaction is inserted/edited/deleted on date X (past date),
+   the system MUST recompute:
+   - that date X row
+   - and every subsequent date row forward up to TODAY or up to 90 days forward
+     (configurable cap: 90 days by default)
+
+4) Implement a recompute function:
+   recomputeSrdItemRange(srdId, itemId, startDate, endDate)
+   - Compute day by day, using previous day closing as opening.
+
+5) Triggers to call recompute:
+   - createMovementEvent
+   - editMovementEvent
+   - reverseMovementEvent
+   - createPurchase (if purchases are separate events)
+   - any write that affects ledger inputs
+
+====================================================================
+D) FIX EXISTING WRONG DATA (ONE-TIME REPAIR)
+====================================================================
+We already have older “Issue” records that landed in wrong columns.
+We must repair them.
+
+1) Detect “Issue-like” historical records:
+   - movement.source == "main_ledger_issue"
+   OR
+   - (fromSrdType == MAIN AND toSrdType == DEPARTMENT AND createdFromIssueUI == true)
+   OR infer by reference text.
+2) Convert them to movementType=ISSUE if they are not.
+3) Remove/ignore any previous wrong ledger postings derived from them.
+4) Recompute ledgers for affected SRDs/items for last 90 days (or from earliest affected date).
+
+IMPORTANT: we are NOT deleting data; we are reclassifying events and recomputing totals.
+
+====================================================================
+E) EDITABLE + REVERSIBLE (NO RESIDUE)
+====================================================================
+1) Add reverseMovementEvent(movementId, reason)
+   - marks movement as reversed (soft delete)
+   - stores reversedAt, reversedBy, reverseReason
+2) Recompute ledgers for affected SRDs/items from movement.date forward to +90 days.
+3) UI: show status “Reversed” in Stock Movements table.
+4) Editing a movement updates the same record (keep same idempotencyKey or regenerate carefully).
+   - After edit, recompute.
+
+====================================================================
+F) UI REQUIREMENTS (MAKE IT CONSISTENT)
+====================================================================
+1) Main SR-D ledger “Issue” button:
+   - must force user to select target Department SRD
+   - must validate available qty (cannot issue more than available on that date)
+   - after success, Stock Movements table shows it immediately with Type=ISSUE
+2) Stock Movements page:
+   - shows complete Description + Value + From/To
+   - supports edit + reverse
+3) Department ledger:
+   - shows “Issue Received” ONLY inside Added (because issue is “Added” for dept)
+   - transfers received appear in TransferIn (not Added)
+4) Main ledger:
+   - issues out only affect Req Dep (not Transfer)
+   - dept returns affect Returns column (not Added)
+
+====================================================================
+G) TIMEOUT / PERFORMANCE SAFETY (DO NOT CREATE NEW TIMEOUTS)
+====================================================================
+1) Recompute must be efficient:
+   - batch queries
+   - avoid N+1 queries
+   - keep range capped (default 90 days)
+2) When recompute is large, do it async-like within request but bounded:
+   - recompute only impacted SRD+item range
+   - do not recompute entire database
+
+====================================================================
+H) REQUIRED OUTPUT (MANDATORY)
+====================================================================
+1) List exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide code patches with START/END markers (copy-paste safe).
+4) Provide migration steps (if new columns like movementType/source/idempotencyKey are added).
+5) Provide a FULL test checklist:
+   - Issue Main→Dept: Dept Added increases; Main ReqDep increases; Main closing reduces; Movement table shows ISSUE
+   - Transfer Dept→Main: Dept TransferOut; Main Returns increases; no Added touched
+   - Transfer Dept→Dept: TransferIn/Out only; no Added touched
+   - Adjustment: only Adjustment changes
+   - Waste/WriteOff: only Losses change
+   - Backdated entry on day X recalculates forward up to today (or 90 days)
+   - Reverse movement restores balances correctly without residue
+END PROMPT
+```0
+
