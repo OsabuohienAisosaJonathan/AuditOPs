@@ -83,3 +83,35 @@ Fixed a critical bug where Issue movements (Main Store → Department Store) wer
 - Main Store (sending): `issued_qty` column (Req Dep)
 - Department Store (receiving): `added_qty` column (Added)
 - Transfer columns remain 0 for Issue movements
+
+### Stock Movements Page Enhancements (2026-01-07)
+Enhanced the Stock Movements functionality with:
+
+**A) SRD Details Display:**
+- Added `getSrdType()` helper to determine MAIN vs DEPT
+- FROM/TO columns now show type badges (MAIN/DEPT) with color coding
+- Updated StockMovement interface to include fromSrdId/toSrdId
+
+**B) Posting Date Field:**
+- Added required "Posting Date" field to Record Stock Movement form
+- Default value set from dashboard header date picker
+- Date is passed to backend and used as ledger posting date
+
+**C) Date Filtering:**
+- Stock Movements list now filters by header date picker
+- Query includes date parameter for daily filtering
+- Backend /api/stock-movements supports optional `date` query param
+
+**D) Dept→Dept Transfer Columns:**
+- Verified correct column mapping: interDeptInQty / interDeptOutQty for Dept→Dept
+- Fixed movement-breakdown API to not duplicate Issue data in received[]
+
+**E) Reverse/Recall Architecture:**
+- srdTransfers (from Inventory Ledger Issue button) use "recall" endpoint
+- stockMovements (from Stock Movements page) use "reverse" endpoint
+- Both trigger recalculateForward() to update ledger correctly
+
+**F) Posting Rules (Main→Dept Blocking):**
+- Frontend validation blocks Main→Dept transfers
+- Backend validation in /api/stock-movements/with-lines blocks Main→Dept
+- Error message directs users to use Issue button on Inventory Ledger

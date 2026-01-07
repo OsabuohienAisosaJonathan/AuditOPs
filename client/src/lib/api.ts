@@ -249,6 +249,8 @@ export interface StockMovement {
   clientId: string;
   departmentId: string;
   movementType: string;
+  fromSrdId: string | null;
+  toSrdId: string | null;
   sourceLocation: string | null;
   destinationLocation: string | null;
   itemsDescription: string;

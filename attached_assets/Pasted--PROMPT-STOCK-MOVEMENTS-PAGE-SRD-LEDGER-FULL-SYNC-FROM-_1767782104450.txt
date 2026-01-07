@@ -1,0 +1,150 @@
+
+PROMPT: STOCK MOVEMENTS PAGE + SRD LEDGER FULL SYNC (FROM/TO PULL, DATE CONTROL, DAILY FILTER, DEPT→DEPT BUG FIX, REVERSE/RECALL LINKED, AND CORRECT COLUMN POSTING)
+
+CONTEXT
+We already fixed/locked this rule: “ADDED column logic must not be touched.” (Issue → Dept goes to Dept ADDED only). Everything else must post to Transfers / Losses / Adjustments (NOT Added).
+
+GOALS (DO ALL)
+1) Stock Movement page must pull “FROM” and “TO” details directly from SRD ledger master data (SRD list), not partial/guessed labels.
+2) Record Stock Movement form must include a required “Date” field. That date must be the posting date used in Inventory Ledger rows.
+3) Stock Movements list/table must be controlled by the dashboard header date picker:
+   - user selects date in header
+   - Stock Movements table shows ONLY movements for that date
+   - changing date updates movements list immediately
+4) Fix the Department→Department movement posting bug where wrong values show in SRD ledger (investigate mapping/calculation and correct).
+5) Reverse Movement in Stock Movements table must be linked to “Recall” button on SRD Main Store Ledger:
+   - same underlying reverse function
+   - reversing from either UI updates both ledgers (Main + Department) correctly
+6) Ensure all Stock Movement postings go to their correct columns:
+   - Transfers go only to TransferIn/TransferOut columns (or Returns for dept→main if you have it)
+   - Losses go only to Waste/WriteOff (or Losses)
+   - Adjustments go only to Adjustment (+/-)
+   - DO NOT post to ADDED (except Issue->Dept which is already fixed; DO NOT TOUCH)
+
+HARD RULES
+- Do NOT rename/remove API routes.
+- Do NOT delete tables/columns.
+- Implement minimal additions only.
+- Keep UI consistent with current table components.
+- DO NOT TOUCH the “Added” posting logic already fixed.
+
+====================================================================
+A) STOCK MOVEMENT PAGE MUST PULL FULL SRD DETAILS (FROM/TO)
+====================================================================
+1) Ensure there is ONE SRD master source (already exists):
+   - SRD id
+   - SRD name
+   - SRD type: MAIN | DEPARTMENT
+   - clientId
+2) Update Stock Movements UI to fetch SRDs for the selected client and build a lookup map:
+   srdMap[srdId] = { name, type, ... }
+3) In Stock Movements table:
+   - show From SRD Name + Type badge
+   - show To SRD Name + Type badge
+   - never show “Unknown” if SRD exists
+4) In Record Stock Movement form:
+   - From dropdown options must be SRDs for that client
+   - To dropdown options must be SRDs for that client
+   - prevent choosing same SRD for both (unless movementType is ADJUSTMENT/WASTE/WRITE_OFF that doesn’t need “To”)
+
+====================================================================
+B) RECORD STOCK MOVEMENT FORM: ADD REQUIRED “DATE”
+====================================================================
+1) Add a Date field at the top of the form:
+   - label: “Posting Date”
+   - required
+   - default: current header date (dashboard date picker)
+2) When user submits a movement, the payload MUST include:
+   - postingDate (YYYY-MM-DD)
+3) Backend must persist postingDate and use it as the movement effective date in ledger computations.
+
+====================================================================
+C) DAILY FILTER: STOCK MOVEMENTS DISPLAY CONTROLLED BY HEADER DATE
+====================================================================
+1) The dashboard header date picker is the single global selectedDate.
+2) Stock Movements page must read selectedDate from the same state/store/hook used by other pages.
+3) When selectedDate changes:
+   - refetch movements filtered by that date
+4) Backend endpoint for movements must support:
+   GET /api/.../movements?date=YYYY-MM-DD&clientId=...
+   Return only movements for that day.
+
+If an endpoint already exists, extend it without breaking existing callers:
+- accept optional ?date=
+- if date not provided, return latest range as before.
+
+====================================================================
+D) FIX BUG: DEPARTMENT → DEPARTMENT POSTS WRONG VALUE IN LEDGER
+====================================================================
+1) Investigate where the wrong value originates:
+   - Is it using “Added” incorrectly? (DO NOT TOUCH Added, just ensure transfers don’t write there)
+   - Is it double-applying qty (both TransferIn and Added, or both TransferIn and Purchase)?
+   - Is it swapping from/to?
+   - Is it recomputing opening/closing incorrectly after posting?
+2) Correct mapping strictly:
+   - From Department ledger: TransferOut += qty
+   - To Department ledger: TransferIn += qty
+   - No Added changes
+3) After any movement write, run recompute forward (up to 90 days) for:
+   - (fromSrdId,itemId) and (toSrdId,itemId) starting from postingDate
+
+====================================================================
+E) REVERSE MOVEMENT + “RECALL” MUST BE THE SAME ENGINE
+====================================================================
+1) Create/confirm ONE backend function:
+   reverseMovement(movementId, reason, userId)
+   - soft reverse: reversedAt, reversedBy, reverseReason
+2) Stock Movements table “Reverse” button calls reverseMovement().
+3) SRD Main Store Ledger “Recall” button must call the SAME reverseMovement() using the movementId linked to that ledger posting.
+
+To enable this:
+- Ensure each ledger row that is affected by a movement stores a reference:
+  ledgerRow.sourceMovementId = movementId
+  (If this field exists use it; if not, add minimally)
+- When user clicks Recall on a ledger row:
+  - read sourceMovementId
+  - reverseMovement(sourceMovementId)
+4) After reverse:
+   - recompute ledgers forward (up to 90 days) for affected SRDs/items
+   - UI refresh both pages:
+     a) Stock Movements list
+     b) Main/Dept ledger tables
+
+====================================================================
+F) POSTING RULES (DO NOT TOUCH ADDED)
+====================================================================
+In Stock Movement page:
+1) Transfer:
+   - Dept→Dept => TransferOut (from), TransferIn (to)
+   - Dept→Main => TransferOut (from), ReturnsIn (main) or TransferIn(main) depending on your schema
+   - Main→Dept transfer is DISALLOWED from Stock Movement page (because Main→Dept must be ISSUE button). Block it in UI + backend validation.
+2) Waste/WriteOff:
+   - only Losses columns (Waste, WriteOff)
+   - no Added
+3) Adjustment:
+   - only Adjustment column (+/-)
+4) Ensure validations:
+   - qty > 0
+   - postingDate required
+   - “To” required only for Transfer (Dept→Dept, Dept→Main)
+   - “To” disabled for Waste/WriteOff/Adjustment
+
+====================================================================
+G) REQUIRED OUTPUT (MANDATORY)
+====================================================================
+1) List exact file paths edited.
+2) Print first 10–15 lines of each edited file to confirm correct file.
+3) Provide code patches with clear START/END markers.
+4) Provide migration steps if adding:
+   - movements.postingDate
+   - movements.reversedAt/reversedBy/reason
+   - ledger.sourceMovementId
+5) Test checklist:
+   - Pick header date → movements list filters correctly
+   - Create Dept→Dept transfer on past date → ledgers correct from that date forward
+   - Create Dept→Main transfer → main receives in Returns/TransferIn; dept shows TransferOut
+   - Attempt Main→Dept transfer on movement page → blocked (must use Issue)
+   - Reverse movement from movement table → ledgers revert
+   - Recall from main ledger row → same reverse occurs + movement shows reversed
+END PROMPT
+

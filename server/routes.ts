@@ -5973,19 +5973,35 @@ export async function registerRoutes(
   // ============== STOCK MOVEMENTS ==============
   app.get("/api/stock-movements", requireAuth, requireClientAccess(), async (req, res) => {
     try {
-      const { clientId, departmentId } = req.query;
+      const { clientId, departmentId, date } = req.query;
+      
+      let movements: any[] = [];
       
       if (departmentId) {
-        const movements = await storage.getStockMovementsByDepartment(departmentId as string);
-        return res.json(movements);
+        movements = await storage.getStockMovementsByDepartment(departmentId as string);
+      } else if (clientId) {
+        movements = await storage.getStockMovements(clientId as string);
+      } else {
+        // No clientId or departmentId provided - return empty
+        // (requires at least one filter for tenant scoping)
+        return res.json([]);
       }
       
-      if (clientId) {
-        const movements = await storage.getStockMovements(clientId as string);
-        return res.json(movements);
+      // Filter by date if provided
+      if (date && typeof date === "string") {
+        const targetDate = new Date(date);
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        movements = movements.filter(m => {
+          const movementDate = new Date(m.date || m.createdAt);
+          return movementDate >= startOfDay && movementDate <= endOfDay;
+        });
       }
       
-      res.json([]);
+      res.json(movements);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -6135,6 +6151,14 @@ export async function registerRoutes(
         }
         if (movementData.fromSrdId === movementData.toSrdId) {
           return res.status(400).json({ error: "From and To SRD must be different" });
+        }
+        // Block Main→Dept transfers - must use Issue button on Inventory Ledger
+        const fromInvDept = await storage.getInventoryDepartment(movementData.fromSrdId);
+        const toInvDept = await storage.getInventoryDepartment(movementData.toSrdId);
+        if (fromInvDept?.inventoryType === "MAIN_STORE" && toInvDept?.inventoryType === "DEPARTMENT_STORE") {
+          return res.status(400).json({ 
+            error: "Main Store → Department transfers must use the Issue button on Inventory Ledger page" 
+          });
         }
       } else if (movementType === "adjustment") {
         if (!movementData.adjustmentDirection || !["increase", "decrease"].includes(movementData.adjustmentDirection)) {

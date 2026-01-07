@@ -106,8 +106,8 @@ export default function AuditWorkspace() {
   });
 
   const { data: stockMovements = [] } = useQuery({
-    queryKey: ["stock-movements", clientId, departmentId],
-    queryFn: () => stockMovementsApi.getAll({ clientId: clientId || undefined, departmentId: departmentId || undefined }),
+    queryKey: ["stock-movements", clientId, departmentId, dateStr],
+    queryFn: () => stockMovementsApi.getAll({ clientId: clientId || undefined, departmentId: departmentId || undefined, date: dateStr }),
     enabled: !!clientId,
   });
 
@@ -428,6 +428,7 @@ export default function AuditWorkspace() {
                   clientId={clientId}
                   departmentId={departmentId}
                   totalMovements={totalMovements}
+                  selectedDate={dateStr}
                 />
               </TabsContent>
 
@@ -1451,11 +1452,12 @@ interface MovementItemLine {
   unitCost: number;
 }
 
-function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
+function StockTab({ stockMovements, clientId, departmentId, totalMovements, selectedDate }: {
   stockMovements: StockMovement[];
   clientId: string | null;
   departmentId: string | null;
   totalMovements: number;
+  selectedDate: string;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
@@ -1463,6 +1465,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
   const [selectedMovementId, setSelectedMovementId] = useState<string | null>(null);
   const [reverseReason, setReverseReason] = useState("");
   const [movementType, setMovementType] = useState("transfer");
+  const [postingDate, setPostingDate] = useState("");
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
   const [adjustmentDirection, setAdjustmentDirection] = useState<"increase" | "decrease">("increase");
@@ -1523,12 +1526,19 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
     return storeName?.name || "Unknown";
   };
 
+  const getSrdType = (deptId: string): "MAIN" | "DEPT" | null => {
+    const dept = invDepts.find(d => d.id === deptId);
+    if (!dept) return null;
+    return dept.inventoryType === "MAIN_STORE" ? "MAIN" : "DEPT";
+  };
+
   const needsToLocation = movementType === "transfer";
   const isAdjustment = movementType === "adjustment";
   const queryClient = useQueryClient();
 
   const resetForm = () => {
     setMovementType("transfer");
+    setPostingDate("");
     setFromLocation("");
     setToLocation("");
     setAdjustmentDirection("increase");
@@ -1653,9 +1663,25 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
       return;
     }
 
+    // Validate posting date is required
+    if (!postingDate) {
+      toast.error("Please select a posting date");
+      return;
+    }
+
     if (itemLines.length === 0) {
       toast.error("Please add at least one item");
       return;
+    }
+
+    // Block Main→Dept transfers - must use Issue button on Inventory Ledger instead
+    if (movementType === "transfer" && fromLocation && toLocation) {
+      const fromType = getSrdType(fromLocation);
+      const toType = getSrdType(toLocation);
+      if (fromType === "MAIN" && toType === "DEPT") {
+        toast.error("Main Store → Department transfers must use the Issue button on Inventory Ledger page");
+        return;
+      }
     }
 
     // Validate no duplicate items
@@ -1682,6 +1708,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
         notes: notes || null,
         sourceLocation: fromLocation ? getSrdName(fromLocation) : null,
         destinationLocation: needsToLocation && toLocation ? getSrdName(toLocation) : null,
+        date: postingDate, // Posting date for ledger
       },
       lines: itemLines.map(line => ({
         itemId: line.itemId,
@@ -1699,7 +1726,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
             <CardTitle>Stock Movements</CardTitle>
             <CardDescription>Transfers, adjustments, and write-offs</CardDescription>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2" disabled={!clientId} data-testid="button-add-movement">
+          <Button onClick={() => { setPostingDate(selectedDate); setCreateOpen(true); }} className="gap-2" disabled={!clientId} data-testid="button-add-movement">
             <Plus className="h-4 w-4" /> Record Movement
           </Button>
         </div>
@@ -1741,8 +1768,26 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
                           {movement.itemsDescription?.startsWith("[REVERSAL]") && <Badge variant="outline" className="text-xs bg-blue-50">Reversal</Badge>}
                         </div>
                       </TableCell>
-                      <TableCell>{movement.sourceLocation || "-"}</TableCell>
-                      <TableCell>{movement.destinationLocation || "-"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <span>{movement.sourceLocation || "-"}</span>
+                          {movement.fromSrdId && (
+                            <Badge variant="outline" className={cn("text-xs", getSrdType(movement.fromSrdId) === "MAIN" ? "bg-purple-50" : "bg-green-50")}>
+                              {getSrdType(movement.fromSrdId)}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <span>{movement.destinationLocation || "-"}</span>
+                          {movement.toSrdId && (
+                            <Badge variant="outline" className={cn("text-xs", getSrdType(movement.toSrdId) === "MAIN" ? "bg-purple-50" : "bg-green-50")}>
+                              {getSrdType(movement.toSrdId)}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="max-w-[200px] truncate" title={movement.itemsDescription || undefined}>
                         {movement.itemsDescription || "-"}
                       </TableCell>
@@ -1795,6 +1840,20 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements }: {
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
+              {/* Posting Date - Required */}
+              <div className="space-y-2">
+                <Label htmlFor="postingDate">Posting Date <span className="text-red-500">*</span></Label>
+                <Input
+                  id="postingDate"
+                  type="date"
+                  value={postingDate}
+                  onChange={(e) => setPostingDate(e.target.value)}
+                  required
+                  data-testid="input-posting-date"
+                />
+                <p className="text-xs text-muted-foreground">The date this movement will be recorded in the ledger</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="movementType">Movement Type</Label>
