@@ -157,7 +157,8 @@ async function getMovementsForDate(
     
     // CRITICAL: Branch on transferType FIRST, then fall back to store type heuristics
     // This ensures Issue/Transfer/Adjustment types are correctly mapped regardless of inventoryType format
-    const transferType = t.transferType || "transfer";
+    // IMPORTANT: Normalize to lowercase - production data may store as "ISSUE", "TRANSFER", etc.
+    const transferType = (t.transferType || "transfer").toLowerCase();
     
     if (transferType === "issue") {
       // Issue: Main Store -> Department Store
