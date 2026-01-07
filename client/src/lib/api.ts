@@ -1826,8 +1826,14 @@ export const purchaseItemEventsApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  delete: (id: string) =>
+  update: (id: string, data: Partial<{ qty: string; unitCostAtPurchase: string; totalCost: string; supplierName: string; invoiceNo: string; notes: string }>) =>
+    fetchApi<PurchaseItemEvent>(`/purchase-item-events/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string, reason: string) =>
     fetchApi<{ success: boolean }>(`/purchase-item-events/${id}`, {
       method: "DELETE",
+      body: JSON.stringify({ reason }),
     }),
 };

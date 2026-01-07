@@ -1006,7 +1006,13 @@ export default function Inventory() {
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="grnInvoiceRef">Invoice Reference</Label>
-                          <Input name="invoiceRef" required placeholder="e.g., INV-2024-001" data-testid="input-grn-invoice-ref" />
+                          <Input 
+                            name="invoiceRef" 
+                            required 
+                            placeholder="e.g., INV-2024-001" 
+                            data-testid="input-grn-invoice-ref"
+                            onBlur={(e) => { e.target.value = toSentenceCase(e.target.value); }}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="grnAmount">Amount</Label>
@@ -1928,7 +1934,13 @@ export default function Inventory() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="editGrnInvoiceRef">Invoice Reference</Label>
-                  <Input name="invoiceRef" defaultValue={selectedGrn.invoiceRef} required data-testid="input-edit-grn-invoice-ref" />
+                  <Input 
+                    name="invoiceRef" 
+                    defaultValue={selectedGrn.invoiceRef} 
+                    required 
+                    data-testid="input-edit-grn-invoice-ref"
+                    onBlur={(e) => { e.target.value = toSentenceCase(e.target.value); }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="editGrnAmount">Amount</Label>

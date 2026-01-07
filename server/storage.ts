@@ -2741,6 +2741,14 @@ export class DbStorage implements IStorage {
     return result.length > 0;
   }
 
+  async updatePurchaseItemEvent(id: string, updateData: Partial<InsertPurchaseItemEvent>): Promise<PurchaseItemEvent | undefined> {
+    const [updated] = await db.update(purchaseItemEvents)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(purchaseItemEvents.id, id))
+      .returning();
+    return updated;
+  }
+
   // Subscriptions
   async getSubscription(organizationId: string): Promise<Subscription | undefined> {
     const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.organizationId, organizationId));

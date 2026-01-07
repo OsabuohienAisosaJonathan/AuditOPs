@@ -5,19 +5,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon, Search, Filter, Download, RefreshCw } from "lucide-react";
+import { Calendar as CalendarIcon, Search, Filter, Download, RefreshCw, Pencil, Trash2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { purchaseItemEventsApi, itemsApi, inventoryDepartmentsApi, PurchaseItemEvent, Item, InventoryDepartment } from "@/lib/api";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+import { format, startOfMonth, endOfMonth, differenceInHours } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/lib/client-context";
 import { useCurrency } from "@/lib/currency-context";
 import { useEntitlements } from "@/lib/entitlements-context";
 import { LockedPageScreen } from "@/components/LockedPageScreen";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { useAuth } from "@/lib/auth-context";
 
 export default function ItemPurchases() {
   const { entitlements, isLoading: entitlementsLoading } = useEntitlements();
@@ -48,12 +53,24 @@ function ItemPurchasesContent() {
   const { formatMoney } = useCurrency();
   const { clients, selectedClientId: contextClientId } = useClientContext();
   const selectedClientId = contextClientId || clients?.[0]?.id;
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
 
   const [dateFrom, setDateFrom] = useState<Date | undefined>(startOfMonth(new Date()));
   const [dateTo, setDateTo] = useState<Date | undefined>(endOfMonth(new Date()));
   const [srdFilter, setSrdFilter] = useState<string>("all");
   const [itemFilter, setItemFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<PurchaseItemEvent | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [editQty, setEditQty] = useState("");
+  const [editUnitCost, setEditUnitCost] = useState("");
+  const [editSupplier, setEditSupplier] = useState("");
+  const [editInvoice, setEditInvoice] = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   const { data: purchaseEvents, isLoading: eventsLoading, refetch } = useQuery({
     queryKey: ["purchase-item-events", selectedClientId, srdFilter, itemFilter, dateFrom, dateTo],
@@ -110,6 +127,92 @@ function ItemPurchasesContent() {
   const totalValue = React.useMemo(() => {
     return filteredEvents.reduce((sum, event) => sum + parseFloat(event.totalCost || "0"), 0);
   }, [filteredEvents]);
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => purchaseItemEventsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-item-events"] });
+      setEditDialogOpen(false);
+      setSelectedEvent(null);
+      toast.success("Purchase updated successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update purchase");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => purchaseItemEventsApi.delete(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-item-events"] });
+      setDeleteDialogOpen(false);
+      setSelectedEvent(null);
+      setDeleteReason("");
+      toast.success("Purchase deleted successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete purchase");
+    },
+  });
+
+  const isWithin24Hours = (createdAt: string) => {
+    const hoursDiff = differenceInHours(new Date(), new Date(createdAt));
+    return hoursDiff <= 24;
+  };
+
+  const canEdit = (event: PurchaseItemEvent) => {
+    return isSuperAdmin || isWithin24Hours(event.createdAt);
+  };
+
+  const handleEditClick = (event: PurchaseItemEvent) => {
+    setSelectedEvent(event);
+    setEditQty(event.qty);
+    setEditUnitCost(event.unitCostAtPurchase);
+    setEditSupplier(event.supplierName || "");
+    setEditInvoice(event.invoiceNo || "");
+    setEditNotes(event.notes || "");
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteClick = (event: PurchaseItemEvent) => {
+    setSelectedEvent(event);
+    setDeleteReason("");
+    setDeleteDialogOpen(true);
+  };
+
+  const handleEditSubmit = () => {
+    if (!selectedEvent) return;
+    const qtyNum = parseFloat(editQty);
+    const unitCostNum = parseFloat(editUnitCost);
+    if (!isFinite(qtyNum) || qtyNum <= 0) {
+      toast.error("Please enter a valid quantity");
+      return;
+    }
+    if (!isFinite(unitCostNum) || unitCostNum < 0) {
+      toast.error("Please enter a valid unit cost");
+      return;
+    }
+    const totalCost = (qtyNum * unitCostNum).toFixed(2);
+    updateMutation.mutate({
+      id: selectedEvent.id,
+      data: {
+        qty: editQty,
+        unitCostAtPurchase: editUnitCost,
+        totalCost,
+        supplierName: editSupplier || null,
+        invoiceNo: editInvoice || null,
+        notes: editNotes || null,
+      },
+    });
+  };
+
+  const handleDeleteSubmit = () => {
+    if (!selectedEvent || !deleteReason.trim()) {
+      toast.error("Please provide a reason for deletion");
+      return;
+    }
+    deleteMutation.mutate({ id: selectedEvent.id, reason: deleteReason });
+  };
 
   const handleExportCSV = () => {
     if (!filteredEvents.length) return;
@@ -321,12 +424,14 @@ function ItemPurchasesContent() {
                     <TableHead>Supplier</TableHead>
                     <TableHead>Invoice No</TableHead>
                     <TableHead>Notes</TableHead>
+                    <TableHead className="w-[100px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredEvents.map((event: PurchaseItemEvent) => {
                     const item = itemsMap.get(event.itemId);
                     const srd = event.srdId ? srdsMap.get(event.srdId) : null;
+                    const editable = canEdit(event);
                     return (
                       <TableRow key={event.id} data-testid={`row-event-${event.id}`}>
                         <TableCell className="whitespace-nowrap">
@@ -340,6 +445,32 @@ function ItemPurchasesContent() {
                         <TableCell>{event.supplierName || "-"}</TableCell>
                         <TableCell>{event.invoiceNo || "-"}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{event.notes || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditClick(event)}
+                              disabled={!editable}
+                              title={editable ? "Edit purchase" : "Edit only allowed within 24 hours"}
+                              data-testid={`button-edit-${event.id}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            {isSuperAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteClick(event)}
+                                className="text-destructive hover:text-destructive"
+                                title="Delete purchase (Super Admin only)"
+                                data-testid={`button-delete-${event.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -349,6 +480,112 @@ function ItemPurchasesContent() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Purchase</DialogTitle>
+            <DialogDescription>
+              {selectedEvent && !isWithin24Hours(selectedEvent.createdAt) && !isSuperAdmin
+                ? "This purchase is older than 24 hours and cannot be edited."
+                : "Modify the purchase details below."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editQty}
+                  onChange={(e) => setEditQty(e.target.value)}
+                  data-testid="input-edit-qty"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Unit Cost</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editUnitCost}
+                  onChange={(e) => setEditUnitCost(e.target.value)}
+                  data-testid="input-edit-unit-cost"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Supplier Name</Label>
+              <Input
+                value={editSupplier}
+                onChange={(e) => setEditSupplier(e.target.value)}
+                data-testid="input-edit-supplier"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Invoice Number</Label>
+              <Input
+                value={editInvoice}
+                onChange={(e) => setEditInvoice(e.target.value)}
+                data-testid="input-edit-invoice"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                data-testid="input-edit-notes"
+              />
+            </div>
+            <div className="bg-muted p-3 rounded-md">
+              <p className="text-sm">
+                <strong>Total Cost:</strong> {formatMoney(parseFloat(editQty || "0") * parseFloat(editUnitCost || "0"))}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditSubmit} disabled={updateMutation.isPending} data-testid="button-save-edit">
+              {updateMutation.isPending && <Spinner className="mr-2 h-4 w-4" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Purchase</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. Please provide a reason for deleting this purchase record.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label>Reason for Deletion <span className="text-destructive">*</span></Label>
+            <Textarea
+              placeholder="Enter the reason for deleting this purchase..."
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              className="mt-2"
+              data-testid="input-delete-reason"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSubmit}
+              disabled={deleteMutation.isPending || !deleteReason.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending && <Spinner className="mr-2 h-4 w-4" />}
+              Delete Purchase
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

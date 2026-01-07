@@ -5455,10 +5455,12 @@ export async function registerRoutes(
           
           // Determine movement type based on SRD inventory types
           let isMainToDept = false;
+          let isDeptToMain = false;
           if (movement.fromSrdId && movement.toSrdId) {
             const fromDept = allInvDepts.find((d: any) => d.id === movement.fromSrdId);
             const toDept = allInvDepts.find((d: any) => d.id === movement.toSrdId);
             isMainToDept = fromDept?.inventoryType === "MAIN_STORE" && toDept?.inventoryType === "DEPARTMENT_STORE";
+            isDeptToMain = fromDept?.inventoryType === "DEPARTMENT_STORE" && toDept?.inventoryType === "MAIN_STORE";
           }
           
           for (const line of lines) {
@@ -5468,9 +5470,15 @@ export async function registerRoutes(
               breakdown[line.itemId].issuedTo[movement.toSrdId] = 
                 (breakdown[line.itemId].issuedTo[movement.toSrdId] || 0) + parseFloat(line.qty);
             } else if (movement.toSrdId === srdId && movement.fromSrdId) {
-              // Only add to received[] if it's NOT a Main→Dept movement (Issue)
-              // Issue movements show in Added column (store_stock.added_qty), not Transfer columns
-              if (!isMainToDept) {
+              // Dept→Main: goes to returnIn (not received)
+              // Main→Dept: ignored here (uses Added column)
+              // Dept→Dept: goes to received
+              if (isDeptToMain) {
+                // Main Store receiving from Department → ReturnIn column
+                breakdown[line.itemId].returnIn[movement.fromSrdId] = 
+                  (breakdown[line.itemId].returnIn[movement.fromSrdId] || 0) + parseFloat(line.qty);
+              } else if (!isMainToDept) {
+                // Inter-department or other transfers
                 breakdown[line.itemId].received[movement.fromSrdId] = 
                   (breakdown[line.itemId].received[movement.fromSrdId] || 0) + parseFloat(line.qty);
               }
@@ -5509,12 +5517,23 @@ export async function registerRoutes(
               (breakdown[transfer.itemId].returnIn[transfer.fromSrdId] || 0) + qty;
           }
         } else if (transfer.transferType === "transfer") {
+          // Check SRD types for proper column routing
+          const fromDept = allInvDepts.find((d: any) => d.id === transfer.fromSrdId);
+          const toDept = allInvDepts.find((d: any) => d.id === transfer.toSrdId);
+          const isDeptToMain = fromDept?.inventoryType === "DEPARTMENT_STORE" && toDept?.inventoryType === "MAIN_STORE";
+          
           if (transfer.fromSrdId === srdId) {
             breakdown[transfer.itemId].issuedTo[transfer.toSrdId] = 
               (breakdown[transfer.itemId].issuedTo[transfer.toSrdId] || 0) + qty;
           } else if (transfer.toSrdId === srdId) {
-            breakdown[transfer.itemId].received[transfer.fromSrdId] = 
-              (breakdown[transfer.itemId].received[transfer.fromSrdId] || 0) + qty;
+            if (isDeptToMain) {
+              // Main Store receiving from Department → ReturnIn column
+              breakdown[transfer.itemId].returnIn[transfer.fromSrdId] = 
+                (breakdown[transfer.itemId].returnIn[transfer.fromSrdId] || 0) + qty;
+            } else {
+              breakdown[transfer.itemId].received[transfer.fromSrdId] = 
+                (breakdown[transfer.itemId].received[transfer.fromSrdId] || 0) + qty;
+            }
           }
         }
       }
@@ -7750,6 +7769,57 @@ export async function registerRoutes(
       res.status(201).json(event);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/purchase-item-events/:id", requireAuth, async (req, res) => {
+    try {
+      const event = await storage.getPurchaseItemEvent(req.params.id);
+      if (!event) {
+        return res.status(404).json({ error: "Purchase event not found" });
+      }
+
+      const isSuperAdmin = req.session.role === "super_admin";
+      const hoursSinceCreation = (Date.now() - new Date(event.createdAt).getTime()) / (1000 * 60 * 60);
+      if (!isSuperAdmin && hoursSinceCreation > 24) {
+        return res.status(403).json({ error: "Purchases can only be edited within 24 hours of creation" });
+      }
+
+      const { qty, unitCostAtPurchase, totalCost, supplierName, invoiceNo, notes } = req.body;
+      const updateData: any = {};
+      if (qty !== undefined) updateData.qty = qty;
+      if (unitCostAtPurchase !== undefined) updateData.unitCostAtPurchase = unitCostAtPurchase;
+      if (totalCost !== undefined) updateData.totalCost = totalCost;
+      if (supplierName !== undefined) updateData.supplierName = supplierName;
+      if (invoiceNo !== undefined) updateData.invoiceNo = invoiceNo;
+      if (notes !== undefined) updateData.notes = notes;
+
+      const updated = await storage.updatePurchaseItemEvent(req.params.id, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "Failed to update purchase event" });
+      }
+
+      if (event.srdId) {
+        try {
+          await recalculateForward(event.clientId, event.srdId, event.itemId, event.date);
+          console.log(`[Purchase Event Update] Forward recalc triggered for SRD ${event.srdId}`);
+        } catch (err: any) {
+          console.error(`[Purchase Event Update] Forward recalc failed:`, err.message);
+        }
+      }
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Updated Purchase Event",
+        entity: "PurchaseItemEvent",
+        entityId: req.params.id,
+        details: `Updated fields: ${Object.keys(updateData).join(", ")}`,
+        ipAddress: req.ip || "Unknown",
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 
