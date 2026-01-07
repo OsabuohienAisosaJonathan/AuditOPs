@@ -62,3 +62,24 @@ A separate, isolated administrative interface (`/platform-admin/*`) for MiAuditO
 
 ### Email Service
 - **Resend**: Transactional email sending (e.g., verification, password reset).
+
+## Recent Changes
+
+### SR-D Ledger Issue vs Transfer Column Fix (2026-01-07)
+Fixed a critical bug where Issue movements (Main Store → Department Store) were incorrectly populating Transfer columns instead of Added/Issued columns.
+
+**Root Causes Identified:**
+1. Database schema mismatch: 8 columns in `store_stock` table were `text` type instead of `numeric`, causing "invalid input syntax for type numeric" errors during backfill
+2. Empty string handling: Historic rows contained empty strings ("") that caused NaN when parsed
+3. Silent error logging: console.error output wasn't visible in workflow logs
+
+**Fixes Applied:**
+1. Converted 8 columns to `numeric(10,2)`: transfers_in_qty, transfers_out_qty, inter_dept_in_qty, inter_dept_out_qty, waste_qty, write_off_qty, adjustment_qty, sold_qty
+2. Added `ensureFinite()` and `safeToFixed()` helpers to prevent NaN values from reaching database
+3. Enhanced `parseDecimal()` to handle empty strings
+4. Changed error logging to console.log for visibility in workflow logs
+
+**Correct Column Mapping for Issue Movements:**
+- Main Store (sending): `issued_qty` column (Req Dep)
+- Department Store (receiving): `added_qty` column (Added)
+- Transfer columns remain 0 for Issue movements

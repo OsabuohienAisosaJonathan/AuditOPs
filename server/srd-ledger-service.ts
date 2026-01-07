@@ -37,8 +37,18 @@ function formatDateYMD(date: Date): string {
 
 function parseDecimal(val: string | number | null | undefined): number {
   if (val === null || val === undefined) return 0;
+  if (typeof val === 'string' && val.trim() === '') return 0;
   const num = parseFloat(String(val));
   return isNaN(num) ? 0 : num;
+}
+
+function ensureFinite(val: number): number {
+  if (!Number.isFinite(val)) return 0;
+  return val;
+}
+
+function safeToFixed(val: number): string {
+  return ensureFinite(val).toFixed(2);
 }
 
 function calculateExpectedClosing(
@@ -383,20 +393,20 @@ async function upsertLedgerRow(
   const variance = existingPhysical !== null ? existingPhysical - closingQty : 0;
   
   const rowData: Partial<InsertStoreStock> = {
-    openingQty: opening.toFixed(2),
-    addedQty: movements.addedQty.toFixed(2),
-    issuedQty: movements.issuedQty.toFixed(2),
-    transfersInQty: movements.transfersInQty.toFixed(2),
-    transfersOutQty: movements.transfersOutQty.toFixed(2),
-    interDeptInQty: movements.interDeptInQty.toFixed(2),
-    interDeptOutQty: movements.interDeptOutQty.toFixed(2),
-    wasteQty: movements.wasteQty.toFixed(2),
-    writeOffQty: movements.writeOffQty.toFixed(2),
-    adjustmentQty: movements.adjustmentQty.toFixed(2),
-    soldQty: movements.soldQty.toFixed(2),
-    closingQty: closingQty.toFixed(2),
-    varianceQty: variance.toFixed(2),
-    costPriceSnapshot: costPrice.toFixed(2),
+    openingQty: safeToFixed(opening),
+    addedQty: safeToFixed(movements.addedQty),
+    issuedQty: safeToFixed(movements.issuedQty),
+    transfersInQty: safeToFixed(movements.transfersInQty),
+    transfersOutQty: safeToFixed(movements.transfersOutQty),
+    interDeptInQty: safeToFixed(movements.interDeptInQty),
+    interDeptOutQty: safeToFixed(movements.interDeptOutQty),
+    wasteQty: safeToFixed(movements.wasteQty),
+    writeOffQty: safeToFixed(movements.writeOffQty),
+    adjustmentQty: safeToFixed(movements.adjustmentQty),
+    soldQty: safeToFixed(movements.soldQty),
+    closingQty: safeToFixed(closingQty),
+    varianceQty: safeToFixed(variance),
+    costPriceSnapshot: safeToFixed(costPrice),
   };
   
   if (existing) {
@@ -510,7 +520,9 @@ export async function backfillSrdLedger(params: LedgerRecalcParams): Promise<{
           currentOpening = parseDecimal(updatedRow.closingQty);
           
         } catch (err: any) {
-          result.errors.push(`Item ${item.id} on ${dateKey}: ${err.message}`);
+          const errorMsg = `Item ${item.id} on ${dateKey}: ${err.message}`;
+          console.log(`[SRD Ledger] ERROR: ${errorMsg}`);
+          result.errors.push(errorMsg);
         }
         
         currentDate.setDate(currentDate.getDate() + 1);
@@ -518,6 +530,9 @@ export async function backfillSrdLedger(params: LedgerRecalcParams): Promise<{
     }
     
     console.log(`[SRD Ledger] Backfill complete: ${result.rowsProcessed} rows (${result.rowsCreated} created, ${result.rowsUpdated} updated), ${result.errors.length} errors`);
+    if (result.errors.length > 0) {
+      console.log(`[SRD Ledger] Errors:`, result.errors.slice(0, 5).join('; '));
+    }
     
   } catch (err: any) {
     console.error(`[SRD Ledger] Backfill failed:`, err);
