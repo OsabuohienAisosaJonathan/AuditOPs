@@ -5406,18 +5406,32 @@ export async function registerRoutes(
               }
             }
           }
-        } else if (movement.movementType === "transfer") {
+        } else if (movement.movementType === "transfer" || movement.movementType === "issue") {
+          // Handle both legacy "transfer" movements and "issue" movements
+          // Issue movements (Main→Dept) should NOT populate received[] - they use Added column
           const lines = await storage.getStockMovementLines(movement.id);
+          
+          // Determine movement type based on SRD inventory types
+          let isMainToDept = false;
+          if (movement.fromSrdId && movement.toSrdId) {
+            const fromDept = allInvDepts.find((d: any) => d.id === movement.fromSrdId);
+            const toDept = allInvDepts.find((d: any) => d.id === movement.toSrdId);
+            isMainToDept = fromDept?.inventoryType === "MAIN_STORE" && toDept?.inventoryType === "DEPARTMENT_STORE";
+          }
+          
           for (const line of lines) {
             initItem(line.itemId);
             if (movement.fromSrdId === srdId && movement.toSrdId) {
-              // Outgoing transfer
+              // Outgoing transfer/issue from this SRD
               breakdown[line.itemId].issuedTo[movement.toSrdId] = 
                 (breakdown[line.itemId].issuedTo[movement.toSrdId] || 0) + parseFloat(line.qty);
             } else if (movement.toSrdId === srdId && movement.fromSrdId) {
-              // Incoming transfer (received)
-              breakdown[line.itemId].received[movement.fromSrdId] = 
-                (breakdown[line.itemId].received[movement.fromSrdId] || 0) + parseFloat(line.qty);
+              // Only add to received[] if it's NOT a Main→Dept movement (Issue)
+              // Issue movements show in Added column (store_stock.added_qty), not Transfer columns
+              if (!isMainToDept) {
+                breakdown[line.itemId].received[movement.fromSrdId] = 
+                  (breakdown[line.itemId].received[movement.fromSrdId] || 0) + parseFloat(line.qty);
+              }
             }
           }
         }
@@ -5431,15 +5445,17 @@ export async function registerRoutes(
         const qty = parseFloat(transfer.qty);
         
         if (transfer.transferType === "issue") {
+          // Issue movements (Main→Dept) should ONLY appear in Added column, NOT in Transfer columns
+          // - Main Store: shows in "Req Dep" (issuedQty) column - stored in store_stock.issued_qty
+          // - Department: shows in "Added" column - stored in store_stock.added_qty
+          // We track issuedTo for Main Store's ledger display only
           if (transfer.fromSrdId === srdId) {
-            // Issued out from this SRD
+            // Issued out from Main Store to Department
             breakdown[transfer.itemId].issuedTo[transfer.toSrdId] = 
               (breakdown[transfer.itemId].issuedTo[transfer.toSrdId] || 0) + qty;
-          } else if (transfer.toSrdId === srdId) {
-            // Received into this SRD
-            breakdown[transfer.itemId].received[transfer.fromSrdId] = 
-              (breakdown[transfer.itemId].received[transfer.fromSrdId] || 0) + qty;
           }
+          // DO NOT add to received[] - Issue movements for Department are in store_stock.added_qty
+          // which displays in the "Added" column, not the Transfer columns
         } else if (transfer.transferType === "return") {
           if (transfer.fromSrdId === srdId) {
             // Returned out from this SRD (to Main Store usually)

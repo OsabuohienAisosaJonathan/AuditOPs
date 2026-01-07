@@ -389,7 +389,7 @@ async function upsertLedgerRow(
   
   const closingQty = calculateExpectedClosing(opening, movements);
   
-  const existingPhysical = existing?.physicalClosingQty !== null ? parseDecimal(existing.physicalClosingQty) : null;
+  const existingPhysical = existing && existing.physicalClosingQty !== null ? parseDecimal(existing.physicalClosingQty) : null;
   const variance = existingPhysical !== null ? existingPhysical - closingQty : 0;
   
   const rowData: Partial<InsertStoreStock> = {
