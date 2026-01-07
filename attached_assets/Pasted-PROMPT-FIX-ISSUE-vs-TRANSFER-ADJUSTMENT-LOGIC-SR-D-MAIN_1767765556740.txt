@@ -1,0 +1,114 @@
+PROMPT: FIX ISSUE vs TRANSFER/ADJUSTMENT LOGIC — SR-D MAIN STORE “ISSUE” MUST POST TO DEPARTMENT “ADDED”, NOT TRANSFER; DEPARTMENT MOVEMENTS MUST NOT TOUCH “ADDED”; ALL ISSUES MUST APPEAR IN STOCK MOVEMENTS TABLE
+
+PROBLEM:
+1) “Issue” button on SR-D Main Store ledger is meant to issue stock OUT to a Department SR-D and land in Department ledger “ADDED” column.
+   - But currently it sometimes hits Main “Transfer” column or wrong columns.
+2) Stock Movement page supports Transfer + Adjustment actions.
+   - These must follow different column rules than “Issue”.
+3) Any issue performed from Main SR-D ledger must ALSO show inside Stock Movements table (so user can audit from both places).
+4) Prevent double-counting if the same transaction is created from both screens.
+
+GOAL RULES (NON-NEGOTIABLE):
+A) MAIN STORE LEDGER “ISSUE” BUTTON
+1) The “Issue” button inside SR-D Main Store ledger must ONLY be used for:
+   - Main Store → Department Store issuance
+2) The ledger impact must be:
+   - Main SR-D: subtract from stock via “Req Dep” (or “Issue Out”) logic (NOT via Main “Transfer” column)
+   - Department SR-D: add to “ADDED” column (NOT to Department “Transfer In”)
+3) Disable any logic path that writes Main→Department issuance into “Transfer” columns in either ledger.
+
+B) STOCK MOVEMENT PAGE (TRANSFER + ADJUSTMENT)
+1) Transfers from Department → Main OR Department → Department must:
+   - NOT write into “ADDED”
+   - ONLY write into Transfer columns (Transfer In/Out) on both ledgers
+2) Adjustments must:
+   - NOT write into “ADDED”
+   - ONLY write into Adjustment column and affect closing correctly (increase/decrease depending on adjustment type)
+
+C) STOCK MOVEMENTS TABLE MUST INCLUDE “ISSUE” EVENTS TOO
+1) When a user clicks “Issue” in Main SR-D ledger, the system must also create a row in the Stock Movements table:
+   - type: ISSUE
+   - fromSrd: Main
+   - toSrd: Department
+   - qty, unit, value/cost if available
+   - reference: source="main_ledger_issue"
+2) The Stock Movements page must display full description + qty + from/to + value (no missing columns).
+
+D) SINGLE SOURCE OF TRUTH + NO DOUBLE COUNTING
+1) Use ONE backend function that creates movement events, then ledger totals are computed from movements.
+2) Add idempotency protection:
+   - For “Issue” created from Main ledger, generate an idempotencyKey like:
+     issue:${date}:${mainSrdId}:${deptSrdId}:${itemId}:${qty}:${createdBy}
+   - If the same key already exists, DO NOT create a second movement.
+3) Both “Issue” screen and “Stock Movement” screen must call the same endpoint/service.
+
+E) LEDGER COLUMN MAPPING (STRICT)
+For each movement event, map it to ledger columns like this:
+
+1) ISSUE (Main → Department)
+   - Main SRD:
+     - ReqDep[dept] += qty (or IssueOut += qty)
+     - Closing decreases accordingly
+     - DO NOT touch Transfer columns
+   - Department SRD:
+     - Added += qty
+     - Closing increases accordingly
+     - DO NOT touch Transfer columns
+
+2) TRANSFER (Department → Main)
+   - Department SRD:
+     - TransferOut += qty
+     - Closing decreases accordingly
+     - DO NOT touch Added
+   - Main SRD:
+     - Returns (or TransferInMain) += qty (your chosen column for incoming dept returns)
+     - Closing increases accordingly
+     - DO NOT touch Purchase/Added
+
+3) TRANSFER (Department → Department)
+   - From Department:
+     - TransferOut += qty
+     - Closing decreases
+   - To Department:
+     - TransferIn += qty
+     - Closing increases
+   - DO NOT touch Added anywhere
+
+4) ADJUSTMENT (any SRD)
+   - Only Adjustment column changes
+   - If adjustment is positive: adds to stock
+   - If negative: subtracts from stock
+   - DO NOT touch Added/Transfer/Purchase columns
+
+5) WASTE / WRITE-OFF (any SRD)
+   - Only Losses columns change (Waste/WriteOff)
+   - Closing decreases
+   - DO NOT touch Added/Transfer/Purchase columns
+
+F) UI REQUIREMENTS
+1) SR-D Main Ledger “Issue” modal/form:
+   - Must force user to select target Department SRD
+   - Must show available qty and block issuing more than available
+2) Stock Movements table must show:
+   - Date, Type, Item, From SRD, To SRD, Qty, Unit Cost/Value (if available), Description/Reference, CreatedBy
+3) Edit + Reverse:
+   - Reversing a movement must recompute affected ledgers correctly (no residue in wrong columns)
+   - Edited qty must update the same movement record (not create a new duplicate row)
+
+G) DO NOT BREAK EXISTING BACKEND
+1) Do not remove/rename existing routes.
+2) If a bug exists in mapping, fix mapping without redesigning everything.
+3) Add only minimal fields/tables if necessary (idempotencyKey, source, reference).
+
+H) REQUIRED OUTPUT (MUST)
+1) Show exact file paths edited
+2) Print first 10–15 lines of each file to confirm it’s correct
+3) Provide patches with START/END markers
+4) Provide tests:
+   - Issue Main→Dept updates Dept Added + Main ReqDep and appears in Stock Movements table
+   - Transfer Dept→Main updates Dept TransferOut + Main Returns (not Added) and appears in Stock Movements
+   - Transfer Dept→Dept updates Transfer columns only
+   - Adjustment never touches Added/Transfer
+   - No duplicates when issuing from ledger and viewing in movements
+END PROMPT
+
