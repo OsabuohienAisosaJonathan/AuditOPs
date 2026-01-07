@@ -4927,6 +4927,22 @@ export async function registerRoutes(
       }
       const costPrice = item.costPrice || "0.00";
       
+      // Generate idempotency key for movements to prevent duplicates in both tables
+      const effectiveTransferType = transferType || "transfer";
+      const dateStr = parsedDate.toISOString().split('T')[0];
+      const idempotencyKey = `${effectiveTransferType}:${dateStr}:${fromSrdId}:${toSrdId}:${itemId}:${parsedQty}:${req.session.userId}`;
+      
+      // Check for duplicate - if stockMovement with this idempotency already exists, return early
+      // This prevents both srdTransfer AND stockMovement duplicates
+      const existingMovement = await storage.getStockMovementByIdempotencyKey(idempotencyKey);
+      if (existingMovement) {
+        console.log(`[SRD Transfer] Duplicate detected with idempotencyKey: ${idempotencyKey}`);
+        return res.status(409).json({ 
+          error: "Duplicate transfer detected", 
+          existingMovementId: existingMovement.id 
+        });
+      }
+      
       // Create the transfer record
       const transfer = await storage.createSrdTransfer({
         refId,
@@ -4936,13 +4952,63 @@ export async function registerRoutes(
         itemId,
         qty: parsedQty.toString(),
         transferDate: parsedDate,
-        transferType: transferType || "transfer",
+        transferType: effectiveTransferType,
         notes: notes || null,
         status: "posted",
         createdBy: req.session.userId!,
       });
       
-      console.log(`[SRD Transfer] RefId: ${refId}, From: ${fromSrdId}, To: ${toSrdId}, Item: ${item.name}, Qty: ${parsedQty}, Type: ${transferType || 'transfer'}`);
+      console.log(`[SRD Transfer] RefId: ${refId}, From: ${fromSrdId}, To: ${toSrdId}, Item: ${item.name}, Qty: ${parsedQty}, Type: ${effectiveTransferType}`);
+      
+      // For "issue" type transfers (Main Store -> Department Store), also create a stockMovement record
+      // This ensures issues appear in the Stock Movements table for audit visibility
+      if (effectiveTransferType === "issue") {
+        try {
+          // Get the target SRD to find the correct departmentId
+          const toSrd = await storage.getInventoryDepartment(toSrdId);
+          // Use the target SRD's departmentId, or fall back to first department if not set
+          let targetDeptId = toSrd?.departmentId;
+          if (!targetDeptId) {
+            const departments = await storage.getDepartments(clientId);
+            targetDeptId = departments.length > 0 ? departments[0].id : null;
+          }
+          
+          if (targetDeptId) {
+            const totalValue = parsedQty * parseFloat(costPrice);
+            
+            // Create the stockMovement record
+            const movement = await storage.createStockMovement({
+              clientId,
+              departmentId: targetDeptId,
+              movementType: "issue",
+              fromSrdId,
+              toSrdId,
+              date: parsedDate,
+              itemsDescription: `${item.name} (${parsedQty})`,
+              totalQty: parsedQty.toString(),
+              totalValue: totalValue.toFixed(2),
+              notes: notes || `Issued from Main Store via ledger`,
+              createdBy: req.session.userId!,
+              idempotencyKey,
+              sourceRef: refId,
+            });
+            
+            // Create the line item
+            await storage.createStockMovementLine({
+              movementId: movement.id,
+              itemId,
+              qty: parsedQty.toString(),
+              unitCost: costPrice,
+              lineValue: totalValue.toFixed(2),
+            });
+            
+            console.log(`[SRD Transfer] Created stockMovement ${movement.id} for issue ${refId}`);
+          }
+        } catch (err: any) {
+          // Don't fail the transfer if stockMovement creation fails
+          console.error(`[SRD Transfer] Failed to create stockMovement for issue:`, err.message);
+        }
+      }
       
       // Recalculate ledger for BOTH affected SRDs using the design-rule approach
       // The transfer record is already saved above, recalculateForward will pick it up
@@ -6039,7 +6105,15 @@ export async function registerRoutes(
       }
       
       // Validate movement type requirements
-      if (movementType === "transfer") {
+      if (movementType === "issue") {
+        // Issue: Main Store -> Department Store (similar to transfer but different ledger columns)
+        if (!movementData.fromSrdId || !movementData.toSrdId) {
+          return res.status(400).json({ error: "Issue requires both From (Main Store) and To (Department) SRD" });
+        }
+        if (movementData.fromSrdId === movementData.toSrdId) {
+          return res.status(400).json({ error: "From and To SRD must be different" });
+        }
+      } else if (movementType === "transfer") {
         if (!movementData.fromSrdId || !movementData.toSrdId) {
           return res.status(400).json({ error: "Transfer requires both From and To SRD" });
         }
@@ -6092,7 +6166,7 @@ export async function registerRoutes(
       const movementDate = movementData.date ? new Date(movementData.date) : new Date();
       
       // For movements that decrease stock, validate available quantities
-      if (movementType === "transfer" || movementType === "write_off" || movementType === "waste" ||
+      if (movementType === "issue" || movementType === "transfer" || movementType === "write_off" || movementType === "waste" ||
           (movementType === "adjustment" && movementData.adjustmentDirection === "decrease")) {
         const fromSrdId = movementData.fromSrdId;
         for (const line of lines) {

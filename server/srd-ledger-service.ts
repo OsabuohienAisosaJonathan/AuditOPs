@@ -234,6 +234,24 @@ async function getMovementsForDate(
             }
           }
           break;
+        case "issue":
+          // Issue: Main Store -> Department Store
+          // Main Store: subtract from issuedQty (Req Dep column)
+          // Department Store: add to addedQty (Added column)
+          // Skip if already processed via srdTransfers (check sourceRef)
+          if (movement.sourceRef) {
+            // This is a mirror of an srdTransfer - already counted above
+            break;
+          }
+          if (movement.fromSrdId === srdId) {
+            // Main Store issuing out
+            summary.issuedQty += qty;
+          }
+          if (movement.toSrdId === srdId) {
+            // Department Store receiving
+            summary.addedQty += qty;
+          }
+          break;
         case "transfer":
           // stockMovements with type "transfer" are separate from srdTransfers
           // Both systems are mutually exclusive, so no de-duplication needed here

@@ -176,6 +176,7 @@ export interface IStorage {
   getStockMovementsByDepartment(departmentId: string): Promise<StockMovement[]>;
   getStockMovementsBySrd(srdId: string): Promise<StockMovement[]>;
   getStockMovement(id: string): Promise<StockMovement | undefined>;
+  getStockMovementByIdempotencyKey(idempotencyKey: string): Promise<StockMovement | undefined>;
   getStockMovementWithLines(id: string): Promise<{ movement: StockMovement; lines: StockMovementLine[] } | undefined>;
   createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
   updateStockMovement(id: string, movement: Partial<InsertStockMovement>): Promise<StockMovement | undefined>;
@@ -1089,6 +1090,11 @@ export class DbStorage implements IStorage {
         eq(stockMovements.toSrdId, srdId)
       )
     ).orderBy(desc(stockMovements.createdAt));
+  }
+
+  async getStockMovementByIdempotencyKey(idempotencyKey: string): Promise<StockMovement | undefined> {
+    const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.idempotencyKey, idempotencyKey));
+    return movement;
   }
 
   async getStockMovementWithLines(id: string): Promise<{ movement: StockMovement; lines: StockMovementLine[] } | undefined> {
