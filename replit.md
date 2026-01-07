@@ -115,3 +115,34 @@ Enhanced the Stock Movements functionality with:
 - Frontend validation blocks Main→Dept transfers
 - Backend validation in /api/stock-movements/with-lines blocks Main→Dept
 - Error message directs users to use Issue button on Inventory Ledger
+
+### Inventory Management Enhancements (2026-01-07)
+
+**A) Dept→Main Return Inward:**
+- Added `return_in_qty` column to `store_stock` table for tracking department returns to Main Store
+- Main Store ledger now shows "Return In" column with per-department breakdown
+- Return In quantity feeds into Main Store closing formula: Closing = Opening + Purchase + ReturnIn - Issued - Losses
+
+**B) Purchase Register Edit/Delete:**
+- 24-hour edit window: Only purchases created within last 24 hours can be edited (except by super admin)
+- Super admin-only deletion: Delete requires super admin role + mandatory reason
+- Both operations trigger ledger recalculation to maintain data integrity
+
+**C) GRN Sentence Case Formatting:**
+- Text inputs (supplier name, notes, invoice number) auto-format to sentence case on blur
+- Ensures consistent data entry style across the platform
+
+**D) CSV Export Functionality:**
+- Added export buttons with Download icon to Stock Count and Stock Movement pages
+- Exports include date-stamped filenames (e.g., MiAuditOps_StockCounts_2026-01-07.csv)
+- Proper CSV escaping for special characters and commas
+
+**E) Stock Count Ledger Integration:**
+- Editing stock count now updates `physicalClosingQty` in store_stock
+- Triggers forward recalculation from next day to cascade changes
+- Creates audit log entry for tracking
+
+**F) Item Supplier Field:**
+- Added `supplier_id` column to items table with foreign key to suppliers
+- Create Item form now includes "Default Supplier" dropdown
+- Auto-fills supplier in GRN form when item is selected
