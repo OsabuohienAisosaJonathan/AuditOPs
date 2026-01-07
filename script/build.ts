@@ -4,11 +4,13 @@ import { rm, readFile } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
+// Dependencies to bundle (reduces cold start times)
+// IMPORTANT: Do NOT add native modules here (bcrypt, sharp, canvas, etc.)
+// Native modules must be external so they load from node_modules at runtime
 const allowlist = [
   "@google/generative-ai",
   "archiver",
   "axios",
-  "bcrypt",
   "connect-pg-simple",
   "cors",
   "date-fns",
@@ -35,6 +37,20 @@ const allowlist = [
   "zod-validation-error",
 ];
 
+// Native modules that must NEVER be bundled (they have compiled binaries)
+const nativeModules = [
+  "bcrypt",
+  "sharp",
+  "canvas",
+  "better-sqlite3",
+  "sqlite3",
+  "argon2",
+  "bufferutil",
+  "utf-8-validate",
+  "node-gyp-build",
+  "@mapbox/node-pre-gyp",
+];
+
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
 
@@ -47,11 +63,22 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  
+  // External = deps NOT in allowlist + ALL native modules (always external)
+  const externals = [
+    ...allDeps.filter((dep) => !allowlist.includes(dep)),
+    ...nativeModules, // Always mark native modules as external
+  ];
+  
+  // Remove duplicates
+  const uniqueExternals = [...new Set(externals)];
+  
+  console.log("Native modules (external):", nativeModules.filter(m => allDeps.includes(m) || m === "bcrypt"));
 
   await esbuild({
     entryPoints: ["server/index.ts"],
     platform: "node",
+    target: "node20", // Match deployment environment
     bundle: true,
     format: "cjs",
     outfile: "dist/index.cjs",
@@ -59,7 +86,7 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
-    external: externals,
+    external: uniqueExternals,
     logLevel: "info",
   });
 }

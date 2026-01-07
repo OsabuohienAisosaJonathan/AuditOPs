@@ -1,0 +1,85 @@
+PROMPT: FIX DEPLOY CRASH LOOP — NATIVE MODULE ABI 115 (LINUX x64) BUILD ERROR
+
+Problem:
+Deploy fails with:
+“No native build was found for platform=linux arch=x64 runtime=node abi=115”
+and app crash-loops on startup because a native Node dependency can’t load in the deployment environment.
+
+Goal:
+1) Identify the EXACT native module causing the ABI error.
+2) Fix the build so deploy works reliably on Linux x64 Node 20 (ABI 115).
+3) Ensure dist/index.cjs does NOT bundle native binaries incorrectly.
+
+------------------------------------------
+A) FIND THE OFFENDING NATIVE MODULE (MANDATORY)
+1) Print Node version + ABI in build/runtime:
+   - node -v
+   - node -p "process.versions"
+2) Locate the module name:
+   - Search dist/index.cjs for common native requires:
+     "bcrypt", "sharp", "better-sqlite3", "sqlite3", "canvas", "argon2", "fsevents", "node-gyp-build", "@mapbox/node-pre-gyp"
+   - Run:
+     npm ls --all | grep -E "bcrypt|sharp|better-sqlite3|sqlite3|canvas|argon2|node-gyp|prebuild|node-pre-gyp" || true
+3) Reproduce the crash locally in deploy-like mode:
+   - NODE_ENV=production node dist/index.cjs
+   Capture the stack trace line that mentions the module.
+
+Output required here:
+- The exact module name causing the “No native build found…” error.
+- The exact file/line where it gets imported/required.
+
+------------------------------------------
+B) FIX STRATEGY (CHOOSE THE SAFEST PATH)
+Use this order of preference:
+
+OPTION 1 (BEST): STOP BUNDLING NATIVE MODULES INTO dist
+If we are bundling server code (esbuild/tsup/vite/rollup), mark native deps as EXTERNAL so they install normally in node_modules during deploy.
+1) Identify bundler config (esbuild/tsup/vite/rollup) used to produce dist/index.cjs.
+2) Add externals for the offending module AND any transitive native helpers.
+   Examples:
+   - esbuild: external: ["bcrypt","sharp","canvas","better-sqlite3","sqlite3","argon2","@mapbox/node-pre-gyp","node-gyp-build"]
+   - tsup: external: [...]
+3) Ensure build target is node20:
+   - target: "node20"
+4) Rebuild dist and confirm dist/index.cjs no longer inlines native code.
+
+OPTION 2: REPLACE THE NATIVE MODULE WITH A NON-NATIVE / PREBUILT ALTERNATIVE
+If the module is known to be problematic:
+- bcrypt  -> replace with "bcryptjs" OR "@node-rs/bcrypt"
+- argon2  -> replace with "@node-rs/argon2"
+- canvas/sharp -> avoid on server runtime, or move to a worker/service, or replace with a pure JS approach if possible
+
+Do NOT break existing auth logic—only change the underlying library and update imports.
+
+OPTION 3: FORCE REBUILD ON DEPLOY (ONLY IF NEEDED)
+If the module must remain native:
+1) Ensure it is in "dependencies" not "devDependencies".
+2) Add a postinstall hook:
+   "postinstall": "npm rebuild --build-from-source <MODULE_NAME> || npm rebuild <MODULE_NAME> || true"
+3) Ensure the deployment environment has build tools (node-gyp prerequisites).
+4) If using pnpm/yarn, use the correct rebuild command.
+
+------------------------------------------
+C) ENSURE DEPLOY ENV MATCHES BUILD ENV
+1) Set package.json engines to Node 20 to match ABI 115:
+   "engines": { "node": ">=20 <21" }
+2) Ensure lockfile is consistent (npm ci).
+3) Make sure the deployment does NOT reuse a dist built under a different Node major version.
+
+------------------------------------------
+D) REQUIRED OUTPUT (NO SHORTCUTS)
+1) Show exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm it’s the right file.
+3) Provide code patches with START/END markers.
+4) Show updated package.json scripts if changed.
+5) Provide a deploy checklist:
+   - clean install (rm -rf node_modules && npm ci)
+   - build (npm run build)
+   - run production (NODE_ENV=production node dist/index.cjs)
+   - confirm no native ABI error
+
+IMPORTANT:
+- Do NOT redesign the app.
+- Fix the native module failure and stop crash loop.
+- Dist must work on Linux x64 Node 20 (ABI 115).
+END PROMPT
