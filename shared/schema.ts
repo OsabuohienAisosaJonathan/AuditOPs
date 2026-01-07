@@ -263,7 +263,11 @@ export const purchases = pgTable("purchases", {
 });
 
 // Stock movements are now tied to departments and SRDs
-export const MOVEMENT_TYPES = ["transfer", "adjustment", "write_off", "waste"] as const;
+// "issue" = Main Store -> Department issuance (posts to Main ReqDep / Dept Added)
+// "transfer" = Department -> Main or Department -> Department (posts to Transfer columns)
+// "adjustment" = Increase/decrease stock (posts to Adjustment column only)
+// "write_off" / "waste" = Reduce stock (posts to WriteOff/Waste columns)
+export const MOVEMENT_TYPES = ["issue", "transfer", "adjustment", "write_off", "waste"] as const;
 export const STOCK_MOVEMENT_TYPES = MOVEMENT_TYPES; // Alias for convenience
 export type MovementType = typeof MOVEMENT_TYPES[number];
 
@@ -291,6 +295,8 @@ export const stockMovements = pgTable("stock_movements", {
   approvedAt: timestamp("approved_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  idempotencyKey: varchar("idempotency_key"),
+  sourceRef: varchar("source_ref"),
 });
 
 // Stock movement line items for per-item tracking
