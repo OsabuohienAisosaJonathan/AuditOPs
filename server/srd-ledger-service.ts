@@ -155,29 +155,68 @@ async function getMovementsForDate(
     // Track by transfer ID for unique identification
     processedTransferIds.add(t.id);
     
-    if (t.fromSrdId === srdId) {
-      const toType = await getSrdType(t.toSrdId);
-      if (srdType === "MAIN_STORE" && toType === "DEPARTMENT_STORE") {
-        summary.issuedQty += qty;
-      } else if (srdType === "DEPARTMENT_STORE" && toType === "MAIN_STORE") {
-        summary.transfersOutQty += qty;
-      } else if (srdType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
-        summary.interDeptOutQty += qty;
-      } else {
-        summary.transfersOutQty += qty;
-      }
-    }
+    // CRITICAL: Branch on transferType FIRST, then fall back to store type heuristics
+    // This ensures Issue/Transfer/Adjustment types are correctly mapped regardless of inventoryType format
+    const transferType = t.transferType || "transfer";
     
-    if (t.toSrdId === srdId) {
-      const fromType = await getSrdType(t.fromSrdId);
-      if (fromType === "MAIN_STORE" && srdType === "DEPARTMENT_STORE") {
+    if (transferType === "issue") {
+      // Issue: Main Store -> Department Store
+      // Main Store (fromSrdId): issuedQty column (Req Dep)
+      // Department Store (toSrdId): addedQty column (Added)
+      if (t.fromSrdId === srdId) {
+        summary.issuedQty += qty;
+      }
+      if (t.toSrdId === srdId) {
         summary.addedQty += qty;
-      } else if (fromType === "DEPARTMENT_STORE" && srdType === "MAIN_STORE") {
-        summary.transfersInQty += qty;
-      } else if (fromType === "DEPARTMENT_STORE" && srdType === "DEPARTMENT_STORE") {
-        summary.interDeptInQty += qty;
-      } else {
-        summary.transfersInQty += qty;
+      }
+    } else if (transferType === "adjustment") {
+      // Adjustment: only touches adjustmentQty column
+      // qty is signed: positive = increase, negative = decrease
+      // Only apply to toSrdId (the SRD being adjusted)
+      if (t.toSrdId === srdId) {
+        summary.adjustmentQty += qty; // qty already has correct sign
+      }
+    } else {
+      // Transfer: uses Transfer columns (Dept->Main, Dept->Dept)
+      // Normalize inventoryType for comparison (handle lowercase, uppercase, variations)
+      const normalizedSrdType = srdType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+      const isMainStore = normalizedSrdType.includes('MAIN');
+      const isDeptStore = normalizedSrdType.includes('DEPARTMENT') || normalizedSrdType.includes('DEPT');
+      
+      if (t.fromSrdId === srdId) {
+        const toType = await getSrdType(t.toSrdId);
+        const normalizedToType = toType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+        const toIsMain = normalizedToType.includes('MAIN');
+        const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
+        
+        if (isDeptStore && toIsMain) {
+          // Department returning to Main Store
+          summary.transfersOutQty += qty;
+        } else if (isDeptStore && toIsDept) {
+          // Inter-department transfer
+          summary.interDeptOutQty += qty;
+        } else {
+          // Fallback: treat as transfer out
+          summary.transfersOutQty += qty;
+        }
+      }
+      
+      if (t.toSrdId === srdId) {
+        const fromType = await getSrdType(t.fromSrdId);
+        const normalizedFromType = fromType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+        const fromIsMain = normalizedFromType.includes('MAIN');
+        const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
+        
+        if (fromIsDept && isMainStore) {
+          // Main Store receiving return from Department
+          summary.transfersInQty += qty;
+        } else if (fromIsDept && isDeptStore) {
+          // Inter-department transfer received
+          summary.interDeptInQty += qty;
+        } else {
+          // Fallback: treat as transfer in
+          summary.transfersInQty += qty;
+        }
       }
     }
   }
@@ -253,20 +292,20 @@ async function getMovementsForDate(
           }
           break;
         case "transfer":
-          // stockMovements with type "transfer" are separate from srdTransfers
-          // Both systems are mutually exclusive, so no de-duplication needed here
-          // The dedup was previously incorrect - srdTransfers use their own IDs
-          
+          // stockMovements with type "transfer" use Transfer columns only (not Added/Issued)
+          // Normalize inventoryType for comparison
           if (movement.fromSrdId === srdId && movement.toSrdId && movement.toSrdId !== srdId) {
             const toType = await getSrdType(movement.toSrdId);
             const fromType = await getSrdType(srdId);
-            if (fromType === "MAIN_STORE" && toType === "DEPARTMENT_STORE") {
-              // Main Store issuing to Department: issuedQty (Req Dep)
-              summary.issuedQty += qty;
-            } else if (fromType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
+            const normalizedFromType = fromType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+            const normalizedToType = toType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+            const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
+            const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
+            const toIsMain = normalizedToType.includes('MAIN');
+            
+            if (fromIsDept && toIsDept) {
               summary.interDeptOutQty += qty;
-            } else if (fromType === "DEPARTMENT_STORE" && toType === "MAIN_STORE") {
-              // Department returning to Main Store
+            } else if (fromIsDept && toIsMain) {
               summary.transfersOutQty += qty;
             } else {
               summary.transfersOutQty += qty;
@@ -275,13 +314,15 @@ async function getMovementsForDate(
           if (movement.toSrdId === srdId && movement.fromSrdId && movement.fromSrdId !== srdId) {
             const fromType = await getSrdType(movement.fromSrdId);
             const toType = await getSrdType(srdId);
-            if (fromType === "MAIN_STORE" && toType === "DEPARTMENT_STORE") {
-              // Department receiving from Main Store: addedQty (not transfer)
-              summary.addedQty += qty;
-            } else if (fromType === "DEPARTMENT_STORE" && toType === "DEPARTMENT_STORE") {
+            const normalizedFromType = fromType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+            const normalizedToType = toType?.toUpperCase().replace(/[_\s-]/g, '') || '';
+            const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
+            const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
+            const toIsMain = normalizedToType.includes('MAIN');
+            
+            if (fromIsDept && toIsDept) {
               summary.interDeptInQty += qty;
-            } else if (fromType === "DEPARTMENT_STORE" && toType === "MAIN_STORE") {
-              // Main Store receiving return from Department
+            } else if (fromIsDept && toIsMain) {
               summary.transfersInQty += qty;
             } else {
               summary.transfersInQty += qty;
