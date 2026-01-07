@@ -4043,10 +4043,52 @@ export async function registerRoutes(
 
   app.patch("/api/stock-counts/:id", requireAuth, async (req, res) => {
     try {
+      const existingCount = await storage.getStockCount(req.params.id);
+      if (!existingCount) {
+        return res.status(404).json({ error: "Stock count not found" });
+      }
+      
       const stockCount = await storage.updateStockCount(req.params.id, req.body);
       if (!stockCount) {
         return res.status(404).json({ error: "Stock count not found" });
       }
+      
+      // If actualClosingQty changed, update the store_stock physicalClosingQty and recalculate
+      const newActual = req.body.actualClosingQty;
+      if (newActual !== undefined && stockCount.storeDepartmentId) {
+        const storeStockRecord = await storage.getStoreStockByItem(
+          stockCount.storeDepartmentId,
+          stockCount.itemId,
+          stockCount.date
+        );
+        
+        if (storeStockRecord) {
+          // Update physical closing qty on store_stock
+          await storage.updateStoreStock(storeStockRecord.id, {
+            physicalClosingQty: newActual,
+          });
+          
+          // Trigger forward recalculation from next day
+          const nextDay = new Date(stockCount.date);
+          nextDay.setDate(nextDay.getDate() + 1);
+          try {
+            await recalculateForward(stockCount.clientId, stockCount.storeDepartmentId, stockCount.itemId, nextDay);
+            console.log(`[Stock Count Edit] Forward recalc triggered from ${nextDay.toISOString().split('T')[0]}`);
+          } catch (err: any) {
+            console.error(`[Stock Count Edit] Forward recalc failed:`, err.message);
+          }
+        }
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Edited Stock Count",
+        entity: "StockCount",
+        entityId: req.params.id,
+        details: `Stock count updated${stockCount.storeDepartmentId ? ' (ledger recalculated)' : ''}`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
       res.json(stockCount);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -5941,26 +5983,105 @@ export async function registerRoutes(
 
   app.patch("/api/purchases/:id", requireAuth, async (req, res) => {
     try {
-      const purchase = await storage.updatePurchase(req.params.id, req.body);
+      const purchase = await storage.getPurchase(req.params.id);
       if (!purchase) {
         return res.status(404).json({ error: "Purchase not found" });
       }
-      res.json(purchase);
+      
+      // 24-hour edit restriction
+      const createdAt = new Date(purchase.createdAt);
+      const now = new Date();
+      const hoursElapsed = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursElapsed > 24) {
+        return res.status(403).json({ 
+          error: "Edits allowed within 24 hours of creation only",
+          hoursElapsed: Math.floor(hoursElapsed)
+        });
+      }
+      
+      // Store old values for ledger update
+      const oldPurchase = purchase;
+      
+      const updated = await storage.updatePurchase(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Purchase not found" });
+      }
+      
+      // If ledger-affecting fields changed, recalculate ledger
+      // Get purchase lines and recalculate for affected items
+      const lines = await storage.getPurchaseLines(req.params.id);
+      const mainStoreSrd = await storage.getInventoryDepartmentByType(updated.clientId, "MAIN_STORE");
+      
+      if (mainStoreSrd && lines.length > 0) {
+        const purchaseDate = new Date(updated.invoiceDate);
+        for (const line of lines) {
+          try {
+            await recalculateForward(updated.clientId, mainStoreSrd.id, line.itemId, purchaseDate);
+          } catch (err: any) {
+            console.error(`[Purchase Edit] Ledger recalc failed for item ${line.itemId}:`, err.message);
+          }
+        }
+      }
+      
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "Edited Purchase",
+        entity: "Purchase",
+        entityId: req.params.id,
+        details: `Purchase edited within 24hr window`,
+        ipAddress: req.ip || "Unknown",
+      });
+      
+      res.json(updated);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
-  app.delete("/api/purchases/:id", requireSupervisorOrAbove, async (req, res) => {
+  // Delete purchase - RESTRICTED to tenant super_admin only
+  app.delete("/api/purchases/:id", requireAuth, async (req, res) => {
     try {
+      // Get user to check role
+      const user = await storage.getUser(req.session.userId!);
+      if (!user || user.role !== "super_admin") {
+        return res.status(403).json({ error: "Only organization administrators can delete purchase records" });
+      }
+      
+      const { reason } = req.body;
+      if (!reason?.trim()) {
+        return res.status(400).json({ error: "Deletion reason is required" });
+      }
+      
+      const purchase = await storage.getPurchase(req.params.id);
+      if (!purchase) {
+        return res.status(404).json({ error: "Purchase not found" });
+      }
+      
+      // Get purchase lines before deletion for ledger recalculation
+      const lines = await storage.getPurchaseLines(req.params.id);
+      const mainStoreSrd = await storage.getInventoryDepartmentByType(purchase.clientId, "MAIN_STORE");
+      
       await storage.deletePurchase(req.params.id);
+      
+      // Recalculate ledger for affected items
+      if (mainStoreSrd && lines.length > 0) {
+        const purchaseDate = new Date(purchase.invoiceDate);
+        for (const line of lines) {
+          try {
+            await recalculateForward(purchase.clientId, mainStoreSrd.id, line.itemId, purchaseDate);
+          } catch (err: any) {
+            console.error(`[Purchase Delete] Ledger recalc failed for item ${line.itemId}:`, err.message);
+          }
+        }
+      }
       
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "Deleted Purchase",
         entity: "Purchase",
         entityId: req.params.id,
-        details: `Purchase deleted`,
+        details: `Purchase deleted. Reason: ${reason}`,
         ipAddress: req.ip || "Unknown",
       });
 

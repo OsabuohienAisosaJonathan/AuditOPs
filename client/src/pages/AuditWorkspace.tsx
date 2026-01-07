@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Clock, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store, Eye, RotateCcw } from "lucide-react";
+import { CheckCircle2, Circle, Clock, AlertCircle, Save, FileText, Trash2, ArrowUpRight, ArrowDownRight, Scale, Plus, Package, Truck, Calculator, AlertTriangle, Pencil, X, Store, Eye, RotateCcw, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,39 @@ const periodLabels: Record<AuditPeriod, string> = {
   monthly: "Monthly Audit",
   custom: "Custom Range Audit",
 };
+
+// CSV Export Helper
+function exportToCSV(data: Record<string, any>[], filename: string, columns: { key: string; label: string }[]) {
+  if (data.length === 0) {
+    toast.error("No data to export");
+    return;
+  }
+  
+  const headers = columns.map(c => c.label).join(",");
+  const rows = data.map(row => 
+    columns.map(c => {
+      const value = row[c.key];
+      // Escape quotes and wrap in quotes if contains comma
+      const stringValue = value === null || value === undefined ? "" : String(value);
+      if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    }).join(",")
+  ).join("\n");
+  
+  const csv = `${headers}\n${rows}`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  toast.success("Export completed");
+}
 
 export default function AuditWorkspace() {
   const searchString = useSearch();
@@ -1726,9 +1759,35 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements, sele
             <CardTitle>Stock Movements</CardTitle>
             <CardDescription>Transfers, adjustments, and write-offs</CardDescription>
           </div>
-          <Button onClick={() => { setPostingDate(selectedDate); setCreateOpen(true); }} className="gap-2" disabled={!clientId} data-testid="button-add-movement">
-            <Plus className="h-4 w-4" /> Record Movement
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                const columns = [
+                  { key: "id", label: "ID" },
+                  { key: "createdAt", label: "Date" },
+                  { key: "movementType", label: "Type" },
+                  { key: "sourceLocation", label: "From" },
+                  { key: "destinationLocation", label: "To" },
+                  { key: "itemsDescription", label: "Description" },
+                  { key: "totalValue", label: "Value" },
+                ];
+                const exportData = stockMovements.map(m => ({
+                  ...m,
+                  createdAt: format(new Date(m.createdAt), "yyyy-MM-dd HH:mm"),
+                }));
+                exportToCSV(exportData, `MiAuditOps_StockMovements_${selectedDate}.csv`, columns);
+              }}
+              className="gap-2"
+              disabled={stockMovements.length === 0}
+              data-testid="button-export-movements"
+            >
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+            <Button onClick={() => { setPostingDate(selectedDate); setCreateOpen(true); }} className="gap-2" disabled={!clientId} data-testid="button-add-movement">
+              <Plus className="h-4 w-4" /> Record Movement
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-0">
@@ -2436,9 +2495,40 @@ function CountsTab({ stockCounts, items, clientId, departmentId, dateStr, totalV
             <CardTitle>Stock Counts</CardTitle>
             <CardDescription>Physical inventory counts and variance tracking</CardDescription>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2" disabled={!departmentId} data-testid="button-add-count">
-            <Plus className="h-4 w-4" /> Add Count
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                const columns = [
+                  { key: "id", label: "ID" },
+                  { key: "itemName", label: "Item" },
+                  { key: "openingQty", label: "Opening" },
+                  { key: "addedQty", label: "Added" },
+                  { key: "soldQty", label: "Sold" },
+                  { key: "expectedClosingQty", label: "Expected" },
+                  { key: "actualClosingQty", label: "Actual" },
+                  { key: "varianceQty", label: "Variance" },
+                ];
+                const exportData = stockCounts.map(c => {
+                  const item = items.find(i => i.id === c.itemId);
+                  return {
+                    ...c,
+                    itemName: item?.name || c.itemId,
+                    addedQty: (c as any).addedQty || "0",
+                  };
+                });
+                exportToCSV(exportData, `MiAuditOps_StockCounts_${dateStr}.csv`, columns);
+              }}
+              className="gap-2"
+              disabled={stockCounts.length === 0}
+              data-testid="button-export-counts"
+            >
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2" disabled={!departmentId} data-testid="button-add-count">
+              <Plus className="h-4 w-4" /> Add Count
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-0">

@@ -21,6 +21,7 @@ interface MovementSummary {
   issuedQty: number;
   transfersInQty: number;
   transfersOutQty: number;
+  returnInQty: number;
   interDeptInQty: number;
   interDeptOutQty: number;
   wasteQty: number;
@@ -55,7 +56,8 @@ function calculateExpectedClosing(
   opening: number,
   movements: MovementSummary
 ): number {
-  const additions = movements.addedQty + movements.transfersInQty + movements.interDeptInQty;
+  // ReturnIn (Dept→Main returns) is added to Main Store closing
+  const additions = movements.addedQty + movements.transfersInQty + movements.returnInQty + movements.interDeptInQty;
   const positiveAdj = movements.adjustmentQty > 0 ? movements.adjustmentQty : 0;
   const negativeAdj = movements.adjustmentQty < 0 ? Math.abs(movements.adjustmentQty) : 0;
   const deductions = movements.issuedQty + movements.transfersOutQty + movements.interDeptOutQty +
@@ -136,6 +138,7 @@ async function getMovementsForDate(
     issuedQty: 0,
     transfersInQty: 0,
     transfersOutQty: 0,
+    returnInQty: 0,
     interDeptInQty: 0,
     interDeptOutQty: 0,
     wasteQty: 0,
@@ -226,8 +229,8 @@ async function getMovementsForDate(
           // LEGACY FIX: Main→Dept typed as "transfer" should use Added column
           summary.addedQty += qty;
         } else if (fromIsDept && isMainStore) {
-          // Main Store receiving return from Department
-          summary.transfersInQty += qty;
+          // Main Store receiving return from Department → ReturnIn column
+          summary.returnInQty += qty;
         } else if (fromIsDept && isDeptStore) {
           // Inter-department transfer received
           summary.interDeptInQty += qty;
@@ -350,7 +353,8 @@ async function getMovementsForDate(
             } else if (fromIsDept && toIsDept) {
               summary.interDeptInQty += qty;
             } else if (fromIsDept && toIsMain) {
-              summary.transfersInQty += qty;
+              // Main Store receiving return from Department → ReturnIn column
+              summary.returnInQty += qty;
             } else {
               summary.transfersInQty += qty;
             }
@@ -398,6 +402,7 @@ async function upsertLedgerRow(
     issuedQty: safeToFixed(movements.issuedQty),
     transfersInQty: safeToFixed(movements.transfersInQty),
     transfersOutQty: safeToFixed(movements.transfersOutQty),
+    returnInQty: safeToFixed(movements.returnInQty),
     interDeptInQty: safeToFixed(movements.interDeptInQty),
     interDeptOutQty: safeToFixed(movements.interDeptOutQty),
     wasteQty: safeToFixed(movements.wasteQty),
@@ -627,6 +632,7 @@ export async function ensureLedgerRowExists(
     issuedQty: 0,
     transfersInQty: 0,
     transfersOutQty: 0,
+    returnInQty: 0,
     interDeptInQty: 0,
     interDeptOutQty: 0,
     wasteQty: 0,

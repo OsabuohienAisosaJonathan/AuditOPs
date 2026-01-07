@@ -1,0 +1,139 @@
+PROMPT: TARGETED FIXES ONLY (DO NOT TOUCH SR-D DEPARTMENT LEDGER LOGIC)
+
+IMPORTANT RULE
+Everything on SR-D Ledger (Department Stores) is PERFECT. DO NOT redesign, refactor, rename columns, or change its math/logic. Only apply the specific fixes below.
+
+========================================================
+1) STOCK MOVEMENT BUG: DEPARTMENT → MAIN STORE MUST HIT MAIN “RETURN IN”
+========================================================
+Problem: Transfer Department → Main Store is NOT reflecting in Main Store “Return In” column.
+
+Fix:
+A) Keep Department ledger unchanged (already correct).
+B) In Main Store SR-D ledger, for transfers where:
+   - fromSrdType = DEPARTMENT
+   - toSrdType = MAIN
+   Then:
+   - MainStore.ReturnIn += qty
+   - NOT MainStore.TransferIn
+   - NOT MainStore.Added
+C) Ensure Main Store totals/closing recompute using ReturnIn:
+   Closing = Opening + Purchases/Added + ReturnIn - Losses - ReqDepTotals - (other valid deductions)
+D) Backdated posting must recalc forward (up to 90 days) for:
+   - mainStoreSrdId + itemId from movementDate → today
+   - (do not alter department side logic beyond what already exists)
+
+========================================================
+2) ITEM PURCHASES REGISTER PAGE: EDIT + DELETE RULES
+========================================================
+Add edit/delete on Purchases Register table with strict rules:
+
+A) DELETE restriction:
+   - Only Tenant Super Admin can delete a purchase record.
+B) EDIT restriction:
+   - Purchase record can only be edited within 24 hours of creation (createdAt).
+   - After 24hrs, disable edit UI and show tooltip: “Edits allowed within 24 hours.”
+C) Data integrity:
+   - Editing/deleting a purchase must also update the Main Store SR-D ledger impacts correctly
+   - Do NOT distort existing SR-D ledger structure; reuse same posting service you already use.
+
+UI requirements:
+- Row actions: Edit | Delete
+- Delete shows confirm modal with strong warning and requires reason input:
+  “Deleting a purchase will change stock balances and reports. Provide reason.”
+
+========================================================
+3) GRN INPUT: AUTO SENTENCE CASE
+========================================================
+On GRN form text inputs (especially “Description/Remarks/Notes”):
+- Auto-format to Sentence case while typing or on blur:
+  Example: “bought COCA cola FROM market” → “Bought coca cola from market”
+- Do NOT affect SKU/item codes (those should stay as typed).
+- Apply only to free-text fields (description, remarks, narration).
+
+========================================================
+4) EXPORT BUTTONS: STOCK COUNT + STOCK MOVEMENT
+========================================================
+Add Export button on:
+A) Stock Count page table
+B) Stock Movement page table
+
+Export formats:
+- CSV (minimum)
+- If PDF export exists already, keep it optional; primary is CSV.
+
+Export rules:
+- Export exactly what is currently filtered on screen (date range / selected date / client / SRD).
+- Include all visible columns + IDs hidden optional.
+- File name format:
+  “MiAuditOps_<ClientName>_<PageName>_<YYYY-MM-DD>.csv”
+
+========================================================
+5) EDIT OF COUNT ON AUDIT WORKSPACE MUST UPDATE SR-D LEDGER CLOSING
+========================================================
+When a Stock Count record is edited (quantity changed):
+A) It MUST update the SR-D ledger closing of that item for that date.
+B) The update must cascade forward (up to 90 days) so later days reflect corrected opening/closing.
+C) If a count is deleted:
+   - reverse the effect:
+     - Sold column reversal where applicable
+     - Closing returns to “Waiting Count” (or expected closing)
+   - decrease Waiting Count “X” count immediately
+(Keep your existing delete/reversal logic, but ensure the ledger closing truly updates.)
+
+========================================================
+6) ADD SUPPLIER TO “ADD ITEM” FORM + AUTOCOMPLETE
+========================================================
+On Inventory Registration (Add Item form):
+A) Add Supplier field:
+   - dropdown/autocomplete searchable input
+   - shows supplier name list from Suppliers table
+B) Fetch supplier list and populate suggestions.
+C) Save selected supplierId (and supplierName for display if needed).
+D) Show supplier on:
+   - Inventory items table
+   - GRN supplier field (so it can auto-fill if item has default supplier)
+
+========================================================
+7) MAIN STORE “LOSSES” COLUMN NOT SUMMING CORRECTLY
+========================================================
+Problem: “Losses” appears but does not auto sum using correct path.
+
+Fix:
+A) LossesTotal must be computed as:
+   LossesTotal = Waste + WriteOff
+B) It must update whenever:
+   - Waste is posted
+   - WriteOff is posted
+   - A movement is reversed/edited
+C) LossesTotal must be used in Closing formula (Main Store only).
+D) Do NOT change Department ledger losses logic (already perfect).
+
+========================================================
+8) MAIN STORE “RETURN IN” MUST AUTO SUM + FEED CLOSING
+========================================================
+Fix:
+A) ReturnIn must be summed from:
+   - Dept→Main transfers (stock movement)
+   - Any approved “return” type movements if they exist
+B) ReturnIn must always:
+   - affect Total
+   - affect Closing
+C) Reverse movement must reverse ReturnIn and recompute forward.
+
+========================================================
+OUTPUT REQUIRED (MANDATORY)
+1) List exact file paths edited.
+2) For each edited file: print first 10–15 lines to confirm correct file.
+3) Provide patches with START/END markers.
+4) Provide DB/migration steps if supplierId added to items/purchases tables.
+5) Test checklist:
+   - Dept→Main transfer updates Main ReturnIn
+   - LossesTotal = waste+writeOff updates closing
+   - Purchase edit within 24h works; after 24h disabled
+   - Purchase delete only tenant super admin + reason captured
+   - Edit count updates ledger closing and forward carry-over
+   - Export works and respects filters
+   - GRN sentence case works (does not change SKUs/codes)
+END PROMPT
+

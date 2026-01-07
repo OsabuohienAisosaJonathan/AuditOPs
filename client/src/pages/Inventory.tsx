@@ -1,4 +1,11 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+
+// Sentence case utility - converts text to sentence case on blur
+// Only applies to free-text fields (not SKUs/codes)
+function toSentenceCase(text: string): string {
+  if (!text) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+}
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -56,6 +63,7 @@ export default function Inventory() {
   const [selectedGrn, setSelectedGrn] = useState<GoodsReceivedNote | null>(null);
   const [grnFilterDate, setGrnFilterDate] = useState<Date | undefined>(undefined);
   const [newItemCategoryId, setNewItemCategoryId] = useState<string>("");
+  const [newItemSupplierId, setNewItemSupplierId] = useState<string>("");
   const [newItemSerialTracking, setNewItemSerialTracking] = useState<string>("none");
   
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -540,8 +548,10 @@ export default function Inventory() {
                           status: "active",
                           serialTracking: newItemSerialTracking as "none" | "serial" | "batch" | "lot" | "imei",
                           serialNotes: formData.get("serialNotes") as string || null,
+                          supplierId: newItemSupplierId || null,
                         });
                         setNewItemCategoryId("");
+                        setNewItemSupplierId("");
                         setNewItemSerialTracking("none");
                       }} className="flex flex-col flex-1 overflow-hidden">
                         <div className="space-y-4 py-4 overflow-y-auto flex-1 px-1">
@@ -583,6 +593,23 @@ export default function Inventory() {
                               </Select>
                               <p className="text-[10px] text-muted-foreground">Category filters items per SRD</p>
                             </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="supplierId">Default Supplier</Label>
+                              <Select value={newItemSupplierId} onValueChange={setNewItemSupplierId}>
+                                <SelectTrigger data-testid="select-item-supplier">
+                                  <SelectValue placeholder="Select a supplier (optional)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">None</SelectItem>
+                                  {suppliers?.map(s => (
+                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[10px] text-muted-foreground">Auto-fills in GRN form</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <Label htmlFor="unit">Unit</Label>
                               <Input id="unit" name="unit" required placeholder="e.g., pcs, kg, bottle" data-testid="input-item-unit" />
@@ -965,7 +992,13 @@ export default function Inventory() {
                               ))}
                             </SelectContent>
                           </Select>
-                          <Input name="supplierName" placeholder="Or enter supplier name manually" required data-testid="input-grn-supplier-name" />
+                          <Input 
+                            name="supplierName" 
+                            placeholder="Or enter supplier name manually" 
+                            required 
+                            data-testid="input-grn-supplier-name"
+                            onBlur={(e) => { e.target.value = toSentenceCase(e.target.value); }}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="grnDate">Date</Label>
@@ -1881,7 +1914,13 @@ export default function Inventory() {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="editGrnSupplierName">Supplier Name</Label>
-                  <Input name="supplierName" defaultValue={selectedGrn.supplierName} required data-testid="input-edit-grn-supplier-name" />
+                  <Input 
+                    name="supplierName" 
+                    defaultValue={selectedGrn.supplierName} 
+                    required 
+                    data-testid="input-edit-grn-supplier-name"
+                    onBlur={(e) => { e.target.value = toSentenceCase(e.target.value); }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="editGrnDate">Date</Label>
