@@ -169,7 +169,7 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
   return <Component />;
 }
 
-function PlatformAdminRoutes() {
+function OwnerAdminRoutes() {
   const { admin, isLoading } = usePlatformAdminAuth();
   const [location] = useLocation();
 
@@ -179,7 +179,7 @@ function PlatformAdminRoutes() {
   }
 
   // Login page only accessible with secret parameter or if already authenticated
-  if (location === "/admin/login") {
+  if (location === "/owner/login") {
     const params = new URLSearchParams(window.location.search);
     const hasAccess = params.get("access") === "miauditops" || admin;
     if (hasAccess) {
@@ -196,13 +196,14 @@ function PlatformAdminRoutes() {
   // Authenticated - show protected routes
   return (
     <Switch>
-      <Route path="/admin" component={PlatformAdminDashboard} />
-      <Route path="/admin/organizations/:id" component={PlatformAdminOrganizations} />
-      <Route path="/admin/organizations" component={PlatformAdminOrganizations} />
-      <Route path="/admin/users" component={PlatformAdminUsers} />
-      <Route path="/admin/billing" component={PlatformAdminBilling} />
-      <Route path="/admin/logs" component={PlatformAdminLogs} />
-      <Route path="/admin/entitlements" component={PlatformAdminEntitlements} />
+      <Route path="/owner" component={PlatformAdminDashboard} />
+      <Route path="/owner/dashboard" component={PlatformAdminDashboard} />
+      <Route path="/owner/tenants/:id" component={PlatformAdminOrganizations} />
+      <Route path="/owner/tenants" component={PlatformAdminOrganizations} />
+      <Route path="/owner/users" component={PlatformAdminUsers} />
+      <Route path="/owner/billing" component={PlatformAdminBilling} />
+      <Route path="/owner/logs" component={PlatformAdminLogs} />
+      <Route path="/owner/entitlements" component={PlatformAdminEntitlements} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -212,11 +213,11 @@ function Router() {
   const [location] = useLocation();
   const { user, isLoading, authError, clearAuthError } = useAuth();
   
-  // Platform admin routes are completely separate
-  if (location.startsWith("/admin")) {
+  // Owner (platform) admin routes are completely separate
+  if (location.startsWith("/owner")) {
     return (
       <PlatformAdminAuthProvider>
-        <PlatformAdminRoutes />
+        <OwnerAdminRoutes />
       </PlatformAdminAuthProvider>
     );
   }

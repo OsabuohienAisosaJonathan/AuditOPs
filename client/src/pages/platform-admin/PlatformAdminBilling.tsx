@@ -43,7 +43,7 @@ import {
 
 async function fetchOrganizations(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
-  const response = await fetch(`/api/admin/organizations?${query}`, { credentials: "include" });
+  const response = await fetch(`/api/owner/organizations?${query}`, { credentials: "include" });
   if (!response.ok) throw new Error("Failed to fetch organizations");
   return response.json();
 }
@@ -81,7 +81,7 @@ export default function PlatformAdminBilling() {
 
   const updateSubscriptionMutation = useMutation({
     mutationFn: async ({ orgId, data }: { orgId: string; data: any }) => {
-      const response = await fetch(`/api/admin/organizations/${orgId}/subscription`, {
+      const response = await fetch(`/api/owner/organizations/${orgId}/subscription`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -100,7 +100,7 @@ export default function PlatformAdminBilling() {
 
   const grantFreeAccessMutation = useMutation({
     mutationFn: async ({ orgId, data }: { orgId: string; data: any }) => {
-      const response = await fetch(`/api/admin/organizations/${orgId}/grant-free-access`, {
+      const response = await fetch(`/api/owner/organizations/${orgId}/grant-free-access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -119,7 +119,7 @@ export default function PlatformAdminBilling() {
 
   const extendSubscriptionMutation = useMutation({
     mutationFn: async ({ orgId, data }: { orgId: string; data: any }) => {
-      const response = await fetch(`/api/admin/organizations/${orgId}/extend-subscription`, {
+      const response = await fetch(`/api/owner/organizations/${orgId}/extend-subscription`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

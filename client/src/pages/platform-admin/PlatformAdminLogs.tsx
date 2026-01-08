@@ -29,7 +29,7 @@ import {
 
 async function fetchAuditLogs(params: Record<string, string>) {
   const query = new URLSearchParams(params).toString();
-  const response = await fetch(`/api/admin/audit-logs?${query}`, { credentials: "include" });
+  const response = await fetch(`/api/owner/audit-logs?${query}`, { credentials: "include" });
   if (!response.ok) throw new Error("Failed to fetch audit logs");
   return response.json();
 }

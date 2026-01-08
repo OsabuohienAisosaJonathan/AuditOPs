@@ -1,0 +1,105 @@
+PROMPT: SEPARATE OWNER (PLATFORM) ADMIN CONSOLE FROM TENANT ADMIN UI — FIX AUTH ROUTING + REMOVE BILLING CONTROLS FROM TENANT SETTINGS
+
+ISSUE:
+Owner (platform) admin backend is mixed with tenant supervisor admin frontend.
+When an OWNER logs in, it wrongly redirects into the tenant app and shows tenant features.
+Billing controls also exist inside tenant settings, which must be removed (tenant must not edit billing).
+
+GOAL:
+A) Create a TRUE Owner Admin Console at /owner (platform-level).
+B) Keep Tenant App separate (existing dashboard/workspace).
+C) Fix login/session so owner accounts NEVER land inside tenant UI.
+D) Tenant settings should show billing READ-ONLY (plan, status, expiry), while billing edit happens only in /owner console.
+
+---------------------------------------------------------
+A) DEFINE TWO ACCOUNT TYPES (MANDATORY)
+1) Introduce an explicit “accountType” in auth/session:
+   accountType = "owner" | "tenant"
+2) On login, resolve accountType by checking user record:
+   - If user exists in owner_users => accountType="owner"
+   - Else => accountType="tenant"
+3) Session must store:
+   - session.userId
+   - session.accountType
+   - session.organizationId (ONLY for tenant accounts)
+   IMPORTANT: owner sessions must NOT require organizationId.
+
+---------------------------------------------------------
+B) ROUTING + LAYOUT SEPARATION (NO MIXING)
+1) Create /owner routes with a dedicated OwnerLayout:
+   - NO tenant sidebar
+   - NO tenant navigation
+2) Ensure tenant pages use TenantLayout only.
+3) Fix the current redirect logic after login:
+   - If accountType="owner" => redirect to /owner/dashboard
+   - If accountType="tenant" => redirect to /dashboard (existing)
+4) Fix middleware/route guard:
+   - /owner/** must reject tenant sessions (403)
+   - tenant routes must reject owner sessions (or redirect owner to /owner/dashboard)
+
+---------------------------------------------------------
+C) OWNER CONSOLE FEATURES (MINIMUM REQUIRED)
+Create pages under /owner:
+1) /owner/dashboard (KPIs: total tenants, active subs, expiring soon, churn)
+2) /owner/tenants (list/search tenants/organizations)
+3) /owner/billing (manual billing controls)
+   - change plan (Starter/Growth/Business/Enterprise)
+   - extend subscription end date
+   - grant free registration with expiry
+   - suspend/reactivate subscription
+   - audit trail for every billing change (who changed, when, before/after)
+4) /owner/users (owner staff accounts)
+   - create owner_super_admin / owner_billing_admin / owner_support
+   - reset password / disable owner user
+
+NOTE: This is PLATFORM scope; do NOT reuse tenant settings page.
+
+---------------------------------------------------------
+D) REMOVE BILLING EDIT FROM TENANT SETTINGS (KEEP READ-ONLY)
+1) In tenant settings:
+   - Keep Company Profile, Preferences, etc.
+   - Billing section should ONLY display:
+     currentPlan, status, nextBillingDate (if applicable), expiresAt, max limits
+   - Remove/disable any “edit plan”, “extend”, “manual override” UI for tenant.
+2) If there’s an “Upgrade Plan” button in tenant app:
+   - It should open a read-only modal explaining: “Contact admin / proceed to payment”
+   - OR link to a future checkout page (but NOT manual edit)
+   - Must not allow changing plan without payment/admin action.
+
+---------------------------------------------------------
+E) DATABASE / SCHEMA (MINIMAL + SAFE)
+1) Add owner_users table (if not existing):
+   - id, email, passwordHash, fullName, role, createdAt, updatedAt
+2) Add owner_audit_log table:
+   - id, ownerUserId, action, targetType, targetId, beforeJson, afterJson, createdAt
+3) Add subscription fields on organization/tenant (if not already):
+   - plan, status, expiresAt, maxClients, maxDepartments, etc.
+4) Do NOT delete existing tenant tables. Only add what’s needed.
+
+---------------------------------------------------------
+F) BOOTSTRAP OWNER ADMIN (CRITICAL)
+1) Provide a secure bootstrap route:
+   - /owner/setup (ONLY allowed if no owner user exists)
+   - creates first owner_super_admin
+2) After first owner exists, /owner/setup must be disabled permanently.
+
+---------------------------------------------------------
+G) REQUIRED OUTPUT (STRICT)
+1) Show exact file paths edited.
+2) For each edited file, print first 10–15 lines to confirm correct file.
+3) Provide code patches with clear START/END markers.
+4) Provide migration steps if DB changes.
+5) Provide a test checklist:
+   - owner login goes to /owner/dashboard
+   - tenant login goes to /dashboard
+   - owner cannot open tenant pages
+   - tenant cannot open /owner pages
+   - tenant settings shows billing read-only
+   - billing changes only possible in /owner/billing and logged in owner_audit_log
+
+IMPORTANT CONSTRAINTS:
+- Do NOT redesign tenant features.
+- Do NOT move tenant dashboard into /owner.
+- Fix separation + routing + permissions properly.
+END PROMPT
+

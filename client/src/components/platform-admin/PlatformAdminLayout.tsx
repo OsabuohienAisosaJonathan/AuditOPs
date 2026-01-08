@@ -27,12 +27,12 @@ interface PlatformAdminLayoutProps {
 }
 
 const navItems = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/organizations", label: "Organizations", icon: Building2 },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/billing", label: "Billing", icon: CreditCard },
-  { href: "/admin/entitlements", label: "Entitlements", icon: Shield },
-  { href: "/admin/logs", label: "Audit Logs", icon: ScrollText },
+  { href: "/owner", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/owner/tenants", label: "Tenants", icon: Building2 },
+  { href: "/owner/users", label: "Users", icon: Users },
+  { href: "/owner/billing", label: "Billing", icon: CreditCard },
+  { href: "/owner/entitlements", label: "Entitlements", icon: Shield },
+  { href: "/owner/logs", label: "Audit Logs", icon: ScrollText },
 ];
 
 export function PlatformAdminLayout({ children }: PlatformAdminLayoutProps) {
@@ -41,7 +41,7 @@ export function PlatformAdminLayout({ children }: PlatformAdminLayoutProps) {
 
   const handleLogout = async () => {
     await logout();
-    window.location.href = "/admin/login";
+    window.location.href = "/owner/login";
   };
 
   const getRoleLabel = (role: string) => {
@@ -73,7 +73,7 @@ export function PlatformAdminLayout({ children }: PlatformAdminLayoutProps) {
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
             const isActive = location === item.href || 
-              (item.href !== "/admin" && location.startsWith(item.href));
+              (item.href !== "/owner" && location.startsWith(item.href));
             return (
               <Link key={item.href} href={item.href}>
                 <a

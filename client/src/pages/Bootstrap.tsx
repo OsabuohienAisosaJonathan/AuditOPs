@@ -39,7 +39,7 @@ export default function Bootstrap() {
     setIsLoading(true);
     
     try {
-      const response = await fetch("/api/admin/bootstrap", {
+      const response = await fetch("/api/owner/bootstrap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
