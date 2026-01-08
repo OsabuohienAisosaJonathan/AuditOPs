@@ -175,11 +175,16 @@ function OwnerAdminRoutes() {
 
   // Owner login page is always accessible (no secret parameter needed)
   if (location === "/owner/login") {
+    // Show loading while checking auth status
+    if (isLoading) {
+      return <AuthLoadingScreen />;
+    }
     // If already logged in, redirect to dashboard
     if (admin) {
       window.location.href = "/owner/dashboard";
       return <AuthLoadingScreen />;
     }
+    // Not logged in - show login page
     return <PlatformAdminLogin />;
   }
 
