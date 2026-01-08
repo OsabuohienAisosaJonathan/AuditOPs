@@ -54,7 +54,7 @@ export default function Bootstrap() {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || "Bootstrap failed");
+        throw new Error(data.message || data.error || "Bootstrap failed");
       }
       
       setSuccess(true);

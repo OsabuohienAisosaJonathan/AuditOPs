@@ -577,8 +577,17 @@ export function registerPlatformAdminRoutes(app: Express) {
   // =====================================================
 
   app.post("/api/owner/bootstrap", async (req, res) => {
+    console.log("[BOOTSTRAP] Request received:", { 
+      email: req.body.email, 
+      hasPassword: !!req.body.password,
+      hasBootstrapKey: !!req.body.bootstrapKey,
+      fullName: req.body.fullName 
+    });
+    
     try {
       const admins = await platformAdminStorage.getAllPlatformAdmins();
+      console.log("[BOOTSTRAP] Existing admins count:", admins.length);
+      
       if (admins.length > 0) {
         return res.status(403).json({ message: "Platform admin already exists. Use login." });
       }
@@ -586,6 +595,8 @@ export function registerPlatformAdminRoutes(app: Express) {
       const { email, password, name, bootstrapKey, fullName } = req.body;
       
       const expectedKey = process.env.ADMIN_BOOTSTRAP_KEY || "miauditops-platform-admin-setup";
+      console.log("[BOOTSTRAP] Key check:", { provided: !!bootstrapKey, expected: !!expectedKey, match: bootstrapKey === expectedKey });
+      
       if (bootstrapKey !== expectedKey) {
         return res.status(403).json({ message: "Invalid bootstrap key" });
       }
