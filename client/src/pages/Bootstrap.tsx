@@ -36,22 +36,33 @@ export default function Bootstrap() {
       return;
     }
     
+    if (!formData.fullName.trim()) {
+      setError("Full name is required");
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
+      console.log("[Bootstrap] Submitting form...");
+      const payload = {
+        email: formData.email,
+        username: formData.username || formData.email,
+        password: formData.password,
+        fullName: formData.fullName,
+        bootstrapKey: formData.bootstrapKey,
+      };
+      console.log("[Bootstrap] Payload:", { ...payload, password: "***" });
+      
       const response = await fetch("/api/owner/bootstrap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: formData.email,
-          username: formData.username || formData.email,
-          password: formData.password,
-          fullName: formData.fullName,
-          bootstrapKey: formData.bootstrapKey || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       
+      console.log("[Bootstrap] Response status:", response.status);
       const data = await response.json();
+      console.log("[Bootstrap] Response data:", data);
       
       if (!response.ok) {
         throw new Error(data.message || data.error || "Bootstrap failed");
@@ -59,9 +70,10 @@ export default function Bootstrap() {
       
       setSuccess(true);
       setTimeout(() => {
-        setLocation("/login");
+        setLocation("/owner/login");
       }, 2000);
     } catch (err: any) {
+      console.error("[Bootstrap] Error:", err);
       setError(err.message || "Failed to create admin account");
     } finally {
       setIsLoading(false);
