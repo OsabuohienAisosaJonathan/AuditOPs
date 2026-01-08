@@ -4,28 +4,14 @@ import { probeDatabase } from "./db";
 
 export function circuitBreakerGuard(routeId: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
+    // First call isCircuitOpen() to trigger any state transitions (OPEN→HALF_OPEN after cooldown)
+    const isOpen = circuitBreaker.isCircuitOpen();
+    
+    // Now get fresh stats AFTER state transitions
     const cbStats = circuitBreaker.getCircuitStats();
     
-    if (cbStats.state === 'HALF_OPEN') {
-      const timestamp = new Date().toISOString();
-      console.info(`[${timestamp}] CIRCUIT_BREAKER_PROBE`, {
-        route: routeId,
-        action: 'attempting_probe_request',
-      });
-      
-      const probeSuccess = await probeDatabase();
-      if (!probeSuccess) {
-        return res.status(503).json({
-          message: "Service temporarily unavailable. Retrying shortly.",
-          circuitBreaker: {
-            state: 'OPEN',
-            cooldownRemaining: circuitBreaker.getConfig().cooldownMs,
-          }
-        });
-      }
-    }
-    
-    if (circuitBreaker.isCircuitOpen()) {
+    // If circuit is fully OPEN (not transitioned to HALF_OPEN), reject immediately
+    if (isOpen) {
       const timestamp = new Date().toISOString();
       console.warn(`[${timestamp}] CIRCUIT_BREAKER_REJECTED`, {
         route: routeId,
@@ -41,6 +27,30 @@ export function circuitBreakerGuard(routeId: string) {
           cooldownRemaining: cbStats.cooldownRemaining,
         }
       });
+    }
+    
+    // If state is HALF_OPEN, we're in probe mode - test with a database probe
+    if (cbStats.state === 'HALF_OPEN') {
+      const timestamp = new Date().toISOString();
+      console.info(`[${timestamp}] CIRCUIT_BREAKER_PROBE`, {
+        route: routeId,
+        action: 'attempting_probe_request',
+      });
+      
+      const probeSuccess = await probeDatabase();
+      if (!probeSuccess) {
+        // Probe failed - record failure to reopen circuit
+        circuitBreaker.recordFailure(routeId);
+        
+        return res.status(503).json({
+          message: "Service temporarily unavailable. Retrying shortly.",
+          circuitBreaker: {
+            state: 'OPEN',
+            cooldownRemaining: circuitBreaker.getConfig().cooldownMs,
+          }
+        });
+      }
+      // Probe succeeded - continue with request (success will be recorded by route handler)
     }
     
     next();
