@@ -2,8 +2,8 @@ import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
 import * as schema from "@shared/schema";
+import * as circuitBreaker from "./circuitBreaker";
 
-// Startup diagnostic: Log env var presence (SAFE - never logs values)
 console.log('[DB STARTUP] Environment check:', {
   DATABASE_URL: !!process.env.DATABASE_URL,
   PGHOST: !!process.env.PGHOST,
@@ -21,64 +21,40 @@ let _initPromise: Promise<void> | null = null;
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Circuit breaker state
-let circuitBreakerOpen = false;
-let circuitBreakerOpenedAt = 0;
-let consecutiveTimeouts = 0;
-const CIRCUIT_BREAKER_THRESHOLD = 5; // Open after 5 timeouts
-const CIRCUIT_BREAKER_RESET_MS = 30000; // Reset after 30s
-const FAST_ACQUIRE_TIMEOUT_MS = 3000; // Fast fail for connection acquisition
-
-// Pool statistics for diagnostics
-export function getPoolStats(): { totalCount: number; idleCount: number; waitingCount: number; circuitBreakerOpen: boolean } | null {
+export function getPoolStats(): { 
+  totalCount: number; 
+  idleCount: number; 
+  waitingCount: number; 
+  circuitBreakerState: string;
+  circuitBreakerOpen: boolean;
+} | null {
   if (!_pool) return null;
+  const cbStats = circuitBreaker.getCircuitStats();
   return {
     totalCount: _pool.totalCount,
     idleCount: _pool.idleCount,
     waitingCount: _pool.waitingCount,
-    circuitBreakerOpen,
+    circuitBreakerState: cbStats.state,
+    circuitBreakerOpen: cbStats.isOpen,
   };
 }
 
-// Check if circuit breaker should allow requests
 export function isCircuitBreakerOpen(): boolean {
-  if (!circuitBreakerOpen) return false;
-  
-  // Check if enough time has passed to reset
-  if (Date.now() - circuitBreakerOpenedAt > CIRCUIT_BREAKER_RESET_MS) {
-    console.log('[Circuit Breaker] Resetting - cooldown period ended');
-    circuitBreakerOpen = false;
-    consecutiveTimeouts = 0;
-    return false;
-  }
-  
-  return true;
+  return circuitBreaker.isCircuitOpen();
 }
 
-// Record a timeout and potentially open circuit breaker
 export function recordDbTimeout(): void {
-  consecutiveTimeouts++;
-  console.warn(`[Circuit Breaker] Timeout recorded. Count: ${consecutiveTimeouts}/${CIRCUIT_BREAKER_THRESHOLD}`);
-  
-  if (consecutiveTimeouts >= CIRCUIT_BREAKER_THRESHOLD && !circuitBreakerOpen) {
-    circuitBreakerOpen = true;
-    circuitBreakerOpenedAt = Date.now();
-    console.error('[Circuit Breaker] OPENED - Too many DB timeouts. Routes will return 503 for 30s.');
-  }
+  circuitBreaker.recordFailure('db_pool');
 }
 
-// Record a successful DB operation
 export function recordDbSuccess(): void {
-  if (consecutiveTimeouts > 0) {
-    consecutiveTimeouts = 0;
-  }
+  circuitBreaker.recordSuccess('db_pool');
 }
 
-// Log timing for DB operations
 export function logDbTiming(operation: string, startTime: number, context?: Record<string, any>) {
   const duration = Date.now() - startTime;
   const stats = getPoolStats();
-  const warnThreshold = 2000; // 2 seconds
+  const warnThreshold = 1000;
   
   if (duration > warnThreshold) {
     console.warn(`[DB SLOW] ${operation} took ${duration}ms`, {
@@ -88,7 +64,6 @@ export function logDbTiming(operation: string, startTime: number, context?: Reco
   }
 }
 
-// Retry connection with exponential backoff (only at pool creation)
 async function connectWithRetry(pool: pkg.Pool, maxRetries = 2): Promise<void> {
   const delays = [300, 800, 1500];
   
@@ -113,7 +88,6 @@ async function connectWithRetry(pool: pkg.Pool, maxRetries = 2): Promise<void> {
 }
 
 function ensureDatabase() {
-  // REQUIRE DATABASE_URL - fail fast with clear error
   if (!process.env.DATABASE_URL) {
     const errorMsg = isProduction
       ? "DATABASE_URL is missing in production secrets. Add it in the Secrets panel."
@@ -122,40 +96,34 @@ function ensureDatabase() {
     throw new Error(errorMsg);
   }
   
-  // SINGLETON: Only create pool once
   if (!_pool) {
     const dbUrl = new URL(process.env.DATABASE_URL);
     const isPooled = dbUrl.hostname.includes('pooler') || dbUrl.port === '6543';
     console.log(`[DB Config] host=${dbUrl.hostname}, pooled=${isPooled}, ssl=${dbUrl.searchParams.get('sslmode') || 'default'}, env=${isProduction ? 'production' : 'development'}`);
     
-    // Production: smaller pool to prevent connection storms
-    // Development: slightly larger for faster local testing
     const maxConnections = isProduction ? 5 : 8;
     
     _pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      max: maxConnections, // 5 in production, 8 in development
-      min: 0, // Allow pool to shrink to 0 when idle
-      idleTimeoutMillis: 30000, // Close idle connections after 30s
-      connectionTimeoutMillis: 10000, // 10s max wait for connection
-      statement_timeout: 15000, // Statement timeout: 15s
-      keepAlive: true, // Enable TCP keepalive
-      keepAliveInitialDelayMillis: 10000, // Start keepalive after 10s idle
-      allowExitOnIdle: true, // Allow process to exit when pool is idle
+      max: maxConnections,
+      min: 0,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+      statement_timeout: 2000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+      allowExitOnIdle: true,
     });
     
     console.log(`[DB Pool] Created singleton pool with max=${maxConnections} connections`);
     
-    // Log pool errors and detect timeout patterns
     _pool.on('error', (err) => {
       console.error('[DB Pool] Unexpected error on idle client:', err.message);
-      // Check for timeout-related errors to trigger circuit breaker
       if (err.message.includes('timeout') || err.message.includes('ETIMEDOUT') || err.message.includes('ECONNREFUSED')) {
         recordDbTimeout();
       }
     });
     
-    // Log pool connection events
     _pool.on('connect', () => {
       const stats = getPoolStats();
       console.log('[DB Pool] New connection established', stats);
@@ -174,7 +142,6 @@ function ensureDatabase() {
   return { pool: _pool, db: _db };
 }
 
-// Initialize pool with retry (call once at startup)
 export async function initializePool(): Promise<void> {
   if (_initPromise) return _initPromise;
   
@@ -186,11 +153,9 @@ export async function initializePool(): Promise<void> {
   return _initPromise;
 }
 
-// Health check - fast timeout for monitoring (SELECT 1 with 2s timeout)
 export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number; error?: string; poolStats?: ReturnType<typeof getPoolStats> }> {
   const startTime = Date.now();
   
-  // If DATABASE_URL is missing, return error immediately
   if (!process.env.DATABASE_URL) {
     return {
       ok: false,
@@ -203,7 +168,6 @@ export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number;
   try {
     const { pool } = ensureDatabase();
     
-    // Use a separate connection with shorter timeout for health check
     const client = await Promise.race([
       pool.connect(),
       new Promise<never>((_, reject) => 
@@ -230,9 +194,30 @@ export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number;
   }
 }
 
-// Acquire a connection with fast-fail guard
+export async function probeDatabase(): Promise<boolean> {
+  try {
+    const { pool } = ensureDatabase();
+    const client = await Promise.race([
+      pool.connect(),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Probe timeout')), 2000)
+      )
+    ]) as pkg.PoolClient;
+    
+    try {
+      await client.query('SELECT 1');
+      recordDbSuccess();
+      return true;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    recordDbTimeout();
+    return false;
+  }
+}
+
 export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolClient | null; error?: string }> {
-  // Check circuit breaker first
   if (isCircuitBreakerOpen()) {
     return { client: null, error: 'Database temporarily unavailable (circuit breaker open)' };
   }
@@ -241,16 +226,15 @@ export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolCl
   try {
     const { pool } = ensureDatabase();
     
-    // Fast-fail acquisition with shorter timeout
     const client = await Promise.race([
       pool.connect(),
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Connection acquisition timeout')), FAST_ACQUIRE_TIMEOUT_MS)
+        setTimeout(() => reject(new Error('Connection acquisition timeout')), 2000)
       )
     ]) as pkg.PoolClient;
     
     const acquireTime = Date.now() - startTime;
-    if (acquireTime > 2000) {
+    if (acquireTime > 1000) {
       console.warn(`[DB Pool] Slow connection acquisition: ${acquireTime}ms`, getPoolStats());
     }
     
@@ -263,6 +247,8 @@ export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolCl
     return { client: null, error: err.message };
   }
 }
+
+export { circuitBreaker };
 
 export const pool = new Proxy({} as pkg.Pool, {
   get(_target, prop) {
