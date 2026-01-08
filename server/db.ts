@@ -108,8 +108,8 @@ function ensureDatabase() {
       max: maxConnections,
       min: 0,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-      statement_timeout: 2000,
+      connectionTimeoutMillis: 5000,
+      statement_timeout: 15000,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
       allowExitOnIdle: true,
@@ -171,7 +171,7 @@ export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number;
     const client = await Promise.race([
       pool.connect(),
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Health check connection timeout')), 2000)
+        setTimeout(() => reject(new Error('Health check connection timeout')), 5000)
       )
     ]) as pkg.PoolClient;
     
@@ -200,7 +200,7 @@ export async function probeDatabase(): Promise<boolean> {
     const client = await Promise.race([
       pool.connect(),
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Probe timeout')), 2000)
+        setTimeout(() => reject(new Error('Probe timeout')), 5000)
       )
     ]) as pkg.PoolClient;
     
@@ -229,7 +229,7 @@ export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolCl
     const client = await Promise.race([
       pool.connect(),
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Connection acquisition timeout')), 2000)
+        setTimeout(() => reject(new Error('Connection acquisition timeout')), 5000)
       )
     ]) as pkg.PoolClient;
     
