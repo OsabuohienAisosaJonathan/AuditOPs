@@ -1,0 +1,78 @@
+2026-01-08 04:09:20.84
+56c0da9c
+User
+3:09:20 AM [express] POST /api/auth/refresh 401 in 1ms :: {"error":"No active session","code":"NO_SESSION"}
+2026-01-08 04:09:37.31
+56c0da9c
+User
+[CachedSessionStore] Sync skipped - circuit open, 40s remaining
+2026-01-08 04:10:06.37
+56c0da9c
+User
+at /home/runner/workspace/dist/index.cjs:64:13356
+2026-01-08 04:10:06.37
+56c0da9c
+User
+at async /home/runner/workspace/dist/index.cjs:311:31649
+2026-01-08 04:10:06.37
+56c0da9c
+User
+at async /home/runner/workspace/dist/index.cjs:311:209232
+2026-01-08 04:10:06.37
+56c0da9c
+User
+Bootstrap platform admin error: Error: timeout exceeded when trying to connect
+2026-01-08 04:10:06.37
+56c0da9c
+User
+[SLOW ROUTE] POST /api/admin/bootstrap took 10012ms (threshold: 2000ms) status=500
+2026-01-08 04:10:06.37
+56c0da9c
+User
+[SERVER ERROR] POST /api/admin/bootstrap 500 in 10012ms
+2026-01-08 04:10:06.37
+56c0da9c
+User
+3:10:06 AM [express] POST /api/admin/bootstrap 500 in 10012ms :: {"message":"Failed to bootstrap platform admin"}
+2026-01-08 04:10:06.37
+56c0da9c
+User
+[SLOW/ERROR] POST /api/admin/bootstrap 500 10012ms userId=anonymous reqId=srv-1767841796359-qfaqm7cjs
+2026-01-08 04:10:19.85
+56c0da9c
+User
+Bootstrap platform admin error: Error: timeout exceeded when trying to connect
+2026-01-08 04:10:19.85
+56c0da9c
+User
+at async /home/runner/workspace/dist/index.cjs:311:209232
+2026-01-08 04:10:19.85
+56c0da9c
+User
+[SLOW ROUTE] POST /api/admin/bootstrap took 10009ms (threshold: 2000ms) status=500
+2026-01-08 04:10:19.85
+56c0da9c
+User
+[SERVER ERROR] POST /api/admin/bootstrap 500 in 10009ms
+2026-01-08 04:10:19.85
+56c0da9c
+User
+at async /home/runner/workspace/dist/index.cjs:311:31649
+2026-01-08 04:10:19.85
+56c0da9c
+User
+at /home/runner/workspace/dist/index.cjs:64:13356
+2026-01-08 04:10:19.85
+56c0da9c
+User
+3:10:19 AM [express] POST /api/admin/bootstrap 500 in 10009ms :: {"message":"Failed to bootstrap platform admin"}
+2026-01-08 04:10:19.85
+56c0da9c
+User
+[SLOW/ERROR] POST /api/admin/bootstrap 500 10010ms userId=anonymous reqId=srv-1767841809842-y5nzhmnxu
+2026-01-08 04:10:37.32
+56c0da9c
+User
+[CachedSessionStore] Circuit breaker reset - attempting sync again
+Wrap
+Colors
