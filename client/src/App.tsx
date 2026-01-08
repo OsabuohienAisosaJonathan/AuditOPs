@@ -215,18 +215,9 @@ function OwnerAdminRoutes() {
   );
 }
 
-function Router() {
+function TenantRouter() {
   const [location] = useLocation();
   const { user, isLoading, authError, clearAuthError } = useAuth();
-  
-  // Owner (platform) admin routes are completely separate
-  if (location.startsWith("/owner")) {
-    return (
-      <PlatformAdminAuthProvider>
-        <OwnerAdminRoutes />
-      </PlatformAdminAuthProvider>
-    );
-  }
   
   // Define public routes that don't need auth
   const publicRoutes = ["/", "/login", "/signup", "/about", "/contact", "/setup", "/forgot-password", "/reset-password", "/check-email", "/verify-email", "/bootstrap", "/change-password"];
@@ -266,6 +257,22 @@ function Router() {
   
   // Authenticated - render protected routes with layout
   return <ProtectedRoutes />;
+}
+
+function Router() {
+  const [location] = useLocation();
+  
+  // Owner (platform) admin routes are completely separate - check FIRST before any tenant logic
+  if (location.startsWith("/owner")) {
+    return (
+      <PlatformAdminAuthProvider>
+        <OwnerAdminRoutes />
+      </PlatformAdminAuthProvider>
+    );
+  }
+  
+  // All other routes go through tenant auth flow
+  return <TenantRouter />;
 }
 
 function App() {
