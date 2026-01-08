@@ -6,8 +6,9 @@ import { hash, compare } from "bcrypt";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
-import { pool } from "./db";
+import { pool, circuitBreaker } from "./db";
 import { CachedSessionStore } from "./cached-session-store";
+import { circuitBreakerGuard, requestTimeoutWrapper, handleCircuitBreakerError } from "./circuitBreakerMiddleware";
 import { 
   insertUserSchema, insertClientSchema, insertCategorySchema, insertDepartmentSchema, 
   insertSalesEntrySchema, insertPurchaseSchema, insertStockMovementSchema, insertStockMovementLineSchema,
@@ -656,7 +657,7 @@ export async function registerRoutes(
     console.log(`[AUTH DIAGNOSTIC] ${event}:`, JSON.stringify(diagnosticData, null, 2));
   }
   
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", requestTimeoutWrapper(3000), circuitBreakerGuard('auth_login'), async (req, res) => {
     const requestId = (req as any).requestId || `login-${Date.now()}`;
     const timings: Record<string, number> = {};
     const loginStart = Date.now();
@@ -1593,11 +1594,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/auth/me", async (req, res) => {
+  app.get("/api/auth/me", requestTimeoutWrapper(3000), circuitBreakerGuard('auth_me'), async (req, res) => {
     const requestId = (req as any).requestId || 'unknown';
     const sessionIdPrefix = req.sessionID ? req.sessionID.substring(0, 8) : 'none';
     
-    // Log detailed session diagnostics for /api/auth/me
     console.log(`[AUTH /api/auth/me] Request: requestId=${requestId}, sessionId=${sessionIdPrefix}..., host=${req.headers.host}, protocol=${req.protocol}, secure=${req.secure}, xForwardedProto=${req.headers['x-forwarded-proto']}, hasCookie=${!!req.headers.cookie}, sessionUserId=${req.session?.userId || 'none'}, cookieSecure=${req.session?.cookie?.secure}`);
     
     if (!req.session?.userId) {
@@ -1612,6 +1612,7 @@ export async function registerRoutes(
       }
       
       console.log(`[AUTH /api/auth/me] Success: userId=${user.id}, org=${user.organizationId}`);
+      circuitBreaker.recordSuccess('auth_me');
       
       res.json({ 
         id: user.id, 
@@ -1623,6 +1624,7 @@ export async function registerRoutes(
         accessScope: user.accessScope,
       });
     } catch (error: any) {
+      if (handleCircuitBreakerError(error, res, 'auth_me')) return;
       res.status(500).json({ error: error.message });
     }
   });

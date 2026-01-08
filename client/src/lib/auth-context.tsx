@@ -89,10 +89,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             status: err.status || "ERROR",
             message: err.message 
           });
-          // CRITICAL: If verify fails, user is NOT authenticated
-          setUser(null);
-          // Set auth error for non-401 errors (timeout, network, server errors)
-          if (err.status !== 401 && err.status !== 403) {
+          
+          // Handle 503 (Service Unavailable) - don't clear user, show retry banner
+          if (err.status === 503) {
+            setAuthError("service_unavailable");
+            // Don't clear user - keep existing session if any
+          } else if (err.status === 401 || err.status === 403) {
+            // User is not authenticated - clear state, don't show error
+            setUser(null);
+          } else {
+            // Other errors (timeout, network) - clear user, show error
+            setUser(null);
             setAuthError(err.isTimeout ? "timeout" : "network");
           }
         }

@@ -62,35 +62,52 @@ function AuthLoadingScreen() {
 }
 
 function AuthErrorScreen({ error, onRetry, onGoToLogin }: { error: string; onRetry: () => void; onGoToLogin: () => void }) {
+  const isServiceUnavailable = error === "service_unavailable";
+  const isTimeout = error === "timeout";
+  
+  const getTitle = () => {
+    if (isServiceUnavailable) return "Service Temporarily Unavailable";
+    if (isTimeout) return "Connection Timeout";
+    return "Connection Problem";
+  };
+  
+  const getMessage = () => {
+    if (isServiceUnavailable) return "The service is temporarily unavailable. This usually resolves within 30 seconds. Please try again.";
+    if (isTimeout) return "The server took too long to respond. Please try again.";
+    return "Unable to verify your session. Please check your connection.";
+  };
+  
   return (
     <div className="flex items-center justify-center min-h-screen bg-background">
       <div className="text-center space-y-4 p-6 max-w-md">
-        <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
-          <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${isServiceUnavailable ? 'bg-orange-100' : 'bg-amber-100'}`}>
+          <svg className={`h-6 w-6 ${isServiceUnavailable ? 'text-orange-600' : 'text-amber-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
         <h2 className="text-xl font-semibold text-foreground">
-          {error === "timeout" ? "Connection Timeout" : "Connection Problem"}
+          {getTitle()}
         </h2>
         <p className="text-muted-foreground">
-          {error === "timeout" 
-            ? "The server took too long to respond. Please try again."
-            : "Unable to verify your session. Please check your connection."}
+          {getMessage()}
         </p>
         <div className="flex gap-3 justify-center">
           <button
             onClick={onRetry}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            data-testid="button-retry"
           >
             Retry
           </button>
-          <button
-            onClick={onGoToLogin}
-            className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
-          >
-            Go to Login
-          </button>
+          {!isServiceUnavailable && (
+            <button
+              onClick={onGoToLogin}
+              className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
+              data-testid="button-go-to-login"
+            >
+              Go to Login
+            </button>
+          )}
         </div>
       </div>
     </div>
