@@ -36,8 +36,8 @@ Supports client-level and outlet-level departments with configurable inheritance
 ### Authentication & Authorization
 Session-based authentication with `super_admin`, `supervisor`, `auditor` roles. Features include rate limiting, strong password requirements, and email verification. A bootstrap flow is available for initial super admin creation.
 
-### Platform Admin Console
-A separate, isolated administrative interface (`/platform-admin/*`) for MiAuditOps internal staff. It uses distinct authentication, roles (`platform_super_admin`, `billing_admin`, `support_admin`, `compliance_admin`, `readonly_admin`), and database tables. Provides features for managing organizations, users, billing, and auditing platform admin actions.
+### Owner Console (Platform Admin)
+A separate, isolated administrative interface at `/owner/*` routes for MiAuditOps internal staff. Uses distinct authentication (login at `/owner/login`), roles (`platform_super_admin`, `billing_admin`, `support_admin`, `compliance_admin`, `readonly_admin`), and database tables. Provides features for managing tenants (organizations), users, billing, entitlements, and audit logs. API endpoints use `/api/owner/*` namespace. Tenant billing is read-only; all subscription management flows through the Owner Console.
 
 ## External Dependencies
 
