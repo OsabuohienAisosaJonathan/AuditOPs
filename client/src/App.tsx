@@ -173,24 +173,25 @@ function OwnerAdminRoutes() {
   const { admin, isLoading } = usePlatformAdminAuth();
   const [location] = useLocation();
 
+  // Owner login page is always accessible (no secret parameter needed)
+  if (location === "/owner/login") {
+    // If already logged in, redirect to dashboard
+    if (admin) {
+      window.location.href = "/owner/dashboard";
+      return <AuthLoadingScreen />;
+    }
+    return <PlatformAdminLogin />;
+  }
+
   // Show loading while checking auth - prevents flash of protected content
   if (isLoading) {
     return <AuthLoadingScreen />;
   }
 
-  // Login page only accessible with secret parameter or if already authenticated
-  if (location === "/owner/login") {
-    const params = new URLSearchParams(window.location.search);
-    const hasAccess = params.get("access") === "miauditops" || admin;
-    if (hasAccess) {
-      return <PlatformAdminLogin />;
-    }
-    return <NotFound />;
-  }
-
-  // Not authenticated - show 404 to hide admin existence
+  // Not authenticated - redirect to owner login
   if (!admin) {
-    return <NotFound />;
+    window.location.href = "/owner/login";
+    return <AuthLoadingScreen />;
   }
 
   // Authenticated - show protected routes
