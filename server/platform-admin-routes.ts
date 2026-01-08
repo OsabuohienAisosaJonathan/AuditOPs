@@ -583,21 +583,23 @@ export function registerPlatformAdminRoutes(app: Express) {
         return res.status(403).json({ message: "Platform admin already exists. Use login." });
       }
 
-      const { email, password, name, secretKey } = req.body;
+      const { email, password, name, bootstrapKey, fullName } = req.body;
       
-      const expectedKey = process.env.PLATFORM_ADMIN_SECRET || "miauditops-platform-admin-setup";
-      if (secretKey !== expectedKey) {
-        return res.status(403).json({ message: "Invalid secret key" });
+      const expectedKey = process.env.ADMIN_BOOTSTRAP_KEY || "miauditops-platform-admin-setup";
+      if (bootstrapKey !== expectedKey) {
+        return res.status(403).json({ message: "Invalid bootstrap key" });
       }
+      
+      const adminName = name || fullName;
 
-      if (!email || !password || !name) {
+      if (!email || !password || !adminName) {
         return res.status(400).json({ message: "Email, password, and name are required" });
       }
 
       const admin = await platformAdminStorage.createPlatformAdmin({
         email: email.toLowerCase(),
         password,
-        name,
+        name: adminName,
         role: "platform_super_admin",
         isActive: true,
       });
