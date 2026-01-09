@@ -1,0 +1,90 @@
+Check if this task was completed and implemented ensure its working: TARGETED FIX PROMPT – SR-D MAIN STORE & DEPARTMENT LEDGERS (NO SCOPE CREEP)
+IMPORTANT RULE
+Do not redesign tables, rename columns, refactor unrelated logic, or touch working areas.
+Apply only the fixes described below.
+1️⃣ SR-D MAIN STORE LEDGER – FIX CLOSING AUTO-CALCULATION
+CURRENT STATE (CONFIRMED)
+Carry-over logic is already correct
+Opening correctly comes from previous day Closing
+Purchases and requisitions already affect balances correctly
+ACTUAL PROBLEM (ONLY THIS)
+👉 Closing balance does NOT auto-calculate when:
+Return-In transactions are posted
+Losses (waste / write-off / adjustment) are posted
+The values appear in their columns, but Closing does not immediately recompute.
+REQUIRED FIX (MAIN STORE – ONLY CLOSING LOGIC)
+A. AUTO-RECALCULATE CLOSING ON EVERY TRANSACTION
+The Closing column must automatically recalculate whenever ANY of the following columns change:
+Opening
+Purchases
+Return-In
+Losses (waste / write-off / adjustment)
+Requisition / Issue to Departments
+This recalculation must occur:
+On create
+On edit
+On delete / reversal
+On back-dated entries
+⚠️ Closing must never be manually editable.
+CORRECT CLOSING FORMULA (MAIN STORE)
+Copy code
+
+
+Closing =
+(Opening
++ Purchases
++ Return_In)
+− (Losses
++ Total_Issued_To_Departments)
+✔️ This formula must be the single source of truth
+✔️ No conditional bypass
+✔️ No dependency on UI refresh
+✔️ No background job delay
+B. CARRY-OVER CONFIRMATION (NO CHANGE REQUIRED)
+Carry-over logic is already correct, but must continue to work after this fix:
+Opening (Day N) = Closing (Day N−1)
+When a Return-In or Loss is added to a past date, Closing must:
+Recalculate for that date
+Cascade forward correctly to all subsequent days (up to existing range)
+🚫 Do not modify carry-over logic structure — only ensure Closing recalculation feeds into it.
+2️⃣ SR-D DEPARTMENT STORE – CARRY-OVER FIX
+CONFIRMED ISSUE
+Opening is incorrectly fetched from Total
+It should always come from previous day Closing
+REQUIRED FIX (DEPARTMENT STORE ONLY)
+Copy code
+
+
+Opening (Day N) = Closing (Day N−1)
+Rules:
+Never use Total as Opening
+Apply same forward-cascade recalculation when past dates are edited
+Do not change any other Department Store logic
+3️⃣ ISSUE PAGE (AUDIT WORKSPACE) – RETURN & LOSS INTEGRATION
+CURRENT PROBLEM
+Issue page ignores Return-In and Losses
+Totals are therefore incorrect
+REQUIRED FIX
+Issue page must fetch:
+Return-In
+Losses from the SR-D Main Store ledger
+Apply correct math:
+Return-In increases available stock
+Losses reduce available stock
+Totals must reflect these adjustments accurately
+🚫 DO NOT TOUCH
+Auth
+Sessions
+Subscriptions
+UI layout
+Performance tuning
+Report rendering
+Any already-working SR-D logic outside Closing recalculation
+✅ SUCCESS CRITERIA (MUST CONFIRM)
+Closing auto-updates immediately when Return-In is posted
+Closing auto-updates immediately when Losses are posted
+Back-dated Return-In/Loss recalculates forward balances correctly
+Department Opening comes strictly from previous Closing
+Issue page totals reflect Return-In and Losses
+END PROMPT
+
