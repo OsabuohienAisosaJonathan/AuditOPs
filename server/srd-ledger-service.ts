@@ -113,8 +113,14 @@ async function getLastClosingBefore(
   ).orderBy(desc(storeStock.date)).limit(1);
   
   if (prev) {
-    // CRITICAL: Always use calculated closing for forward propagation
-    // This ensures backdated corrections flow through to all future dates
+    // IMPORTANT: When a physical stock count exists, use it as the opening for the next day
+    // This ensures stock count "resets" the chain to actual physical inventory
+    // Otherwise, use calculated closing for forward propagation of corrections
+    if (prev.physicalClosingQty !== null) {
+      const physical = parseDecimal(prev.physicalClosingQty);
+      console.log(`[getLastClosingBefore] Using physical count ${physical} from ${formatDateYMD(prev.date)}`);
+      return { closing: physical, sourceDate: prev.date };
+    }
     const closing = parseDecimal(prev.closingQty);
     return { closing, sourceDate: prev.date };
   }
