@@ -1625,6 +1625,8 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements, sele
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["movement-breakdown"] });
       setCreateOpen(false);
       resetForm();
       toast.success("Stock movement recorded");
@@ -1658,6 +1660,7 @@ function StockTab({ stockMovements, clientId, departmentId, totalMovements, sele
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["movement-breakdown"] });
       setReverseOpen(false);
       setSelectedMovementId(null);
       setReverseReason("");

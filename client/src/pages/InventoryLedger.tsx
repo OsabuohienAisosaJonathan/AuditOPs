@@ -469,6 +469,7 @@ export default function InventoryLedger() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       queryClient.invalidateQueries({ queryKey: ["srd-transfers"] });
+      queryClient.invalidateQueries({ queryKey: ["movement-breakdown"] });
       setIssueDialogOpen(false);
       setIssueItemId(null);
       setIssueToDeptId(null);
@@ -496,6 +497,7 @@ export default function InventoryLedger() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       queryClient.invalidateQueries({ queryKey: ["srd-transfers"] });
+      queryClient.invalidateQueries({ queryKey: ["movement-breakdown"] });
       toast.success("Transfer recalled successfully");
     },
     onError: (error: any) => {
@@ -527,6 +529,7 @@ export default function InventoryLedger() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       queryClient.invalidateQueries({ queryKey: ["srd-transfers"] });
+      queryClient.invalidateQueries({ queryKey: ["movement-breakdown"] });
       setIssueDialogOpen(false);
       setIssueItemId(null);
       setIssueToDeptId(null);
@@ -555,6 +558,7 @@ export default function InventoryLedger() {
       queryClient.invalidateQueries({ queryKey: ["store-stock"] });
       queryClient.invalidateQueries({ queryKey: ["store-issues"] });
       queryClient.invalidateQueries({ queryKey: ["store-issue-lines"] });
+      queryClient.invalidateQueries({ queryKey: ["movement-breakdown"] });
       toast.success("Stock recalled successfully");
     },
     onError: (error: any) => {
