@@ -4313,20 +4313,18 @@ export async function registerRoutes(
       
       const lines = await storage.getStoreIssueLines(issue.id);
       const dateForStock = new Date(issue.issueDate);
+      const affectedItems: string[] = [];
       
       for (const line of lines) {
         const qtyToRecall = parseFloat(line.qtyIssued || "0");
+        affectedItems.push(line.itemId);
         
         const fromStock = await storage.getStoreStockByItem(issue.fromDepartmentId, line.itemId, dateForStock);
         if (fromStock) {
           const currentIssued = parseFloat(fromStock.issuedQty || "0");
           const newIssued = Math.max(0, currentIssued - qtyToRecall);
-          const opening = parseFloat(fromStock.openingQty || "0");
-          const added = parseFloat(fromStock.addedQty || "0");
-          const newClosing = opening + added - newIssued;
           await storage.updateStoreStock(fromStock.id, { 
             issuedQty: newIssued.toString(),
-            closingQty: newClosing.toString()
           });
         }
         
@@ -4334,14 +4332,20 @@ export async function registerRoutes(
         if (toStock) {
           const currentAdded = parseFloat(toStock.addedQty || "0");
           const newAdded = Math.max(0, currentAdded - qtyToRecall);
-          const opening = parseFloat(toStock.openingQty || "0");
-          const issued = parseFloat(toStock.issuedQty || "0");
-          const newClosing = opening + newAdded - issued;
           await storage.updateStoreStock(toStock.id, { 
             addedQty: newAdded.toString(),
-            closingQty: newClosing.toString()
           });
         }
+      }
+      
+      const user = await storage.getUser(req.session.userId!);
+      const clientId = user?.organizationId || issue.fromDepartmentId;
+      const invDept = await storage.getInventoryDepartment(issue.fromDepartmentId);
+      const actualClientId = invDept?.clientId || clientId;
+      
+      for (const itemId of affectedItems) {
+        await recalculateForward(actualClientId, issue.fromDepartmentId, itemId, dateForStock);
+        await recalculateForward(actualClientId, issue.toDepartmentId, itemId, dateForStock);
       }
       
       const updatedIssue = await storage.updateStoreIssue(issue.id, { status: "recalled" });
@@ -4835,7 +4839,7 @@ export async function registerRoutes(
         );
         
         if (!existingItemIds.has(item.id)) {
-          // Create new record
+          // Create new record with initial values - recalculateForward will compute closing
           const newStock = await storage.createStoreStock({
             clientId,
             storeDepartmentId: departmentId,
@@ -4844,29 +4848,24 @@ export async function registerRoutes(
             openingQty: correctOpening,
             addedQty: "0",
             issuedQty: "0",
-            closingQty: correctOpening,
+            closingQty: "0",
             physicalClosingQty: null,
             varianceQty: "0",
             costPriceSnapshot: item.costPrice || "0.00",
             createdBy: req.session.userId!,
           });
-          results.push(newStock);
+          await recalculateForward(clientId, departmentId, item.id, dateFilter);
+          const updatedStock = await storage.getStoreStockByItem(departmentId, item.id, dateFilter);
+          results.push(updatedStock || newStock);
           created++;
         } else {
-          // Check if existing record needs opening correction
+          // Check if existing record needs recalculation
           const existingRecord = stockMap.get(item.id)!;
           const currentOpening = existingRecord.openingQty || "0";
           
           if (currentOpening !== correctOpening) {
-            const added = parseFloat(existingRecord.addedQty || "0");
-            const issued = parseFloat(existingRecord.issuedQty || "0");
-            const newClosing = parseFloat(correctOpening) + added - issued;
-            
-            const updatedRecord = await storage.updateStoreStock(existingRecord.id, {
-              openingQty: correctOpening,
-              closingQty: newClosing.toString(),
-            });
-            
+            await recalculateForward(clientId, departmentId, item.id, dateFilter);
+            const updatedRecord = await storage.getStoreStockByItem(departmentId, item.id, dateFilter);
             results.push(updatedRecord || existingRecord);
             updated++;
           } else {
@@ -5587,6 +5586,9 @@ export async function registerRoutes(
         createdBy: req.session.userId!,
       });
       
+      const dateForStock = new Date(issueDate);
+      const affectedItems: string[] = [];
+      
       for (const line of lines) {
         await storage.createStoreIssueLine({
           storeIssueId: issue.id,
@@ -5594,28 +5596,20 @@ export async function registerRoutes(
           qtyIssued: line.qtyIssued.toString(),
         });
         
-        const dateForStock = new Date(issueDate);
-        
         const fromItem = await storage.getItem(line.itemId);
         const costPrice = fromItem?.costPrice || "0.00";
-        
         const qtyIssued = parseFloat(line.qtyIssued);
+        affectedItems.push(line.itemId);
         
         const existingFromStock = await storage.getStoreStockByItem(fromDepartmentId, line.itemId, dateForStock);
         if (existingFromStock) {
           const currentIssued = parseFloat(existingFromStock.issuedQty || "0");
           const newIssued = currentIssued + qtyIssued;
-          const opening = parseFloat(existingFromStock.openingQty || "0");
-          const added = parseFloat(existingFromStock.addedQty || "0");
-          const newClosing = opening + added - newIssued;
           await storage.updateStoreStock(existingFromStock.id, { 
             issuedQty: newIssued.toString(),
-            closingQty: newClosing.toString()
           });
         } else {
           const prevDayClosing = await storage.getPreviousDayClosing(fromDepartmentId, line.itemId, dateForStock);
-          const opening = parseFloat(prevDayClosing);
-          const newClosing = opening - qtyIssued;
           await storage.createStoreStock({
             clientId,
             storeDepartmentId: fromDepartmentId,
@@ -5624,7 +5618,7 @@ export async function registerRoutes(
             openingQty: prevDayClosing,
             addedQty: "0",
             issuedQty: line.qtyIssued.toString(),
-            closingQty: newClosing.toString(),
+            closingQty: "0",
             costPriceSnapshot: costPrice,
             createdBy: req.session.userId!,
           });
@@ -5634,17 +5628,11 @@ export async function registerRoutes(
         if (existingToStock) {
           const currentAdded = parseFloat(existingToStock.addedQty || "0");
           const newAdded = currentAdded + qtyIssued;
-          const opening = parseFloat(existingToStock.openingQty || "0");
-          const issued = parseFloat(existingToStock.issuedQty || "0");
-          const newClosing = opening + newAdded - issued;
           await storage.updateStoreStock(existingToStock.id, { 
             addedQty: newAdded.toString(),
-            closingQty: newClosing.toString()
           });
         } else {
           const prevDayClosingTo = await storage.getPreviousDayClosing(toDepartmentId, line.itemId, dateForStock);
-          const opening = parseFloat(prevDayClosingTo);
-          const newClosing = opening + qtyIssued;
           await storage.createStoreStock({
             clientId,
             storeDepartmentId: toDepartmentId,
@@ -5653,11 +5641,16 @@ export async function registerRoutes(
             openingQty: prevDayClosingTo,
             addedQty: line.qtyIssued.toString(),
             issuedQty: "0",
-            closingQty: newClosing.toString(),
+            closingQty: "0",
             costPriceSnapshot: costPrice,
             createdBy: req.session.userId!,
           });
         }
+      }
+      
+      for (const itemId of affectedItems) {
+        await recalculateForward(clientId, fromDepartmentId, itemId, dateForStock);
+        await recalculateForward(clientId, toDepartmentId, itemId, dateForStock);
       }
       
       await storage.createAuditLog({
