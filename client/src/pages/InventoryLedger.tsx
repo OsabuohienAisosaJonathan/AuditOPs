@@ -1078,6 +1078,7 @@ export default function InventoryLedger() {
   };
 
   // Get available quantity for the selected issue item (considering edited values)
+  // Formula: Opening + Purchase + ReturnIn + Adjustments - Waste - WriteOff - Issued
   const getAvailableQty = useMemo(() => {
     if (!issueItemId) return 0;
     const ledgerRow = mainStoreLedger.find(r => r.itemId === issueItemId);
@@ -1088,12 +1089,14 @@ export default function InventoryLedger() {
     if (edits) {
       const editedOpening = edits.opening !== undefined ? parseFloat(edits.opening || "0") : ledgerRow.opening;
       const editedPurchase = edits.purchase !== undefined ? parseFloat(edits.purchase || "0") : ledgerRow.purchase;
-      const displayTotal = editedOpening + editedPurchase;
+      // Include Return-In, Adjustments, and Losses in the total calculation
+      const displayTotal = editedOpening + editedPurchase + ledgerRow.totalReturnIn + ledgerRow.adjustmentNet - ledgerRow.waste - ledgerRow.writeOff;
       const displayClosing = displayTotal - ledgerRow.totalIssued;
       return displayClosing > 0 ? displayClosing : 0;
     }
     
     // Use the row's calculated closing (Total - sum of all Dep issues)
+    // Note: ledgerRow.total already includes ReturnIn, Adjustments, Waste, WriteOff
     const available = ledgerRow.total - ledgerRow.totalIssued;
     return available > 0 ? available : 0;
   }, [issueItemId, mainStoreLedger, ledgerEdits]);
