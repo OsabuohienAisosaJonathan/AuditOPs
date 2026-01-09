@@ -4427,7 +4427,21 @@ export async function registerRoutes(
       if (!stock) {
         return res.status(404).json({ error: "Store stock not found" });
       }
-      res.json(stock);
+      
+      // Trigger forward recalculation using the UPDATED record's identifiers
+      // This ensures recalculation follows the correct series after edits
+      if (stock.clientId && stock.storeDepartmentId && stock.itemId) {
+        await recalculateForward(
+          stock.clientId,
+          stock.storeDepartmentId,
+          stock.itemId,
+          stock.date
+        );
+      }
+      
+      // Return updated stock after recalculation
+      const updatedStock = await storage.getStoreStockById(req.params.id);
+      res.json(updatedStock || stock);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

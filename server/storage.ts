@@ -295,6 +295,7 @@ export interface IStorage {
 
   // Store Stock
   getStoreStock(clientId: string, storeDepartmentId: string, date?: Date): Promise<StoreStock[]>;
+  getStoreStockById(id: string): Promise<StoreStock | undefined>;
   getStoreStockByItem(storeDepartmentId: string, itemId: string, date: Date): Promise<StoreStock | undefined>;
   getPreviousDayClosing(storeDepartmentId: string, itemId: string, date: Date): Promise<string>;
   getLatestClosingBeforeDate(storeDepartmentId: string, itemId: string, date: Date): Promise<{ closing: string; sourceDate: string | null }>;
@@ -2188,6 +2189,11 @@ export class DbStorage implements IStorage {
         eq(storeStock.storeDepartmentId, storeDepartmentId)
       )
     );
+  }
+
+  async getStoreStockById(id: string): Promise<StoreStock | undefined> {
+    const [stock] = await db.select().from(storeStock).where(eq(storeStock.id, id));
+    return stock;
   }
 
   async getStoreStockByItem(storeDepartmentId: string, itemId: string, date: Date): Promise<StoreStock | undefined> {

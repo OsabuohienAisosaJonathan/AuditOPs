@@ -39,6 +39,7 @@ export default function Inventory() {
   const [editSupplierOpen, setEditSupplierOpen] = useState(false);
   const [deleteItemOpen, setDeleteItemOpen] = useState(false);
   const [editItemSerialTracking, setEditItemSerialTracking] = useState<string>("none");
+  const [editItemSupplierId, setEditItemSupplierId] = useState<string>("");
   const [deleteSupplierOpen, setDeleteSupplierOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
@@ -371,6 +372,7 @@ export default function Inventory() {
   const handleEditItem = (item: Item) => {
     setSelectedItem(item);
     setEditItemSerialTracking(item.serialTracking || "none");
+    setEditItemSupplierId(item.supplierId || "__none__");
     setEditItemOpen(true);
   };
 
@@ -1549,6 +1551,7 @@ export default function Inventory() {
                   purchaseDate: purchaseQty && parseFloat(purchaseQty) > 0 && purchaseDate ? purchaseDate : undefined,
                   serialTracking: editItemSerialTracking as "none" | "serial" | "batch" | "lot" | "imei",
                   serialNotes: formData.get("serialNotes") as string || null,
+                  supplierId: editItemSupplierId && editItemSupplierId !== "__none__" ? editItemSupplierId : null,
                 },
               });
             }} className="flex flex-col flex-1 overflow-hidden">
@@ -1610,9 +1613,25 @@ export default function Inventory() {
                     <Input id="edit-sellingPrice" name="sellingPrice" type="number" step="0.01" defaultValue={selectedItem.sellingPrice} required data-testid="input-edit-item-price" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-reorderLevel">Reorder Level</Label>
-                  <Input id="edit-reorderLevel" name="reorderLevel" type="number" defaultValue={selectedItem.reorderLevel || 0} data-testid="input-edit-item-reorder" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-reorderLevel">Reorder Level</Label>
+                    <Input id="edit-reorderLevel" name="reorderLevel" type="number" defaultValue={selectedItem.reorderLevel || 0} data-testid="input-edit-item-reorder" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-supplierId">Default Supplier</Label>
+                    <Select value={editItemSupplierId} onValueChange={setEditItemSupplierId}>
+                      <SelectTrigger data-testid="select-edit-item-supplier">
+                        <SelectValue placeholder="Select a supplier (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">No supplier</SelectItem>
+                        {suppliers?.map((supplier) => (
+                          <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
