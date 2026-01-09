@@ -146,3 +146,20 @@ Enhanced the Stock Movements functionality with:
 - Added `supplier_id` column to items table with foreign key to suppliers
 - Create Item form now includes "Default Supplier" dropdown
 - Auto-fills supplier in GRN form when item is selected
+
+### SR-D Ledger Auto-Calculation Improvements (2026-01-09)
+Fixed critical issues with Main Store and Department Store ledger calculations to ensure proper auto-calculation when movements are posted.
+
+**Changes Applied:**
+1. **Store Issues Endpoints**: Updated create and recall endpoints to use `recalculateForward()` instead of manually calculating closing. This ensures all movement types (Return-In, Losses, Adjustments, Waste, Write-off) are properly included in closing calculations.
+
+2. **Store Stock Seed Endpoint**: Updated to use `recalculateForward()` instead of manual closing calculation, ensuring consistent ledger behavior.
+
+3. **Issue Page Available Stock**: Fixed the `getAvailableQty` calculation in InventoryLedger.tsx to include Return-In, Adjustments, and Losses when there are pending edits. Previously, edited values only considered Opening + Purchase.
+
+**Design Principle:**
+All ledger closing calculations now flow through `recalculateForward()` in `srd-ledger-service.ts`, which uses the comprehensive `calculateExpectedClosing()` formula:
+- Additions: Opening + Added + ReturnIn + TransfersIn + InterDeptIn + Positive Adjustments
+- Deductions: Issued + TransfersOut + InterDeptOut + Waste + WriteOff + Sold + Negative Adjustments
+
+**Department Store Opening**: Correctly uses previous day's `closingQty` (via `getLastClosingBefore` function), falling back to `physicalClosingQty` if a stock count was performed.
