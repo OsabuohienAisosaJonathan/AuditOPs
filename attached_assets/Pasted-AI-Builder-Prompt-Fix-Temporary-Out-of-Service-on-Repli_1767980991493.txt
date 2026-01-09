@@ -1,0 +1,59 @@
+AI Builder Prompt: Fix “Temporary Out of Service” on Replit (Public Server Binding)
+This application (MiAuditOps) is hosted on Replit, and the domain is also managed inside Replit.
+The app intermittently shows “Temporary Out of Service”, even though there is no traffic and only one tester. This indicates the server is not publicly bound or is failing Replit health checks.
+Your task is to fully remove any localhost-only configuration and make the server publicly accessible on Replit.
+1) Audit server binding (MANDATORY)
+Search the entire codebase for any usage of:
+localhost
+127.0.0.1
+explicit host arguments in listen() or server start logic
+framework defaults that bind locally (Node, Express, Fastify, Next.js custom server, etc.)
+List all files where host/interface binding is defined.
+2) Remove localhost binding completely
+For every server start configuration:
+A. Remove any binding to:
+localhost
+127.0.0.1
+B. Replace with public binding:
+0.0.0.0
+OR remove the host argument entirely so Replit defaults to public binding
+C. Ensure the server listens on:
+process.env.PORT (Replit-provided port)
+No hard-coded ports remain
+3) Ensure Replit public exposure compatibility
+A. Confirm the app listens on all network interfaces
+B. Ensure no logic restricts access to:
+owner
+internal IPs
+local network C. Remove or disable any testing-only guards, IP checks, or environment blocks.
+4) Prevent Replit health-check failures
+A. Ensure the server starts immediately and responds to requests
+B. Add (or confirm) a lightweight health endpoint such as:
+/
+/health that always returns 200 OK C. Ensure no auth middleware blocks this endpoint.
+This is required so Replit does not mark the app as unhealthy and display “Temporary Out of Service”.
+5) Restart and stabilization
+A. Ensure the app fully restarts after changes
+B. Confirm no background crashes or early exits
+C. Ensure the app remains running without owner interaction
+6) Deliverables (REQUIRED)
+A. List all modified files with:
+Full file path
+Old code (before)
+New code (after)
+B. Confirm in plain English:
+Who can access the app
+From where (public internet, any device)
+C. Provide a short verification checklist:
+Open domain in incognito
+Open domain on another phone
+Open domain on mobile data
+Confirm “Temporary Out of Service” no longer appears
+Goal
+Ensure the Replit-hosted application is:
+Fully public
+Accessible via Replit domain
+Stable
+Not owner-restricted
+Not marked unhealthy by Replit
+Do not leave any localhost or private binding in place.

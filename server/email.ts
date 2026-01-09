@@ -9,11 +9,14 @@ export function getBaseUrl(req?: { headers?: { host?: string } }): string {
   }
   
   if (req?.headers?.host) {
-    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'https';
+    const protocol = 'https';
     return `${protocol}://${req.headers.host}`;
   }
   
-  return 'https://localhost:5000';
+  // Fallback for Replit - should never reach here in production
+  // as req.headers.host is always available
+  console.warn('[Email] No APP_URL set and no request host available');
+  return 'https://miauditops.replit.app';
 }
 
 export async function sendVerificationEmail(
