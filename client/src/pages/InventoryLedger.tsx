@@ -1483,7 +1483,8 @@ export default function InventoryLedger() {
                         const editedPurchase = ledgerEdits[row.itemId]?.purchase;
                         const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
                         const displayPurchase = editedPurchase !== undefined ? parseFloat(editedPurchase || "0") : row.purchase;
-                        const displayTotal = displayOpening + displayPurchase;
+                        // Full formula: Opening + Purchase + ReturnIn + Adjustments - Losses
+                        const displayTotal = displayOpening + displayPurchase + row.totalReturnIn + row.adjustmentNet - row.waste - row.writeOff;
                         const displayClosing = displayTotal - row.totalIssued;
                         const displayValue = displayClosing * row.cost;
                         const depTotals: Record<string, number> = {};
@@ -1532,7 +1533,8 @@ export default function InventoryLedger() {
                             
                             const displayOpening = editedOpening !== undefined ? parseFloat(editedOpening || "0") : row.opening;
                             const displayPurchase = editedPurchase !== undefined ? parseFloat(editedPurchase || "0") : row.purchase;
-                            const displayTotal = displayOpening + displayPurchase;
+                            // Full formula: Opening + Purchase + ReturnIn + Adjustments - Losses
+                            const displayTotal = displayOpening + displayPurchase + row.totalReturnIn + row.adjustmentNet - row.waste - row.writeOff;
                             const displayClosing = displayTotal - row.totalIssued;
                             const displayValue = displayClosing * row.cost;
                             
