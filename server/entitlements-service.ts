@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { platformAdminStorage } from "./platform-admin-storage";
 import { PLAN_LIMITS, type SubscriptionPlan, type Entitlements } from "@shared/schema";
 
 export interface TenantUsage {
@@ -19,11 +20,47 @@ export interface TenantEntitlements {
   isActive: boolean;
 }
 
+async function getEntitlementsForPlan(planSlug: string, subscription: any): Promise<Entitlements> {
+  try {
+    const dbPlan = await platformAdminStorage.getSubscriptionPlanBySlug(planSlug);
+    if (dbPlan) {
+      const baseEntitlements: Entitlements = {
+        maxClients: dbPlan.maxClients,
+        maxSrdDepartmentsPerClient: dbPlan.maxSrdDepartmentsPerClient,
+        maxMainStorePerClient: dbPlan.maxMainStorePerClient,
+        maxSeats: dbPlan.maxSeats,
+        retentionDays: dbPlan.retentionDays,
+        canViewReports: dbPlan.canViewReports,
+        canDownloadReports: dbPlan.canDownloadReports,
+        canPrintReports: dbPlan.canPrintReports,
+        canAccessPurchasesRegisterPage: dbPlan.canAccessPurchasesRegisterPage,
+        canAccessSecondHitPage: dbPlan.canAccessSecondHitPage,
+        canDownloadSecondHitFullTable: dbPlan.canDownloadSecondHitFullTable,
+        canDownloadMainStoreLedgerSummary: dbPlan.canDownloadMainStoreLedgerSummary,
+        canUseBetaFeatures: dbPlan.canUseBetaFeatures,
+      };
+      
+      if (subscription) {
+        if (subscription.maxClientsOverride != null) baseEntitlements.maxClients = subscription.maxClientsOverride;
+        if (subscription.maxSrdDepartmentsOverride != null) baseEntitlements.maxSrdDepartmentsPerClient = subscription.maxSrdDepartmentsOverride;
+        if (subscription.maxMainStoreOverride != null) baseEntitlements.maxMainStorePerClient = subscription.maxMainStoreOverride;
+        if (subscription.maxSeatsOverride != null) baseEntitlements.maxSeats = subscription.maxSeatsOverride;
+        if (subscription.retentionDaysOverride != null) baseEntitlements.retentionDays = subscription.retentionDaysOverride;
+      }
+      
+      return baseEntitlements;
+    }
+  } catch (err) {
+  }
+  
+  return PLAN_LIMITS[planSlug as SubscriptionPlan] || PLAN_LIMITS.starter;
+}
+
 export async function getTenantEntitlements(organizationId: string): Promise<TenantEntitlements> {
   const subscription = await storage.getSubscription(organizationId);
   
   const plan: SubscriptionPlan = (subscription?.planName as SubscriptionPlan) || "starter";
-  const entitlements = PLAN_LIMITS[plan];
+  const entitlements = await getEntitlementsForPlan(plan, subscription);
   
   const usage = await computeTenantUsage(organizationId);
   

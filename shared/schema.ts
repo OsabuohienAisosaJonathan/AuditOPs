@@ -935,6 +935,12 @@ export const subscriptions = pgTable("subscriptions", {
   endDate: timestamp("end_date"),
   notes: text("notes"),
   updatedBy: varchar("updated_by"),
+  // Owner overrides (null = use plan defaults)
+  maxClientsOverride: integer("max_clients_override"),
+  maxSrdDepartmentsOverride: integer("max_srd_departments_override"),
+  maxMainStoreOverride: integer("max_main_store_override"),
+  maxSeatsOverride: integer("max_seats_override"),
+  retentionDaysOverride: integer("retention_days_override"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1021,6 +1027,41 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
     canUseBetaFeatures: true,
   },
 };
+
+// Configurable Subscription Plans (editable by Owner/Platform Admin)
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  slug: text("slug").notNull().unique(), // starter, growth, business, enterprise
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // Pricing (in smallest currency unit, e.g., kobo for NGN)
+  monthlyPrice: decimal("monthly_price", { precision: 12, scale: 2 }).notNull().default("0"),
+  quarterlyPrice: decimal("quarterly_price", { precision: 12, scale: 2 }).notNull().default("0"),
+  yearlyPrice: decimal("yearly_price", { precision: 12, scale: 2 }).notNull().default("0"),
+  currency: text("currency").notNull().default("NGN"),
+  // Slot & Capacity Limits
+  maxClients: integer("max_clients").notNull().default(1),
+  maxSrdDepartmentsPerClient: integer("max_srd_departments_per_client").notNull().default(4),
+  maxMainStorePerClient: integer("max_main_store_per_client").notNull().default(1),
+  maxSeats: integer("max_seats").notNull().default(2),
+  retentionDays: integer("retention_days").notNull().default(30),
+  // Feature Flags (entitlements)
+  canViewReports: boolean("can_view_reports").notNull().default(true),
+  canDownloadReports: boolean("can_download_reports").notNull().default(false),
+  canPrintReports: boolean("can_print_reports").notNull().default(false),
+  canAccessPurchasesRegisterPage: boolean("can_access_purchases_register_page").notNull().default(false),
+  canAccessSecondHitPage: boolean("can_access_second_hit_page").notNull().default(false),
+  canDownloadSecondHitFullTable: boolean("can_download_second_hit_full_table").notNull().default(false),
+  canDownloadMainStoreLedgerSummary: boolean("can_download_main_store_ledger_summary").notNull().default(false),
+  canUseBetaFeatures: boolean("can_use_beta_features").notNull().default(false),
+  // Audit
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Payments table for tenant billing history
 export const PAYMENT_STATUSES = ["pending", "completed", "failed", "refunded"] as const;
@@ -1128,6 +1169,8 @@ export type InsertPurchaseItemEvent = z.infer<typeof insertPurchaseItemEventSche
 export type PurchaseItemEvent = typeof purchaseItemEvents.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscriptionPlanConfig = z.infer<typeof insertSubscriptionPlanSchema>;
+export type SubscriptionPlanConfig = typeof subscriptionPlans.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;
 export type InsertSrdLedgerDaily = z.infer<typeof insertSrdLedgerDailySchema>;

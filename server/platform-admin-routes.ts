@@ -629,4 +629,169 @@ export function registerPlatformAdminRoutes(app: Express) {
       return res.status(500).json({ message: "Failed to bootstrap platform admin" });
     }
   });
+
+  // =====================================================
+  // SUBSCRIPTION PLANS MANAGEMENT
+  // =====================================================
+
+  app.get("/api/owner/subscription-plans", requirePlatformAdmin, async (req, res) => {
+    try {
+      const plans = await platformAdminStorage.getAllSubscriptionPlans();
+      return res.json(plans);
+    } catch (error: any) {
+      console.error("Get subscription plans error:", error);
+      return res.status(500).json({ message: "Failed to get subscription plans" });
+    }
+  });
+
+  app.get("/api/owner/subscription-plans/:id", requirePlatformAdmin, async (req, res) => {
+    try {
+      const plan = await platformAdminStorage.getSubscriptionPlanById(req.params.id);
+      if (!plan) {
+        return res.status(404).json({ message: "Plan not found" });
+      }
+      return res.json(plan);
+    } catch (error: any) {
+      console.error("Get subscription plan error:", error);
+      return res.status(500).json({ message: "Failed to get subscription plan" });
+    }
+  });
+
+  app.post("/api/owner/subscription-plans", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+    try {
+      const plan = await platformAdminStorage.createSubscriptionPlan(req.body);
+      await logAdminAction(req.session.platformAdminId!, "create_plan", "subscription_plan", plan.id, null, plan, null, req);
+      return res.status(201).json(plan);
+    } catch (error: any) {
+      console.error("Create subscription plan error:", error);
+      return res.status(500).json({ message: "Failed to create subscription plan" });
+    }
+  });
+
+  app.patch("/api/owner/subscription-plans/:id", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+    try {
+      const planBefore = await platformAdminStorage.getSubscriptionPlanById(req.params.id);
+      const plan = await platformAdminStorage.updateSubscriptionPlan(req.params.id, req.body);
+      if (!plan) {
+        return res.status(404).json({ message: "Plan not found" });
+      }
+      await logAdminAction(req.session.platformAdminId!, "update_plan", "subscription_plan", plan.id, planBefore, plan, null, req);
+      return res.json(plan);
+    } catch (error: any) {
+      console.error("Update subscription plan error:", error);
+      return res.status(500).json({ message: "Failed to update subscription plan" });
+    }
+  });
+
+  app.delete("/api/owner/subscription-plans/:id", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+    try {
+      const planBefore = await platformAdminStorage.getSubscriptionPlanById(req.params.id);
+      await platformAdminStorage.deleteSubscriptionPlan(req.params.id);
+      await logAdminAction(req.session.platformAdminId!, "delete_plan", "subscription_plan", req.params.id, planBefore, null, null, req);
+      return res.json({ message: "Plan deleted" });
+    } catch (error: any) {
+      console.error("Delete subscription plan error:", error);
+      return res.status(500).json({ message: "Failed to delete subscription plan" });
+    }
+  });
+
+  // =====================================================
+  // ORGANIZATION SLOT OVERRIDES
+  // =====================================================
+
+  app.patch("/api/owner/organizations/:id/slot-overrides", requirePlatformAdminPermission("edit_billing"), async (req, res) => {
+    try {
+      const org = await platformAdminStorage.getOrganizationWithDetails(req.params.id);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      
+      const overridesBefore = org.subscription ? {
+        maxClientsOverride: org.subscription.maxClientsOverride,
+        maxSrdDepartmentsOverride: org.subscription.maxSrdDepartmentsOverride,
+        maxMainStoreOverride: org.subscription.maxMainStoreOverride,
+        maxSeatsOverride: org.subscription.maxSeatsOverride,
+        retentionDaysOverride: org.subscription.retentionDaysOverride,
+      } : null;
+      
+      const result = await platformAdminStorage.updateSubscriptionOverrides(req.params.id, req.body, req.session.platformAdminId!);
+      
+      await logAdminAction(req.session.platformAdminId!, "update_slot_overrides", "organization", req.params.id, overridesBefore, req.body, null, req);
+      
+      return res.json(result);
+    } catch (error: any) {
+      console.error("Update slot overrides error:", error);
+      return res.status(500).json({ message: "Failed to update slot overrides" });
+    }
+  });
+
+  // =====================================================
+  // USER ACTIONS (Force Logout, Delete)
+  // =====================================================
+
+  app.post("/api/owner/users/:id/force-logout", requirePlatformAdminPermission("lock_user"), async (req, res) => {
+    try {
+      await platformAdminStorage.forceLogoutUser(req.params.id);
+      await logAdminAction(req.session.platformAdminId!, "force_logout", "user", req.params.id, null, null, null, req);
+      return res.json({ message: "User session invalidated" });
+    } catch (error: any) {
+      console.error("Force logout user error:", error);
+      return res.status(500).json({ message: "Failed to force logout user" });
+    }
+  });
+
+  app.delete("/api/owner/users/:id", requirePlatformAdminPermission("lock_user"), async (req, res) => {
+    try {
+      const { reason } = req.body;
+      if (!reason || reason.trim().length < 5) {
+        return res.status(400).json({ message: "Delete reason is required (minimum 5 characters)" });
+      }
+      
+      await platformAdminStorage.deleteUser(req.params.id);
+      await logAdminAction(req.session.platformAdminId!, "delete_user", "user", req.params.id, null, null, reason, req);
+      return res.json({ message: "User deleted" });
+    } catch (error: any) {
+      console.error("Delete user error:", error);
+      return res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+
+  // =====================================================
+  // PUBLIC PRICING ENDPOINT (No Auth Required)
+  // =====================================================
+
+  app.get("/api/public/pricing", async (req, res) => {
+    try {
+      const plans = await platformAdminStorage.getAllSubscriptionPlans();
+      // Only return active plans with public-safe fields
+      const publicPlans = plans
+        .filter(p => p.isActive)
+        .map(p => ({
+          slug: p.slug,
+          displayName: p.displayName,
+          description: p.description,
+          monthlyPrice: p.monthlyPrice,
+          quarterlyPrice: p.quarterlyPrice,
+          yearlyPrice: p.yearlyPrice,
+          currency: p.currency,
+          maxClients: p.maxClients,
+          maxSrdDepartmentsPerClient: p.maxSrdDepartmentsPerClient,
+          maxMainStorePerClient: p.maxMainStorePerClient,
+          maxSeats: p.maxSeats,
+          retentionDays: p.retentionDays,
+          canViewReports: p.canViewReports,
+          canDownloadReports: p.canDownloadReports,
+          canPrintReports: p.canPrintReports,
+          canAccessPurchasesRegisterPage: p.canAccessPurchasesRegisterPage,
+          canAccessSecondHitPage: p.canAccessSecondHitPage,
+          canDownloadSecondHitFullTable: p.canDownloadSecondHitFullTable,
+          canDownloadMainStoreLedgerSummary: p.canDownloadMainStoreLedgerSummary,
+          canUseBetaFeatures: p.canUseBetaFeatures,
+        }));
+      return res.json(publicPlans);
+    } catch (error: any) {
+      console.error("Get public pricing error:", error);
+      return res.status(500).json({ message: "Failed to get pricing" });
+    }
+  });
 }

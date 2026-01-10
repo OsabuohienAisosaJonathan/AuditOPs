@@ -42,7 +42,8 @@ import {
   Users, 
   Building2,
   Loader2,
-  Calendar
+  Calendar,
+  Settings2
 } from "lucide-react";
 
 async function fetchOrganizations(params: Record<string, string>) {
@@ -61,6 +62,14 @@ export default function PlatformAdminOrganizations() {
   const [suspendDialogOpen, setSuspendDialogOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
+  const [overrideForm, setOverrideForm] = useState({
+    maxClientsOverride: null as number | null,
+    maxSrdDepartmentsOverride: null as number | null,
+    maxMainStoreOverride: null as number | null,
+    maxSeatsOverride: null as number | null,
+    retentionDaysOverride: null as number | null,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["platform-admin-orgs", search, statusFilter, planFilter],
@@ -122,6 +131,38 @@ export default function PlatformAdminOrganizations() {
     },
     onError: () => toast.error("Failed to delete organization"),
   });
+
+  const slotOverrideMutation = useMutation({
+    mutationFn: async ({ id, overrides }: { id: string; overrides: typeof overrideForm }) => {
+      const response = await fetch(`/api/owner/organizations/${id}/slot-overrides`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(overrides),
+      });
+      if (!response.ok) throw new Error("Failed to update slot overrides");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["platform-admin-orgs"] });
+      toast.success("Slot overrides updated");
+      setOverrideDialogOpen(false);
+      setSelectedOrg(null);
+    },
+    onError: () => toast.error("Failed to update slot overrides"),
+  });
+
+  const openOverrideDialog = (org: any) => {
+    setSelectedOrg(org);
+    setOverrideForm({
+      maxClientsOverride: org.subscription?.maxClientsOverride ?? null,
+      maxSrdDepartmentsOverride: org.subscription?.maxSrdDepartmentsOverride ?? null,
+      maxMainStoreOverride: org.subscription?.maxMainStoreOverride ?? null,
+      maxSeatsOverride: org.subscription?.maxSeatsOverride ?? null,
+      retentionDaysOverride: org.subscription?.retentionDaysOverride ?? null,
+    });
+    setOverrideDialogOpen(true);
+  };
 
   const getStatusBadge = (status: string, isSuspended: boolean) => {
     if (isSuspended) return <Badge variant="destructive">Suspended</Badge>;
@@ -278,6 +319,15 @@ export default function PlatformAdminOrganizations() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => openOverrideDialog(org)}
+                            title="Slot overrides"
+                            data-testid={`button-overrides-${org.id}`}
+                          >
+                            <Settings2 className="w-4 h-4 text-blue-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => {
                               setSelectedOrg(org);
                               setDeleteDialogOpen(true);
@@ -360,6 +410,102 @@ export default function PlatformAdminOrganizations() {
             >
               {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Delete Permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Slot Overrides for {selectedOrg?.name}</DialogTitle>
+            <DialogDescription>
+              Set custom limits that override the plan defaults. Leave empty to use plan defaults.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Max Clients</Label>
+              <Input
+                type="number"
+                min="0"
+                value={overrideForm.maxClientsOverride ?? ""}
+                onChange={(e) => setOverrideForm({
+                  ...overrideForm,
+                  maxClientsOverride: e.target.value ? parseInt(e.target.value) : null,
+                })}
+                placeholder="Use plan default"
+                data-testid="input-max-clients-override"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Seats (Users)</Label>
+              <Input
+                type="number"
+                min="0"
+                value={overrideForm.maxSeatsOverride ?? ""}
+                onChange={(e) => setOverrideForm({
+                  ...overrideForm,
+                  maxSeatsOverride: e.target.value ? parseInt(e.target.value) : null,
+                })}
+                placeholder="Use plan default"
+                data-testid="input-max-seats-override"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Departments per Client</Label>
+              <Input
+                type="number"
+                min="0"
+                value={overrideForm.maxSrdDepartmentsOverride ?? ""}
+                onChange={(e) => setOverrideForm({
+                  ...overrideForm,
+                  maxSrdDepartmentsOverride: e.target.value ? parseInt(e.target.value) : null,
+                })}
+                placeholder="Use plan default"
+                data-testid="input-max-srd-override"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Main Stores per Client</Label>
+              <Input
+                type="number"
+                min="0"
+                value={overrideForm.maxMainStoreOverride ?? ""}
+                onChange={(e) => setOverrideForm({
+                  ...overrideForm,
+                  maxMainStoreOverride: e.target.value ? parseInt(e.target.value) : null,
+                })}
+                placeholder="Use plan default"
+                data-testid="input-max-main-store-override"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Retention Days</Label>
+              <Input
+                type="number"
+                min="0"
+                value={overrideForm.retentionDaysOverride ?? ""}
+                onChange={(e) => setOverrideForm({
+                  ...overrideForm,
+                  retentionDaysOverride: e.target.value ? parseInt(e.target.value) : null,
+                })}
+                placeholder="Use plan default"
+                data-testid="input-retention-override"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverrideDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => slotOverrideMutation.mutate({ id: selectedOrg?.id, overrides: overrideForm })}
+              disabled={slotOverrideMutation.isPending}
+              data-testid="button-save-overrides"
+            >
+              {slotOverrideMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Save Overrides
             </Button>
           </DialogFooter>
         </DialogContent>

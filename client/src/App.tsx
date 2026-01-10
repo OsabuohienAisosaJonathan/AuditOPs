@@ -45,6 +45,7 @@ import PlatformAdminDashboard from "@/pages/platform-admin/PlatformAdminDashboar
 import PlatformAdminOrganizations from "@/pages/platform-admin/PlatformAdminOrganizations";
 import PlatformAdminUsers from "@/pages/platform-admin/PlatformAdminUsers";
 import PlatformAdminBilling from "@/pages/platform-admin/PlatformAdminBilling";
+import PlatformAdminPlans from "@/pages/platform-admin/PlatformAdminPlans";
 import PlatformAdminLogs from "@/pages/platform-admin/PlatformAdminLogs";
 import PlatformAdminEntitlements from "@/pages/platform-admin/PlatformAdminEntitlements";
 import Bootstrap from "@/pages/Bootstrap";
@@ -225,6 +226,7 @@ function OwnerAdminRoutes() {
       <Route path="/owner/tenants" component={PlatformAdminOrganizations} />
       <Route path="/owner/users" component={PlatformAdminUsers} />
       <Route path="/owner/billing" component={PlatformAdminBilling} />
+      <Route path="/owner/plans" component={PlatformAdminPlans} />
       <Route path="/owner/logs" component={PlatformAdminLogs} />
       <Route path="/owner/entitlements" component={PlatformAdminEntitlements} />
       <Route component={NotFound} />

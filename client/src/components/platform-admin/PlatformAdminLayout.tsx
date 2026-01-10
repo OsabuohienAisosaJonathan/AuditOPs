@@ -19,7 +19,8 @@ import {
   ScrollText,
   LogOut,
   ChevronDown,
-  Settings
+  Settings,
+  Package
 } from "lucide-react";
 
 interface PlatformAdminLayoutProps {
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/owner/tenants", label: "Tenants", icon: Building2 },
   { href: "/owner/users", label: "Users", icon: Users },
   { href: "/owner/billing", label: "Billing", icon: CreditCard },
+  { href: "/owner/plans", label: "Plans", icon: Package },
   { href: "/owner/entitlements", label: "Entitlements", icon: Shield },
   { href: "/owner/logs", label: "Audit Logs", icon: ScrollText },
 ];

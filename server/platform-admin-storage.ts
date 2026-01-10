@@ -5,13 +5,16 @@ import {
   organizations,
   users,
   subscriptions,
+  subscriptionPlans,
   clients,
   InsertPlatformAdminUser,
   PlatformAdminUser,
   InsertPlatformAdminAuditLog,
   PlatformAdminAuditLog,
   PlatformAdminRole,
-  PLATFORM_ADMIN_ROLES
+  PLATFORM_ADMIN_ROLES,
+  InsertSubscriptionPlanConfig,
+  SubscriptionPlanConfig
 } from "@shared/schema";
 import { eq, desc, and, or, ilike, count, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -84,6 +87,27 @@ export interface PlatformAdminStorage {
     expiringWithin14Days: number;
     expiringWithin30Days: number;
   }>;
+  
+  // Subscription Plans Management
+  getAllSubscriptionPlans(): Promise<SubscriptionPlanConfig[]>;
+  getSubscriptionPlanBySlug(slug: string): Promise<SubscriptionPlanConfig | null>;
+  getSubscriptionPlanById(id: string): Promise<SubscriptionPlanConfig | null>;
+  createSubscriptionPlan(data: InsertSubscriptionPlanConfig): Promise<SubscriptionPlanConfig>;
+  updateSubscriptionPlan(id: string, data: Partial<InsertSubscriptionPlanConfig>): Promise<SubscriptionPlanConfig | null>;
+  deleteSubscriptionPlan(id: string): Promise<boolean>;
+  
+  // Subscription Override Management
+  updateSubscriptionOverrides(organizationId: string, overrides: {
+    maxClientsOverride?: number | null;
+    maxSrdDepartmentsOverride?: number | null;
+    maxMainStoreOverride?: number | null;
+    maxSeatsOverride?: number | null;
+    retentionDaysOverride?: number | null;
+  }, adminId: string): Promise<any>;
+  
+  // User Management - additional actions
+  forceLogoutUser(id: string): Promise<void>;
+  deleteUser(id: string): Promise<void>;
 }
 
 export const platformAdminStorage: PlatformAdminStorage = {
@@ -449,6 +473,73 @@ export const platformAdminStorage: PlatformAdminStorage = {
       expiringWithin14Days: Number(exp14?.count || 0),
       expiringWithin30Days: Number(exp30?.count || 0),
     };
+  },
+
+  // Subscription Plans Management
+  async getAllSubscriptionPlans(): Promise<SubscriptionPlanConfig[]> {
+    return db.select().from(subscriptionPlans).orderBy(subscriptionPlans.sortOrder);
+  },
+
+  async getSubscriptionPlanBySlug(slug: string): Promise<SubscriptionPlanConfig | null> {
+    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.slug, slug));
+    return plan || null;
+  },
+
+  async getSubscriptionPlanById(id: string): Promise<SubscriptionPlanConfig | null> {
+    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return plan || null;
+  },
+
+  async createSubscriptionPlan(data: InsertSubscriptionPlanConfig): Promise<SubscriptionPlanConfig> {
+    const [plan] = await db.insert(subscriptionPlans).values(data).returning();
+    return plan;
+  },
+
+  async updateSubscriptionPlan(id: string, data: Partial<InsertSubscriptionPlanConfig>): Promise<SubscriptionPlanConfig | null> {
+    const [plan] = await db.update(subscriptionPlans)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(subscriptionPlans.id, id))
+      .returning();
+    return plan || null;
+  },
+
+  async deleteSubscriptionPlan(id: string): Promise<boolean> {
+    const result = await db.delete(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return true;
+  },
+
+  // Subscription Override Management
+  async updateSubscriptionOverrides(organizationId: string, overrides: {
+    maxClientsOverride?: number | null;
+    maxSrdDepartmentsOverride?: number | null;
+    maxMainStoreOverride?: number | null;
+    maxSeatsOverride?: number | null;
+    retentionDaysOverride?: number | null;
+  }, adminId: string): Promise<any> {
+    const [sub] = await db.update(subscriptions)
+      .set({
+        ...overrides,
+        updatedBy: adminId,
+        updatedAt: new Date(),
+      })
+      .where(eq(subscriptions.organizationId, organizationId))
+      .returning();
+    return sub;
+  },
+
+  // User Management - additional actions
+  async forceLogoutUser(id: string): Promise<void> {
+    // Force logout by updating the user record (triggers session invalidation on next request)
+    // The actual session cleanup happens via the session store middleware
+    await db.update(users)
+      .set({ 
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, id));
+  },
+
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
   },
 };
 

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Label } from "@/components/ui/label";
 import { useLocation, Link } from "wouter";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
   ClipboardCheck, 
   Package, 
@@ -29,30 +29,87 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import logoImage from "@/assets/logo2.png";
 
+interface DBPricingPlan {
+  slug: string;
+  displayName: string;
+  description: string | null;
+  monthlyPrice: string;
+  quarterlyPrice: string;
+  yearlyPrice: string;
+  maxClients: number;
+  maxSrdDepartmentsPerClient: number;
+  maxMainStorePerClient: number;
+  maxSeats: number;
+  retentionDays: number;
+  canViewReports: boolean;
+  canDownloadReports: boolean;
+  canPrintReports: boolean;
+  canAccessPurchasesRegisterPage: boolean;
+  canAccessSecondHitPage: boolean;
+  canDownloadSecondHitFullTable: boolean;
+  canDownloadMainStoreLedgerSummary: boolean;
+  canUseBetaFeatures: boolean;
+}
+
 export default function Home() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "quarterly" | "yearly">("yearly");
   const [selectedSlots, setSelectedSlots] = useState<1 | 3 | 5 | 10>(1);
   const [contactForm, setContactForm] = useState({ name: "", email: "", message: "" });
+  const [dbPricing, setDbPricing] = useState<DBPricingPlan[]>([]);
+
+  useEffect(() => {
+    fetch("/api/public/pricing")
+      .then((res) => res.json())
+      .then((data) => setDbPricing(data))
+      .catch(() => {});
+  }, []);
+
+  const getDbPrice = (slug: string) => {
+    const plan = dbPricing.find((p) => p.slug === slug);
+    if (!plan) return null;
+    return {
+      monthly: parseFloat(plan.monthlyPrice) || 0,
+      quarterly: parseFloat(plan.quarterlyPrice) || 0,
+      yearly: parseFloat(plan.yearlyPrice) || 0,
+    };
+  };
 
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(amount);
   };
 
-  const calculatePrice = (baseMonthly: number) => {
+  const calculatePrice = (baseMonthly: number, planSlug?: string) => {
+    const dbPrice = planSlug ? getDbPrice(planSlug) : null;
+    
+    let basePrice = baseMonthly;
     let multiplier = 1;
     let periods = 1;
     
-    if (billingPeriod === "monthly") {
-      periods = 1;
-      multiplier = 1;
-    } else if (billingPeriod === "quarterly") {
-      periods = 3;
-      multiplier = 0.95;
+    if (dbPrice) {
+      if (billingPeriod === "monthly") {
+        basePrice = dbPrice.monthly;
+        periods = 1;
+      } else if (billingPeriod === "quarterly") {
+        basePrice = dbPrice.quarterly;
+        periods = 1;
+      } else {
+        basePrice = dbPrice.yearly;
+        periods = 1;
+      }
     } else {
-      periods = 12;
-      multiplier = 0.85;
+      if (billingPeriod === "monthly") {
+        periods = 1;
+        multiplier = 1;
+      } else if (billingPeriod === "quarterly") {
+        periods = 3;
+        multiplier = 0.95;
+      } else {
+        periods = 12;
+        multiplier = 0.85;
+      }
+      basePrice = baseMonthly * periods * multiplier;
     }
 
     let slotMultiplier = selectedSlots;
@@ -60,7 +117,7 @@ export default function Home() {
     else if (selectedSlots === 5) slotMultiplier = 5 * 0.85;
     else if (selectedSlots === 10) slotMultiplier = 10 * 0.75;
 
-    return Math.round(baseMonthly * periods * multiplier * slotMultiplier);
+    return Math.round(basePrice * slotMultiplier);
   };
 
   const handleContactSubmit = (e: React.FormEvent) => {
@@ -84,6 +141,7 @@ export default function Home() {
   const pricingPlans = [
     {
       name: "Starter",
+      slug: "starter",
       headline: "Daily audit essentials for small operations",
       subtext: "Capture sales, reconcile stock, and run daily workflow—without heavy exports.",
       bestFor: "Single outlet lounges/restaurants and early-stage audit routines.",
@@ -108,6 +166,7 @@ export default function Home() {
     },
     {
       name: "Growth",
+      slug: "growth",
       headline: "Strong controls for growing audit teams",
       subtext: "Expand departments, add more users, and unlock most report downloads.",
       bestFor: "Busy lounges/restaurants and audit teams handling multiple departments daily.",
@@ -130,6 +189,7 @@ export default function Home() {
     },
     {
       name: "Business",
+      slug: "business",
       headline: "Full reporting power for audit firms and multi-outlet operations",
       subtext: "Unlock full reconciliation intelligence, full exports, and advanced stock variance reporting.",
       bestFor: "Professional audit firms, serious internal audit teams, and multi-branch hospitality groups.",
@@ -150,6 +210,7 @@ export default function Home() {
     },
     {
       name: "Enterprise",
+      slug: "enterprise",
       headline: "Unlimited scale + priority support + early access",
       subtext: "Designed for large audit teams, groups, franchises, and heavy reporting needs.",
       bestFor: "Large audit firms, hotel groups, franchises, and multi-location hospitality chains.",
@@ -390,7 +451,7 @@ export default function Home() {
                       ) : (
                         <>
                           <div className="flex items-baseline gap-1">
-                            <span className="text-2xl font-bold text-foreground">₦{formatPrice(calculatePrice(plan.baseMonthly))}</span>
+                            <span className="text-2xl font-bold text-foreground">₦{formatPrice(calculatePrice(plan.baseMonthly, plan.slug))}</span>
                             <span className="text-sm text-muted-foreground">/{billingPeriod}</span>
                           </div>
                           {selectedSlots > 1 && (

@@ -1,0 +1,137 @@
+PROMPT: OWNER DASHBOARD – PRICING, SLOTS, TENANTS & USERS (FUNCTIONALITY ONLY)
+CONTEXT (DO NOT IGNORE)
+This is a multi-tenant SaaS.
+Owner / Platform Admin controls the platform globally
+Tenants (Companies / Auditors) use the tenant application
+Tenant users operate only inside their tenant
+Owner dashboard is separate from tenant app
+Example route: /owner or /platform-admin
+Do NOT rebuild pages that already exist
+Do NOT move owner controls into tenant app
+🎯 OBJECTIVE (UPDATED)
+Enhance the existing Owner Dashboard by:
+Making Subscription Pricing & Slot controls editable
+Making Tenants page fully functional
+Making Users page fully functional
+Enforcing correct subscription entitlements
+Syncing Home page pricing dynamically
+A) SUBSCRIPTION PRICING & SLOT CONTROL (OWNER ONLY)
+Page: Owner Dashboard → Subscription Plans
+This page already exists.
+DO NOT rebuild UI — add functionality only.
+1. Pricing Control (Editable)
+For each plan (Starter, Growth, Business, Enterprise), enable owner to edit:
+Monthly Price
+Quarterly Price
+Yearly Price
+Rules:
+Pricing must be stored in DB
+No hardcoded prices anywhere
+Changes must reflect instantly on Home page pricing cards
+2. Slot & Capacity Control
+Enable owner to configure and lock:
+Max Clients / Companies per subscription
+Max SRD Department Stores per client
+Max Main Stores per client
+Max Users (Seats)
+Rules:
+Enforced server-side
+UI must show “Limit Reached”
+Owner overrides always win
+B) SUBSCRIPTION ENTITLEMENTS (CRITICAL FIX)
+🔹 STARTER PLAN (UPDATED)
+Allowed:
+✅ Download standard reports
+❌ NO access to:
+Purchase Register Page (download)
+Department Comparison (1st Hit) download
+Department Comparison (2nd Hit – FULL TABLE)
+SR-D Main Store Ledger Summary
+Beta features
+Data Retention:
+3× baseline retention (example: if base is 30 days → Starter = 90 days)
+🔹 GROWTH PLAN (UPDATED)
+Allowed:
+✅ Download most reports
+❌ NO access to:
+Department Comparison (2nd Hit – FULL TABLE)
+SR-D Main Store Ledger Summary
+Beta features
+Data Retention:
+3× baseline retention (same as Starter)
+🔹 BUSINESS PLAN
+Allowed:
+✅ Full reports access
+✅ All comparison tables
+✅ Main Store Ledger Summary
+❌ No beta features
+Data Retention:
+Standard (1× baseline)
+🔹 ENTERPRISE PLAN
+Allowed:
+✅ Everything
+✅ Beta features
+✅ Dedicated support
+Data Retention:
+Unlimited / configurable by owner
+C) HOME PAGE PRICING (NO UI REBUILD)
+Home page pricing cards must pull live data
+Any owner change to:
+Price
+Slots
+Plan availability
+→ must reflect immediately on Home page
+D) TENANTS PAGE (EXISTING PAGE – MAKE FUNCTIONAL)
+Page: Owner Dashboard → Tenants
+This page already exists.
+Enable functionality for existing buttons only.
+Actions to implement:
+View Tenant (read-only)
+Suspend Tenant (block login & API access)
+Reactivate Tenant
+Delete Tenant (hard delete with confirmation)
+Change Subscription Plan
+Override Slot Limits
+Extend / reduce subscription expiry date
+Rules:
+Suspension must take effect immediately
+Deleted tenants lose access permanently
+Tenant isolation must be enforced
+E) USERS PAGE (EXISTING PAGE – MAKE FUNCTIONAL)
+Page: Owner Dashboard → Users
+Enable existing buttons:
+Send password reset email
+Lock user account
+Unlock user account
+Force logout (invalidate session)
+Delete user
+Rules:
+Owner actions override tenant admin
+Locked users cannot log in
+Must work across all tenants
+F) SECURITY & SCOPE RULES (STRICT)
+Owner routes must remain isolated (/owner/*)
+Tenant users must NEVER see:
+Pricing editor
+Slot controls
+Billing overrides
+Tenants list
+No free trial logic
+No payment gateway logic
+Do NOT touch:
+SR-D Ledger logic
+Audit Workspace
+Inventory calculations
+G) OUTPUT REQUIRED FROM AI BUILDER
+List existing pages modified
+Show DB fields added/updated
+Show entitlement enforcement logic
+Confirm Home page pricing is dynamic
+Confirm no tenant UI was altered
+✅ FINAL RESULT EXPECTED
+Owner controls pricing & limits
+Tenants & Users pages fully functional
+Subscription rules enforced correctly
+No duplicated logic
+Clean separation between Platform Admin and Tenant App
+

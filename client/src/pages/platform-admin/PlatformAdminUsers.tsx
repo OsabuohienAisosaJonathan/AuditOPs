@@ -40,7 +40,9 @@ import {
   Key,
   Loader2,
   CheckCircle,
-  XCircle
+  XCircle,
+  LogOut,
+  Trash2
 } from "lucide-react";
 
 async function fetchUsers(params: Record<string, string>) {
@@ -58,6 +60,8 @@ export default function PlatformAdminUsers() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
   const [lockReason, setLockReason] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["platform-admin-users", search, roleFilter, statusFilter],
@@ -113,6 +117,44 @@ export default function PlatformAdminUsers() {
     },
     onSuccess: () => toast.success("Verification email resent"),
     onError: () => toast.error("Failed to resend verification"),
+  });
+
+  const forceLogoutMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/owner/users/${id}/force-logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to force logout");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["platform-admin-users"] });
+      toast.success("User session invalidated");
+    },
+    onError: () => toast.error("Failed to force logout user"),
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const response = await fetch(`/api/owner/users/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ reason }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Failed to delete user");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["platform-admin-users"] });
+      toast.success("User deleted");
+      setDeleteDialogOpen(false);
+      setSelectedUser(null);
+      setDeleteReason("");
+    },
+    onError: (err: any) => toast.error(err.message || "Failed to delete user"),
   });
 
   const sendPasswordResetMutation = useMutation({
@@ -289,6 +331,28 @@ export default function PlatformAdminUsers() {
                           >
                             <Key className="w-4 h-4 text-slate-600" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => forceLogoutMutation.mutate(user.id)}
+                            disabled={forceLogoutMutation.isPending}
+                            title="Force logout"
+                            data-testid={`button-logout-${user.id}`}
+                          >
+                            <LogOut className="w-4 h-4 text-orange-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setDeleteDialogOpen(true);
+                            }}
+                            title="Delete user"
+                            data-testid={`button-delete-${user.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -338,6 +402,42 @@ export default function PlatformAdminUsers() {
             >
               {lockMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Lock Account
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+            <DialogDescription>
+              This will permanently delete "{selectedUser?.fullName}". This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Reason for deletion (required)</Label>
+              <Textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Enter reason..."
+                data-testid="input-delete-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteUserMutation.mutate({ id: selectedUser?.id, reason: deleteReason })}
+              disabled={deleteUserMutation.isPending || deleteReason.trim().length < 5}
+              data-testid="button-confirm-delete"
+            >
+              {deleteUserMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete User
             </Button>
           </DialogFooter>
         </DialogContent>
