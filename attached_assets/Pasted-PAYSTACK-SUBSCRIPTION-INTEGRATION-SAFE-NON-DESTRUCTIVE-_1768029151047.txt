@@ -1,0 +1,98 @@
+PAYSTACK SUBSCRIPTION INTEGRATION (SAFE + NON-DESTRUCTIVE PROMPT)
+IMPORTANT RULE (READ FIRST):
+The tenant Billing & Plan UI already exists.
+Do NOT rebuild, redesign, or relocate it.
+Only connect Paystack logic, subscription lifecycle, and enforcement to the existing Billing & Plan section.
+1️⃣ Paystack Integration (Core)
+Integrate Paystack Subscriptions using:
+Paystack Customers
+Paystack Plans (Monthly / Quarterly / Yearly)
+Paystack Subscriptions API
+Paystack Webhooks (authoritative source of truth)
+Each tenant organization must map to:
+paystack_customer_code
+paystack_subscription_code
+paystack_plan_code
+Store these on the organization / tenant record.
+2️⃣ Subscription Plan Mapping (No UI Changes)
+Map existing plans exactly as defined:
+Starter
+Growth
+Business
+Enterprise
+Each plan must support:
+Monthly
+Quarterly
+Yearly
+Slots (client/company limits) are already enforced elsewhere — do not touch enforcement logic.
+3️⃣ Billing & Plan Page (Tenant Dashboard)
+DO NOT CREATE A NEW PAGE
+Enhance the existing Billing & Plan section to:
+Display data pulled from Paystack + local subscription table:
+Current Plan
+Billing Cycle
+Subscription Status (Active / Expired / Suspended)
+Start Date
+Expiry Date
+Next Billing Date (FIX – must now display)
+Last Payment Date
+Last Payment Amount
+No layout or styling changes.
+4️⃣ Early Renewal (Critical Requirement)
+Allow tenants to pay even if subscription is still active.
+Rule:
+New payment extends from current expiry date, not from today.
+Example:
+Current expiry: 31 March
+Tenant renews on 10 February (Yearly)
+New expiry = 31 March + 1 year
+This must apply to:
+Monthly
+Quarterly
+Yearly
+5️⃣ Expired Subscription Behavior (STRICT)
+When a tenant subscription is expired:
+✅ Tenant CAN log in
+❌ Tenant CANNOT use any feature except Billing & Plan
+❌ Do NOT redirect to login
+❌ Do NOT log the user out
+Show a blocking notice:
+“Your subscription has expired. Please renew to continue using MiAuditOps.”
+6️⃣ Renewal Flow
+On Billing & Plan:
+“Renew / Extend Subscription” button must:
+Always be visible
+Route to Paystack checkout
+Work whether subscription is active or expired
+7️⃣ Webhook Handling (Authoritative)
+On Paystack subscription.create / charge.success webhook:
+Validate Paystack signature
+Update tenant subscription record:
+Status → Active
+Expiry Date → recalculated
+Next Billing Date → recalculated
+Immediately unlock the application (no refresh, no logout)
+Paystack webhook overrides all local assumptions.
+8️⃣ Enforcement Rule (Very Important)
+Login must never be blocked due to subscription status
+Feature access must be enforced after login
+Enforcement must be centralized (middleware / guard)
+Billing & Plan must always remain accessible
+9️⃣ What NOT To Do
+❌ Do not rebuild Billing & Plan UI
+❌ Do not add free trials
+❌ Do not create duplicate billing tables
+❌ Do not alter SRD, Audit, Inventory, or Report logic
+❌ Do not introduce Stripe or mixed gateways
+10️⃣ Expected Output From You (AI Builder)
+List files modified
+Webhook endpoint path
+Subscription table changes (if any)
+Confirmation that Billing & Plan UI was NOT rebuilt
+Test checklist:
+Active renewal
+Early renewal
+Expired → renew → unlock
+Webhook recovery after missed payment
+✅ END PROMPT
+

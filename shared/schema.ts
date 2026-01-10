@@ -941,6 +941,14 @@ export const subscriptions = pgTable("subscriptions", {
   maxMainStoreOverride: integer("max_main_store_override"),
   maxSeatsOverride: integer("max_seats_override"),
   retentionDaysOverride: integer("retention_days_override"),
+  // Paystack integration fields
+  paystackCustomerCode: text("paystack_customer_code"),
+  paystackSubscriptionCode: text("paystack_subscription_code"),
+  paystackPlanCode: text("paystack_plan_code"),
+  paystackEmailToken: text("paystack_email_token"),
+  lastPaymentDate: timestamp("last_payment_date"),
+  lastPaymentAmount: decimal("last_payment_amount", { precision: 12, scale: 2 }),
+  lastPaymentReference: text("last_payment_reference"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
