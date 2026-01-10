@@ -366,6 +366,8 @@ export interface IStorage {
   getSubscriptions(): Promise<Subscription[]>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, subscription: Partial<InsertSubscription>): Promise<Subscription | undefined>;
+  findSubscriptionsByPaystackCustomer(customerCode: string): Promise<Subscription[]>;
+  findSubscriptionsByPaystackSubscription(subscriptionCode: string): Promise<Subscription[]>;
 
   // Organizations
   getOrganization(id: string): Promise<Organization | undefined>;
@@ -2776,6 +2778,16 @@ export class DbStorage implements IStorage {
       .where(eq(subscriptions.id, id))
       .returning();
     return updated;
+  }
+
+  async findSubscriptionsByPaystackCustomer(customerCode: string): Promise<Subscription[]> {
+    return db.select().from(subscriptions)
+      .where(eq(subscriptions.paystackCustomerCode, customerCode));
+  }
+
+  async findSubscriptionsByPaystackSubscription(subscriptionCode: string): Promise<Subscription[]> {
+    return db.select().from(subscriptions)
+      .where(eq(subscriptions.paystackSubscriptionCode, subscriptionCode));
   }
 
   // Payments

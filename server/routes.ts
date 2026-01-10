@@ -31,6 +31,7 @@ import archiver from "archiver";
 import { backfillSrdLedger, backfillAllSrdsForClient, postMovementToLedgers, recalculateForward } from "./srd-ledger-service";
 import { srdLedgerEngine } from "./srd-ledger-engine";
 import type { SrdMovementEventType } from "@shared/schema";
+import * as paystackService from "./paystack-service";
 
 declare module "express-session" {
   interface SessionData {
@@ -3291,6 +3292,269 @@ export async function registerRoutes(
       }
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Initialize Paystack checkout for subscription payment/renewal
+  app.post("/api/billing/paystack/initialize", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      if (!paystackService.isPaystackConfigured()) {
+        return res.status(503).json({ error: "Paystack is not configured" });
+      }
+      
+      const { planName, billingPeriod, amount } = req.body;
+      
+      if (!planName || !billingPeriod || !amount) {
+        return res.status(400).json({ error: "Plan name, billing period, and amount are required" });
+      }
+      
+      const organization = await storage.getOrganization(user.organizationId);
+      if (!organization) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      
+      const subscription = await storage.getSubscription(user.organizationId);
+      
+      const callbackUrl = `${req.protocol}://${req.get("host")}/billing/verify`;
+      
+      const result = await paystackService.initializeTransaction({
+        email: user.email || organization.email || `tenant-${user.organizationId}@miauditops.com`,
+        amount: parseFloat(amount),
+        callback_url: callbackUrl,
+        metadata: {
+          organizationId: user.organizationId,
+          userId: user.id,
+          planName,
+          billingPeriod,
+          isRenewal: !!subscription,
+          currentExpiry: subscription?.endDate?.toISOString() || null,
+        },
+      });
+      
+      res.json({
+        authorization_url: result.authorization_url,
+        reference: result.reference,
+        publicKey: paystackService.getPublicKey(),
+      });
+    } catch (error: any) {
+      console.log("[Paystack] Initialize error:", error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Verify Paystack transaction after payment
+  app.get("/api/billing/paystack/verify/:reference", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const { reference } = req.params;
+      
+      if (!paystackService.isPaystackConfigured()) {
+        return res.status(503).json({ error: "Paystack is not configured" });
+      }
+      
+      const transaction = await paystackService.verifyTransaction(reference);
+      
+      if (transaction.status !== "success") {
+        return res.status(400).json({ error: "Transaction was not successful", status: transaction.status });
+      }
+      
+      res.json({
+        success: true,
+        transaction: {
+          reference: transaction.reference,
+          amount: transaction.amount / 100,
+          status: transaction.status,
+          paidAt: transaction.paid_at,
+        },
+      });
+    } catch (error: any) {
+      console.log("[Paystack] Verify error:", error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Paystack webhook handler (no auth - uses signature verification)
+  app.post("/api/webhooks/paystack", async (req, res) => {
+    try {
+      const signature = req.headers["x-paystack-signature"] as string;
+      const rawBody = JSON.stringify(req.body);
+      
+      if (!paystackService.verifyWebhookSignature(rawBody, signature)) {
+        console.log("[Paystack Webhook] Invalid signature");
+        return res.status(401).json({ error: "Invalid signature" });
+      }
+      
+      const event = req.body;
+      console.log("[Paystack Webhook] Event received:", event.event);
+      
+      switch (event.event) {
+        case "charge.success": {
+          const data = event.data;
+          const metadata = data.metadata || {};
+          const organizationId = metadata.organizationId;
+          
+          if (!organizationId) {
+            console.log("[Paystack Webhook] No organizationId in metadata");
+            return res.status(200).json({ received: true });
+          }
+          
+          const subscription = await storage.getSubscription(organizationId);
+          const billingPeriod = metadata.billingPeriod || "monthly";
+          const planName = metadata.planName || subscription?.planName || "starter";
+          
+          const currentExpiry = subscription?.endDate ? new Date(subscription.endDate) : null;
+          const newExpiry = paystackService.calculateExpiryDate(currentExpiry, billingPeriod);
+          const nextBilling = paystackService.calculateNextBillingDate(currentExpiry, billingPeriod);
+          
+          const updateData: any = {
+            status: "active",
+            planName,
+            billingPeriod,
+            provider: "paystack",
+            endDate: newExpiry,
+            nextBillingDate: nextBilling,
+            lastPaymentDate: new Date(data.paid_at || Date.now()),
+            lastPaymentAmount: (data.amount / 100).toString(),
+            lastPaymentReference: data.reference,
+            updatedAt: new Date(),
+          };
+          
+          if (data.customer?.customer_code) {
+            updateData.paystackCustomerCode = data.customer.customer_code;
+          }
+          
+          if (subscription) {
+            await storage.updateSubscription(subscription.id, updateData);
+          } else {
+            await storage.createSubscription({
+              organizationId,
+              ...updateData,
+              slotsPurchased: 1,
+              startDate: new Date(),
+            });
+          }
+          
+          await storage.createPayment({
+            organizationId,
+            amount: (data.amount / 100).toString(),
+            currency: data.currency || "NGN",
+            periodCoveredStart: currentExpiry && currentExpiry > new Date() ? currentExpiry : new Date(),
+            periodCoveredEnd: newExpiry,
+            status: "completed",
+            reference: data.reference,
+            notes: `Paystack payment - ${planName} ${billingPeriod}`,
+          });
+          
+          console.log("[Paystack Webhook] charge.success processed for org:", organizationId);
+          break;
+        }
+        
+        case "subscription.create": {
+          const data = event.data;
+          const customerCode = data.customer?.customer_code;
+          
+          if (customerCode) {
+            const subscriptions = await storage.findSubscriptionsByPaystackCustomer(customerCode);
+            for (const sub of subscriptions) {
+              await storage.updateSubscription(sub.id, {
+                paystackSubscriptionCode: data.subscription_code,
+                paystackPlanCode: data.plan?.plan_code,
+                paystackEmailToken: data.email_token,
+                status: "active",
+              });
+            }
+          }
+          console.log("[Paystack Webhook] subscription.create processed");
+          break;
+        }
+        
+        case "subscription.not_renew": {
+          const data = event.data;
+          const subscriptionCode = data.subscription_code;
+          
+          if (subscriptionCode) {
+            const subs = await storage.findSubscriptionsByPaystackSubscription(subscriptionCode);
+            for (const sub of subs) {
+              await storage.updateSubscription(sub.id, {
+                status: "cancelled",
+                notes: "Subscription cancelled via Paystack",
+              });
+            }
+          }
+          console.log("[Paystack Webhook] subscription.not_renew processed");
+          break;
+        }
+        
+        case "invoice.payment_failed": {
+          const data = event.data;
+          const subscriptionCode = data.subscription?.subscription_code;
+          
+          if (subscriptionCode) {
+            const subs = await storage.findSubscriptionsByPaystackSubscription(subscriptionCode);
+            for (const sub of subs) {
+              await storage.updateSubscription(sub.id, {
+                status: "past_due",
+                notes: "Payment failed",
+              });
+            }
+          }
+          console.log("[Paystack Webhook] invoice.payment_failed processed");
+          break;
+        }
+        
+        default:
+          console.log("[Paystack Webhook] Unhandled event:", event.event);
+      }
+      
+      res.status(200).json({ received: true });
+    } catch (error: any) {
+      console.log("[Paystack Webhook] Error:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get detailed billing info with Paystack data
+  app.get("/api/billing/details", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization" });
+      }
+      
+      const tenantData = await getTenantEntitlements(user.organizationId);
+      const subscription = await storage.getSubscription(user.organizationId);
+      const organization = await storage.getOrganization(user.organizationId);
+      
+      res.json({
+        plan: tenantData.plan,
+        status: tenantData.status,
+        billingPeriod: subscription?.billingPeriod || "monthly",
+        startDate: subscription?.startDate || null,
+        endDate: subscription?.endDate || null,
+        nextBillingDate: subscription?.nextBillingDate || null,
+        lastPaymentDate: subscription?.lastPaymentDate || null,
+        lastPaymentAmount: subscription?.lastPaymentAmount || null,
+        lastPaymentReference: subscription?.lastPaymentReference || null,
+        isActive: tenantData.isActive,
+        isExpired: subscription?.endDate ? new Date(subscription.endDate) < new Date() : false,
+        provider: subscription?.provider || "manual",
+        paystackConfigured: paystackService.isPaystackConfigured(),
+        paystackPublicKey: paystackService.getPublicKey(),
+        entitlements: tenantData.entitlements,
+        usage: tenantData.usage,
+        organizationName: organization?.name,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 
