@@ -570,6 +570,13 @@ async function fetchApi<T>(url: string, options?: RequestInit, isRetry = false):
           handle401Redirect();
           // Throw error instead of hanging forever so UI can show error state
           throw new ApiError(401, "Session expired", { code: "SESSION_EXPIRED" });
+        case 402:
+          if (error.code === "SUBSCRIPTION_EXPIRED") {
+            window.dispatchEvent(new CustomEvent("subscription-expired", { 
+              detail: { expiryDate: error.expiryDate, status: error.status } 
+            }));
+          }
+          break;
         case 403:
           if (!error.code) {
             toast.error("You don't have permission to perform this action");

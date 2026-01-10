@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useAuth } from "./auth-context";
 import { LockedFeatureModal } from "@/components/LockedFeatureModal";
+import { SubscriptionExpiredModal } from "@/components/SubscriptionExpiredModal";
 
 export interface Entitlements {
   maxClients: number;
@@ -29,11 +30,19 @@ export interface Entitlements {
   } | null;
 }
 
+interface SubscriptionExpiredInfo {
+  isExpired: boolean;
+  expiryDate?: string;
+  status?: string;
+}
+
 interface EntitlementsContextType {
   entitlements: Entitlements | null;
   isLoading: boolean;
+  subscriptionExpired: SubscriptionExpiredInfo;
   refresh: () => Promise<void>;
   showLockedModal: (feature: string, requiredPlan?: string, description?: string) => void;
+  showSubscriptionExpiredModal: (expiryDate?: string, status?: string) => void;
   checkAndShowLocked: (feature: keyof Pick<Entitlements, 'canDownloadReports' | 'canPrintReports' | 'canAccessPurchasesRegisterPage' | 'canAccessSecondHitPage' | 'canDownloadSecondHitFullTable' | 'canDownloadMainStoreLedgerSummary' | 'canUseBetaFeatures'>, featureLabel: string, requiredPlan?: string) => boolean;
 }
 
@@ -64,6 +73,13 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [lockedModalOpen, setLockedModalOpen] = useState(false);
   const [lockedFeature, setLockedFeature] = useState({ feature: "", requiredPlan: "Growth", description: "" });
+  const [subscriptionExpiredModalOpen, setSubscriptionExpiredModalOpen] = useState(false);
+  const [subscriptionExpired, setSubscriptionExpired] = useState<SubscriptionExpiredInfo>({ isExpired: false });
+
+  const showSubscriptionExpiredModal = (expiryDate?: string, status?: string) => {
+    setSubscriptionExpired({ isExpired: true, expiryDate, status });
+    setSubscriptionExpiredModalOpen(true);
+  };
 
   const refresh = async () => {
     if (!user) {
@@ -79,6 +95,14 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setEntitlements(data);
+        setSubscriptionExpired({ isExpired: false });
+      } else if (response.status === 402) {
+        const error = await response.json().catch(() => ({}));
+        if (error.code === "SUBSCRIPTION_EXPIRED") {
+          setSubscriptionExpired({ isExpired: true, expiryDate: error.expiryDate, status: error.status });
+          setSubscriptionExpiredModalOpen(true);
+        }
+        setEntitlements(defaultEntitlements);
       } else {
         setEntitlements(defaultEntitlements);
       }
@@ -117,8 +141,20 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [user]);
 
+  useEffect(() => {
+    const handleSubscriptionExpired = (event: CustomEvent) => {
+      const { expiryDate, status } = event.detail;
+      showSubscriptionExpiredModal(expiryDate, status);
+    };
+
+    window.addEventListener("subscription-expired", handleSubscriptionExpired as EventListener);
+    return () => {
+      window.removeEventListener("subscription-expired", handleSubscriptionExpired as EventListener);
+    };
+  }, []);
+
   return (
-    <EntitlementsContext.Provider value={{ entitlements, isLoading, refresh, showLockedModal, checkAndShowLocked }}>
+    <EntitlementsContext.Provider value={{ entitlements, isLoading, subscriptionExpired, refresh, showLockedModal, showSubscriptionExpiredModal, checkAndShowLocked }}>
       {children}
       <LockedFeatureModal
         open={lockedModalOpen}
@@ -126,6 +162,12 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
         feature={lockedFeature.feature}
         requiredPlan={lockedFeature.requiredPlan}
         description={lockedFeature.description}
+      />
+      <SubscriptionExpiredModal
+        open={subscriptionExpiredModalOpen}
+        onOpenChange={setSubscriptionExpiredModalOpen}
+        expiryDate={subscriptionExpired.expiryDate}
+        status={subscriptionExpired.status}
       />
     </EntitlementsContext.Provider>
   );

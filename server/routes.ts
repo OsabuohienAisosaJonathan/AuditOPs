@@ -317,6 +317,7 @@ export async function registerRoutes(
   // Allows auth, billing, subscription, organization, and user endpoints even when expired
   app.use("/api", async (req: Request, res: Response, next: NextFunction) => {
     // Skip subscription check for exempt paths
+    // Note: req.originalUrl contains full path with /api prefix
     const exemptPaths = [
       "/api/auth",
       "/api/billing",
@@ -328,7 +329,7 @@ export async function registerRoutes(
       "/api/webhooks",  // Webhook endpoints
     ];
     
-    const isExempt = exemptPaths.some(path => req.path.startsWith(path));
+    const isExempt = exemptPaths.some(path => req.originalUrl.startsWith(path));
     if (isExempt) {
       return next();
     }
