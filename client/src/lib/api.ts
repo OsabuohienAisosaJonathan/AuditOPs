@@ -132,6 +132,10 @@ export interface Item {
   unit: string;
   costPrice: string;
   sellingPrice: string;
+  wholesalePrice: string | null;
+  retailPrice: string | null;
+  vipPrice: string | null;
+  customPrice: string | null;
   reorderLevel: number;
   status: string;
   serialTracking?: string | null;

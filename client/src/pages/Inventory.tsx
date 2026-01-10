@@ -546,6 +546,10 @@ export default function Inventory() {
                           unit: formData.get("unit") as string,
                           costPrice: formData.get("costPrice") as string,
                           sellingPrice: formData.get("sellingPrice") as string,
+                          wholesalePrice: formData.get("wholesalePrice") as string || null,
+                          retailPrice: formData.get("retailPrice") as string || null,
+                          vipPrice: formData.get("vipPrice") as string || null,
+                          customPrice: formData.get("customPrice") as string || null,
                           reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
                           status: "active",
                           serialTracking: newItemSerialTracking as "none" | "serial" | "batch" | "lot" | "imei",
@@ -623,8 +627,28 @@ export default function Inventory() {
                               <Input id="costPrice" name="costPrice" type="number" step="0.01" required data-testid="input-item-cost" />
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="sellingPrice">Selling Price</Label>
+                              <Label htmlFor="sellingPrice">Selling Price (Default)</Label>
                               <Input id="sellingPrice" name="sellingPrice" type="number" step="0.01" required data-testid="input-item-price" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="wholesalePrice">Wholesale Price</Label>
+                              <Input id="wholesalePrice" name="wholesalePrice" type="number" step="0.01" placeholder="Optional" data-testid="input-item-wholesale" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="retailPrice">Retail Price</Label>
+                              <Input id="retailPrice" name="retailPrice" type="number" step="0.01" placeholder="Optional" data-testid="input-item-retail" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="vipPrice">VIP Price</Label>
+                              <Input id="vipPrice" name="vipPrice" type="number" step="0.01" placeholder="Optional" data-testid="input-item-vip" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="customPrice">Custom Price</Label>
+                              <Input id="customPrice" name="customPrice" type="number" step="0.01" placeholder="Optional" data-testid="input-item-custom" />
                             </div>
                           </div>
                           <div className="space-y-2">
@@ -1546,6 +1570,10 @@ export default function Inventory() {
                   unit: selectedItem.unit, // Unit is non-editable, use original value
                   costPrice: formData.get("costPrice") as string,
                   sellingPrice: formData.get("sellingPrice") as string,
+                  wholesalePrice: formData.get("wholesalePrice") as string || null,
+                  retailPrice: formData.get("retailPrice") as string || null,
+                  vipPrice: formData.get("vipPrice") as string || null,
+                  customPrice: formData.get("customPrice") as string || null,
                   reorderLevel: parseInt(formData.get("reorderLevel") as string) || 0,
                   purchaseQty: purchaseQty && parseFloat(purchaseQty) > 0 ? purchaseQty : undefined,
                   purchaseDate: purchaseQty && parseFloat(purchaseQty) > 0 && purchaseDate ? purchaseDate : undefined,
@@ -1609,8 +1637,28 @@ export default function Inventory() {
                     <Input id="edit-costPrice" name="costPrice" type="number" step="0.01" defaultValue={selectedItem.costPrice} required data-testid="input-edit-item-cost" />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-sellingPrice">Selling Price</Label>
+                    <Label htmlFor="edit-sellingPrice">Selling Price (Default)</Label>
                     <Input id="edit-sellingPrice" name="sellingPrice" type="number" step="0.01" defaultValue={selectedItem.sellingPrice} required data-testid="input-edit-item-price" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-wholesalePrice">Wholesale Price</Label>
+                    <Input id="edit-wholesalePrice" name="wholesalePrice" type="number" step="0.01" defaultValue={selectedItem.wholesalePrice || ""} placeholder="Optional" data-testid="input-edit-item-wholesale" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-retailPrice">Retail Price</Label>
+                    <Input id="edit-retailPrice" name="retailPrice" type="number" step="0.01" defaultValue={selectedItem.retailPrice || ""} placeholder="Optional" data-testid="input-edit-item-retail" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-vipPrice">VIP Price</Label>
+                    <Input id="edit-vipPrice" name="vipPrice" type="number" step="0.01" defaultValue={selectedItem.vipPrice || ""} placeholder="Optional" data-testid="input-edit-item-vip" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-customPrice">Custom Price</Label>
+                    <Input id="edit-customPrice" name="customPrice" type="number" step="0.01" defaultValue={selectedItem.customPrice || ""} placeholder="Optional" data-testid="input-edit-item-custom" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
