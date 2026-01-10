@@ -313,6 +313,64 @@ export async function registerRoutes(
   // Register platform admin routes (separate from tenant routes)
   registerPlatformAdminRoutes(app);
 
+  // Global subscription enforcement middleware
+  // Allows auth, billing, subscription, organization, and user endpoints even when expired
+  app.use("/api", async (req: Request, res: Response, next: NextFunction) => {
+    // Skip subscription check for exempt paths
+    const exemptPaths = [
+      "/api/auth",
+      "/api/billing",
+      "/api/subscription",
+      "/api/organization",
+      "/api/user",
+      "/api/health",
+      "/api/owner",  // Platform admin routes
+      "/api/webhooks",  // Webhook endpoints
+    ];
+    
+    const isExempt = exemptPaths.some(path => req.path.startsWith(path));
+    if (isExempt) {
+      return next();
+    }
+    
+    // Skip if not authenticated (let auth middleware handle it)
+    if (!req.session?.userId) {
+      return next();
+    }
+    
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user?.organizationId) {
+        return next();
+      }
+      
+      const subscription = await storage.getSubscription(user.organizationId);
+      if (!subscription) {
+        return next();
+      }
+      
+      const now = new Date();
+      const isExpired = subscription.endDate && new Date(subscription.endDate) < now;
+      const isPastDue = subscription.status === "past_due";
+      const isCancelled = subscription.status === "cancelled";
+      
+      if (isExpired || isPastDue || isCancelled) {
+        return res.status(402).json({
+          error: "Subscription expired",
+          code: "SUBSCRIPTION_EXPIRED",
+          message: "Your subscription has expired. Please renew to continue using this feature.",
+          expiryDate: subscription.endDate,
+          status: subscription.status
+        });
+      }
+    } catch (err) {
+      // If subscription check fails, allow request to proceed
+      console.error("Subscription check error:", err);
+    }
+    
+    next();
+  });
+
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {
       return res.status(401).json({ error: "Unauthorized" });
