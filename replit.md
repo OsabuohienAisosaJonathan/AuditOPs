@@ -163,3 +163,53 @@ All ledger closing calculations now flow through `recalculateForward()` in `srd-
 - Deductions: Issued + TransfersOut + InterDeptOut + Waste + WriteOff + Sold + Negative Adjustments
 
 **Department Store Opening**: Correctly uses previous day's `closingQty` (via `getLastClosingBefore` function), falling back to `physicalClosingQty` if a stock count was performed.
+
+### Paystack Subscription Integration (2026-01-10)
+Added Paystack payment gateway integration for subscription management with the following components:
+
+**A) Database Schema Enhancements:**
+- Added Paystack-specific columns to subscriptions table: `paystack_customer_code`, `paystack_subscription_code`, `paystack_plan_code`, `last_payment_date`, `last_payment_amount`, `last_payment_reference`
+- Storage methods: `findSubscriptionsByPaystackCustomer` and `findSubscriptionsByPaystackSubscription` for webhook processing
+
+**B) Paystack Service (`server/paystack-service.ts`):**
+- Transaction initialization and verification
+- Subscription management endpoints
+- Webhook signature validation with HMAC SHA512
+- Early renewal logic: extends from current expiry (not today)
+
+**C) Webhook Endpoint (`/api/webhooks/paystack`):**
+- No auth required, signature-verified
+- Handles `charge.success`, `subscription.create`, payment failures
+- Automatic subscription updates and payment record creation
+
+**D) Billing API Enhancements:**
+- `/api/billing/details` - Comprehensive billing data with Paystack fields
+- `/api/billing/paystack/initialize` - Checkout initialization
+- `/api/billing/paystack/verify/:reference` - Transaction verification
+
+**E) Enhanced Billing UI (Settings.tsx):**
+- Start Date, Expiry Date, Next Billing Date fields
+- Last Payment Date and Amount display
+- Conditional Renew/Extend Subscription button (based on `paystackConfigured`)
+- Expired subscription warning banner
+
+### Subscription Enforcement (2026-01-10)
+Implemented subscription enforcement middleware to block features when subscription is expired while still allowing access to billing-related endpoints for renewal.
+
+**A) Global Subscription Middleware (`server/routes.ts`):**
+- Checks subscription status on all API requests
+- Returns HTTP 402 with `SUBSCRIPTION_EXPIRED` code when expired
+- Exempt paths: `/api/auth`, `/api/billing`, `/api/subscription`, `/api/organization`, `/api/user`, `/api/health`, `/api/owner`, `/api/webhooks`
+- Uses `req.originalUrl` for correct path comparison
+
+**B) Frontend Subscription Expired Handling:**
+- `SubscriptionExpiredModal` component shows when API returns 402
+- Entitlements context detects 402 and triggers modal
+- API fetcher dispatches `subscription-expired` custom event on 402
+- Modal links to Settings page for renewal
+
+**Flow for Expired Tenant:**
+1. User logs in successfully (auth exempt)
+2. Entitlements fetch triggers modal display
+3. User can access Settings/Billing for renewal
+4. Non-exempt routes (clients, audits, inventory) blocked with 402
