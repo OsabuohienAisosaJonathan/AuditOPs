@@ -51,6 +51,10 @@ interface Item {
   unit: string;
   costPrice: string;
   sellingPrice: string;
+  wholesalePrice: string | null;
+  retailPrice: string | null;
+  vipPrice: string | null;
+  customPrice: string | null;
   reorderLevel: number | null;
   status: string;
 }
@@ -163,6 +167,10 @@ export default function InventoryLedger() {
   // Hidden categories state - keyed by SRD department ID
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
   const [hiddenCategoriesOpen, setHiddenCategoriesOpen] = useState(false);
+  
+  // Price tier selection for Department Store ledger (default to sellingPrice)
+  type PriceTier = "selling" | "wholesale" | "retail" | "vip" | "custom";
+  const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier>("selling");
   
   // Load hidden categories from localStorage when SRD changes
   useEffect(() => {
@@ -1027,8 +1035,19 @@ export default function InventoryLedger() {
       // Sold = adjustedTotal - closing (only when physical count exists)
       // This correctly excludes issued items from sales calculation
       const sold = closing !== null ? adjustedTotal - closing : null;
-      const sellingPrice = parseFloat(item.sellingPrice || "0");
-      const amountSold = sold !== null ? sold * sellingPrice : null;
+      
+      // Price tiers - parse all available price tiers
+      const prices = {
+        selling: parseFloat(item.sellingPrice || "0"),
+        wholesale: parseFloat(item.wholesalePrice || "0"),
+        retail: parseFloat(item.retailPrice || "0"),
+        vip: parseFloat(item.vipPrice || "0"),
+        custom: parseFloat(item.customPrice || "0"),
+      };
+      
+      // Use selected price tier for calculations
+      const selectedPrice = prices[selectedPriceTier] || prices.selling;
+      const amountSold = sold !== null ? sold * selectedPrice : null;
       
       return {
         sn,
@@ -1056,13 +1075,14 @@ export default function InventoryLedger() {
         total: adjustedTotal,
         sold,
         closing,
-        sellingPrice,
+        prices,
+        sellingPrice: selectedPrice,
         amountSold,
         awaitingCount: closing === null,
         stockId: stock?.id,
       };
     });
-  }, [items, selectedDept, storeStockData, prevDayStock, movementBreakdown, srdTypeMap]);
+  }, [items, selectedDept, storeStockData, prevDayStock, movementBreakdown, srdTypeMap, selectedPriceTier]);
 
   // Group dept store ledger by category
   const deptStoreLedgerByCategory = useMemo(() => {
@@ -1690,15 +1710,32 @@ export default function InventoryLedger() {
                   Showing inventory for {format(parseISO(selectedDate), "MMMM d, yyyy")} • Edit Opening, Added auto-filled • Closing from Stock Count
                 </CardDescription>
               </div>
-              <Button 
-                onClick={handleSaveLedger} 
-                disabled={!hasUnsavedChanges || saveLedgerMutation.isPending}
-                className="gap-2"
-                data-testid="button-save-dept-ledger"
-              >
-                {saveLedgerMutation.isPending ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                {saveLedgerMutation.isPending ? "Saving..." : "Save Ledger"}
-              </Button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-muted-foreground whitespace-nowrap">Price Tier:</Label>
+                  <Select value={selectedPriceTier} onValueChange={(v) => setSelectedPriceTier(v as PriceTier)}>
+                    <SelectTrigger className="w-[130px] h-9" data-testid="select-price-tier">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="selling">Selling Price</SelectItem>
+                      <SelectItem value="wholesale">Wholesale</SelectItem>
+                      <SelectItem value="retail">Retail</SelectItem>
+                      <SelectItem value="vip">VIP</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button 
+                  onClick={handleSaveLedger} 
+                  disabled={!hasUnsavedChanges || saveLedgerMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-save-dept-ledger"
+                >
+                  {saveLedgerMutation.isPending ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                  {saveLedgerMutation.isPending ? "Saving..." : "Save Ledger"}
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -1785,7 +1822,12 @@ export default function InventoryLedger() {
                     <TableHead className="w-[100px] text-right bg-muted/30">Total</TableHead>
                     <TableHead className="w-[100px] text-right">Sold</TableHead>
                     <TableHead className="w-[100px] text-right bg-muted/30">Closing</TableHead>
-                    <TableHead className="w-[100px] text-right">Selling Price</TableHead>
+                    <TableHead className="w-[100px] text-right">
+                      {selectedPriceTier === "selling" ? "Selling Price" :
+                       selectedPriceTier === "wholesale" ? "Wholesale" :
+                       selectedPriceTier === "retail" ? "Retail" :
+                       selectedPriceTier === "vip" ? "VIP" : "Custom"}
+                    </TableHead>
                     <TableHead className="w-[120px] text-right bg-green-50">Amount Sold</TableHead>
                   </TableRow>
                 </TableHeader>
