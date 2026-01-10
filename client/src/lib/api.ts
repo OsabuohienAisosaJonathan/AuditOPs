@@ -781,9 +781,18 @@ export const notificationsApi = {
 export interface BillingPlan {
   plan: string;
   status: string;
+  billingPeriod?: string;
   startDate: string | null;
   endDate: string | null;
+  nextBillingDate?: string | null;
+  lastPaymentDate?: string | null;
+  lastPaymentAmount?: string | null;
+  lastPaymentReference?: string | null;
   isActive: boolean;
+  isExpired?: boolean;
+  provider?: string;
+  paystackConfigured?: boolean;
+  paystackPublicKey?: string;
   entitlements: {
     maxClients: number;
     maxMainStoresPerClient: number;
@@ -821,6 +830,7 @@ export interface PaymentRecord {
 
 export const billingApi = {
   getPlan: () => fetchApi<BillingPlan>("/billing/plan"),
+  getDetails: () => fetchApi<BillingPlan>("/billing/details"),
   getPayments: () => fetchApi<PaymentRecord[]>("/billing/payments"),
   markPaid: (data: { amount: number; currency?: string; periodMonths: number; reference?: string; notes?: string }) =>
     fetchApi<{ success: boolean; payment: PaymentRecord; message: string }>("/billing/mark-paid", {
@@ -837,6 +847,13 @@ export const billingApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  initializePaystack: (data: { planName: string; billingPeriod: string; amount: number }) =>
+    fetchApi<{ authorization_url: string; reference: string; publicKey: string }>("/billing/paystack/initialize", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  verifyPaystack: (reference: string) =>
+    fetchApi<{ success: boolean; transaction: { reference: string; amount: number; status: string; paidAt: string } }>(`/billing/paystack/verify/${reference}`),
 };
 
 // Data Export types

@@ -234,8 +234,8 @@ export default function Settings() {
   });
   
   const { data: billingData, isLoading: isLoadingBilling } = useQuery({
-    queryKey: ["billing-plan"],
-    queryFn: billingApi.getPlan,
+    queryKey: ["billing-details"],
+    queryFn: billingApi.getDetails,
     enabled: user?.role === "super_admin",
   });
   
@@ -510,9 +510,23 @@ export default function Settings() {
         {isSuperAdmin && (
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Billing & Plan</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle>Billing & Plan</CardTitle>
+                </div>
+                {billingData?.paystackConfigured && (
+                  <Button
+                    variant={billingData?.isExpired ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      window.location.href = "/#/pricing";
+                    }}
+                    data-testid="button-renew-subscription"
+                  >
+                    {billingData?.isExpired ? "Renew Now" : "Extend Subscription"}
+                  </Button>
+                )}
               </div>
               <CardDescription>View your subscription and billing details</CardDescription>
             </CardHeader>
@@ -523,6 +537,13 @@ export default function Settings() {
                 </div>
               ) : (
                 <>
+                  {billingData?.isExpired && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                      <p className="text-sm text-red-700 dark:text-red-300 font-medium">
+                        Your subscription has expired. Please renew to continue using MiAuditOps.
+                      </p>
+                    </div>
+                  )}
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-muted-foreground text-sm">Current Plan</Label>
@@ -530,7 +551,7 @@ export default function Settings() {
                     </div>
                     <div className="space-y-2">
                       <Label className="text-muted-foreground text-sm">Billing Cycle</Label>
-                      <p className="font-medium">Monthly</p>
+                      <p className="font-medium capitalize">{billingData?.billingPeriod || "Monthly"}</p>
                     </div>
                     <div className="space-y-2">
                       <Label className="text-muted-foreground text-sm">Status</Label>
@@ -540,17 +561,48 @@ export default function Settings() {
                         </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
-                          {billingData?.status || "Inactive"}
+                          {billingData?.status === "past_due" ? "Past Due" : billingData?.isExpired ? "Expired" : billingData?.status || "Inactive"}
                         </span>
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-muted-foreground text-sm">Next Billing Date</Label>
+                      <Label className="text-muted-foreground text-sm">Start Date</Label>
+                      <p className="font-medium">
+                        {billingData?.startDate ? new Date(billingData.startDate).toLocaleDateString() : "—"}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground text-sm">Expiry Date</Label>
                       <p className="font-medium">
                         {billingData?.endDate ? new Date(billingData.endDate).toLocaleDateString() : "—"}
                       </p>
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground text-sm">Next Billing Date</Label>
+                      <p className="font-medium">
+                        {billingData?.nextBillingDate ? new Date(billingData.nextBillingDate).toLocaleDateString() : "—"}
+                      </p>
+                    </div>
                   </div>
+                  {(billingData?.lastPaymentDate || billingData?.lastPaymentAmount) && (
+                    <>
+                      <Separator />
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-muted-foreground text-sm">Last Payment Date</Label>
+                          <p className="font-medium">
+                            {billingData?.lastPaymentDate ? new Date(billingData.lastPaymentDate).toLocaleDateString() : "—"}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-muted-foreground text-sm">Last Payment Amount</Label>
+                          <p className="font-medium">
+                            {billingData?.lastPaymentAmount ? `₦${parseFloat(billingData.lastPaymentAmount).toLocaleString()}` : "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <Separator />
                   <div>
                     <Label className="text-muted-foreground text-sm mb-3 block">Usage</Label>
@@ -613,11 +665,13 @@ export default function Settings() {
                       </div>
                     </div>
                   </div>
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
-                      To upgrade, extend, or modify your subscription, please contact your MiAuditOps administrator.
-                    </p>
-                  </div>
+                  {!billingData?.paystackConfigured && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <p className="text-sm text-blue-700 dark:text-blue-300">
+                        To upgrade, extend, or modify your subscription, please contact your MiAuditOps administrator.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
