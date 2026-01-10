@@ -717,7 +717,7 @@ export async function registerRoutes(
     console.log(`[AUTH DIAGNOSTIC] ${event}:`, JSON.stringify(diagnosticData, null, 2));
   }
   
-  app.post("/api/auth/login", requestTimeoutWrapper(3000), circuitBreakerGuard('auth_login'), async (req, res) => {
+  app.post("/api/auth/login", requestTimeoutWrapper(10000), async (req, res) => {
     const requestId = (req as any).requestId || `login-${Date.now()}`;
     const timings: Record<string, number> = {};
     const loginStart = Date.now();
@@ -1654,7 +1654,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/auth/me", requestTimeoutWrapper(3000), circuitBreakerGuard('auth_me'), async (req, res) => {
+  app.get("/api/auth/me", requestTimeoutWrapper(8000), async (req, res) => {
     const requestId = (req as any).requestId || 'unknown';
     const sessionIdPrefix = req.sessionID ? req.sessionID.substring(0, 8) : 'none';
     
@@ -1672,7 +1672,6 @@ export async function registerRoutes(
       }
       
       console.log(`[AUTH /api/auth/me] Success: userId=${user.id}, org=${user.organizationId}`);
-      circuitBreaker.recordSuccess('auth_me');
       
       res.json({ 
         id: user.id, 
@@ -1684,7 +1683,7 @@ export async function registerRoutes(
         accessScope: user.accessScope,
       });
     } catch (error: any) {
-      if (handleCircuitBreakerError(error, res, 'auth_me')) return;
+      console.error('[AUTH /api/auth/me] Error:', error.message);
       res.status(500).json({ error: error.message });
     }
   });

@@ -1,0 +1,77 @@
+🔧 AI BUILDER PROMPT
+Fix Circuit Breaker Causing 503 “Database Temporarily Unavailable” (Reserved VM)
+The application is running on Replit Reserved VM (Dedicated).
+Despite this, all auth and core endpoints are returning 503 immediately (0–3ms) with logs showing:
+[Circuit Breaker] Rejecting … DB overloaded
+Requests are rejected before DB queries run
+Multiple auth endpoints (/login, /logout, /auth/me, /organization-settings) fail instantly
+hasCookieHeader: true indicates repeated authenticated retries
+This means the circuit breaker is tripping prematurely and never recovering, causing a full app lockout.
+1️⃣ Identify the circuit breaker implementation (MANDATORY)
+Search the entire codebase for:
+Circuit breaker libraries (opossum, custom breaker, resilience logic)
+Keywords: circuitBreaker, breaker.open, DB overloaded, retryAfter
+Middleware that wraps DB access or auth routes
+Output required:
+File paths
+Breaker configuration (thresholds, timeout, reset logic)
+Whether breaker is global or per-route
+2️⃣ Fix incorrect breaker thresholds (CRITICAL)
+Current behavior proves:
+Breaker opens on single or very few failures
+Breaker rejects requests in 0–3ms
+Breaker does NOT reset after cooldown
+Implement safe production defaults:
+Failure threshold ≥ 50%
+Minimum request volume before tripping ≥ 10
+Open state duration ≤ 10–15s
+Half-open test requests enabled
+Do NOT block login/logout endpoints permanently
+3️⃣ Separate auth endpoints from heavy DB breaker
+Auth endpoints MUST NOT be hard-blocked by a global DB breaker.
+Refactor so that:
+/login, /logout, /auth/me use:
+lightweight DB access
+separate breaker OR
+graceful fallback (401/soft error)
+Do not allow auth to cascade-fail the entire app.
+4️⃣ Stop retry storms from the frontend
+Evidence shows:
+Multiple endpoints are retried automatically
+Each retry re-triggers the breaker
+This creates a self-DDOS loop
+Fix by:
+Ensuring frontend does NOT retry on 503
+Ensuring server sends:
+Retry-After
+and client respects it
+Prevent parallel calls to /auth/me, /organization-settings, /logout during failure
+5️⃣ Fix DB connection pool mis-signal
+Even if DB is healthy, breaker may think it’s overloaded due to:
+Pool max too low
+Connection acquire timeout too short
+Pool exhaustion misreported as DB failure
+Actions:
+Log connection acquire time
+Log pool size / usage
+Increase pool size moderately
+Increase acquire timeout (e.g. 5–10s)
+6️⃣ Ensure breaker resets correctly (VERY IMPORTANT)
+Confirm:
+Breaker transitions:
+CLOSED → OPEN → HALF-OPEN → CLOSED
+No permanent OPEN state
+Restarting app should always reset breaker
+If breaker state is stored in memory incorrectly or globally, fix it.
+7️⃣ Required deliverables (NO SKIPPING)
+Provide:
+A. Exact file paths and modified sections
+B. Before/after breaker configuration
+C. Explanation of why breaker was falsely tripping
+D. Proof that:
+DB queries now execute
+503 is returned only when DB is truly unavailable
+Login works without lockout
+🎯 Goal
+Eliminate false “DB overloaded” lockouts, restore login stability, and ensure the app fails
+

@@ -16,10 +16,10 @@ interface CircuitBreakerState {
 }
 
 const DEFAULT_CONFIG: CircuitBreakerConfig = {
-  failureThreshold: 3,
-  cooldownMs: 30000,
-  queryTimeoutMs: 2000,
-  requestTimeoutMs: 3000,
+  failureThreshold: 5,
+  cooldownMs: 10000,
+  queryTimeoutMs: 5000,
+  requestTimeoutMs: 8000,
 };
 
 let state: CircuitBreakerState = {
@@ -31,6 +31,9 @@ let state: CircuitBreakerState = {
 };
 
 let config: CircuitBreakerConfig = { ...DEFAULT_CONFIG };
+
+let halfOpenFailures = 0;
+const HALF_OPEN_FAILURE_THRESHOLD = 2;
 
 function logStateTransition(fromState: CircuitState, toState: CircuitState, route?: string) {
   const timestamp = new Date().toISOString();
@@ -103,10 +106,11 @@ export function recordSuccess(route?: string): void {
     const prevState = state.state;
     state.state = 'CLOSED';
     state.failureCount = 0;
+    halfOpenFailures = 0;
     state.lastStateChange = Date.now();
     logStateTransition(prevState, 'CLOSED', route);
   } else if (state.failureCount > 0) {
-    state.failureCount = 0;
+    state.failureCount = Math.max(0, state.failureCount - 1);
   }
 }
 
@@ -124,11 +128,15 @@ export function recordFailure(route?: string): void {
   });
   
   if (state.state === 'HALF_OPEN') {
-    const prevState = state.state;
-    state.state = 'OPEN';
-    state.openedAt = Date.now();
-    state.lastStateChange = Date.now();
-    logStateTransition(prevState, 'OPEN', route);
+    halfOpenFailures++;
+    if (halfOpenFailures >= HALF_OPEN_FAILURE_THRESHOLD) {
+      const prevState = state.state;
+      state.state = 'OPEN';
+      state.openedAt = Date.now();
+      state.lastStateChange = Date.now();
+      halfOpenFailures = 0;
+      logStateTransition(prevState, 'OPEN', route);
+    }
   } else if (state.state === 'CLOSED' && state.failureCount >= config.failureThreshold) {
     const prevState = state.state;
     state.state = 'OPEN';
@@ -147,6 +155,7 @@ export function resetCircuit(): void {
     openedAt: 0,
     lastStateChange: Date.now(),
   };
+  halfOpenFailures = 0;
   if (prevState !== 'CLOSED') {
     logStateTransition(prevState, 'CLOSED', 'manual_reset');
   }

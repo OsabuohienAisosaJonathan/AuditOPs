@@ -57,6 +57,8 @@ export function circuitBreakerGuard(routeId: string) {
   };
 }
 
+const CIRCUIT_BREAKER_EXEMPT_PATHS = ['/api/auth', '/api/organization', '/api/billing', '/api/subscription', '/api/user', '/api/health'];
+
 export function requestTimeoutWrapper(timeoutMs: number = 3000) {
   return (req: Request, res: Response, next: NextFunction) => {
     const timeoutId = setTimeout(() => {
@@ -68,7 +70,10 @@ export function requestTimeoutWrapper(timeoutMs: number = 3000) {
           timeoutMs,
         });
         
-        circuitBreaker.recordFailure(req.path);
+        const isExempt = CIRCUIT_BREAKER_EXEMPT_PATHS.some(p => req.path.startsWith(p));
+        if (!isExempt) {
+          circuitBreaker.recordFailure(req.path);
+        }
         
         res.status(503).json({
           message: "Service temporarily unavailable. Retrying shortly.",
