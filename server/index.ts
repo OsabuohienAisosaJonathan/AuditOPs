@@ -148,13 +148,68 @@ app.use((req, res, next) => {
   next();
 });
 
+// =============================================================================
+// CRITICAL: Health check endpoints MUST be registered BEFORE async initialization
+// This ensures deployment health probes succeed even when DB is slow/unavailable
+// =============================================================================
+
+// Lightweight health check for deployment probes - responds immediately
+app.get("/healthz", (_req, res) => {
+  res.status(200).json({ status: "ok", timestamp: Date.now() });
+});
+
+// Root health check for Replit deployment (returns minimal response quickly)
+app.get("/", (req, res, next) => {
+  // If this is a health check probe (no Accept header or accepts JSON), respond quickly
+  const acceptHeader = req.headers.accept || "";
+  if (!acceptHeader || acceptHeader.includes("application/json") || req.headers["user-agent"]?.includes("health")) {
+    return res.status(200).send("OK");
+  }
+  // Otherwise, let static file serving handle it (for browser requests)
+  next();
+});
+
+// Track initialization state for /api/health endpoint
+let dbInitialized = false;
+let dbInitError: string | null = null;
+
+// Basic /api/health that works before full init
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ 
+    status: "ok", 
+    dbInitialized,
+    dbInitError,
+    timestamp: Date.now() 
+  });
+});
+
+// Start server IMMEDIATELY so health checks respond
+// This MUST happen BEFORE async DB initialization
+const port = parseInt(process.env.PORT || "5000", 10);
+httpServer.listen(
+  {
+    port,
+    host: "0.0.0.0",
+    reusePort: true,
+  },
+  () => {
+    log(`serving on port ${port} (health checks ready)`);
+  },
+);
+
+// =============================================================================
+// Async initialization - DB and routes setup in background
+// Server is already listening, so health checks will pass during this phase
+// =============================================================================
 (async () => {
   // Initialize database pool with retry at startup
   console.log("[STARTUP] Initializing database pool...");
   try {
     await initializePool();
+    dbInitialized = true;
     console.log("[STARTUP] Database pool initialized successfully");
   } catch (err: any) {
+    dbInitError = err.message;
     console.error("[STARTUP] Failed to initialize database pool:", err.message);
     console.error("[STARTUP] Server will attempt to connect on first request");
   }
@@ -214,22 +269,8 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // Lightweight health check endpoint for deployment health checks
-  // This MUST be before serveStatic to ensure it responds quickly
-  app.get("/healthz", (_req, res) => {
-    res.status(200).json({ status: "ok", timestamp: Date.now() });
-  });
-  
-  // Root health check for Replit deployment (returns minimal HTML quickly)
-  app.get("/", (req, res, next) => {
-    // If this is a health check probe (no Accept header or accepts JSON), respond quickly
-    const acceptHeader = req.headers.accept || "";
-    if (!acceptHeader || acceptHeader.includes("application/json") || req.headers["user-agent"]?.includes("health")) {
-      return res.status(200).send("OK");
-    }
-    // Otherwise, let static file serving handle it (for browser requests)
-    next();
-  });
+  // Health check endpoints are already registered before async init (above)
+  // No need to duplicate them here
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
@@ -241,19 +282,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  // Server is already listening (started before async init)
+  console.log("[STARTUP] Async initialization complete - all routes registered");
 })();
