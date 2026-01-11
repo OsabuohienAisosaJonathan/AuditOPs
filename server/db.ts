@@ -148,9 +148,40 @@ export async function initializePool(): Promise<void> {
   _initPromise = (async () => {
     const { pool } = ensureDatabase();
     await connectWithRetry(pool, 2);
+    
+    // Start keep-alive ping to prevent Neon from suspending the connection
+    startKeepAlivePing();
   })();
   
   return _initPromise;
+}
+
+// Keep-alive ping to prevent Neon serverless from suspending the database
+let keepAliveInterval: NodeJS.Timeout | null = null;
+const KEEP_ALIVE_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes
+
+function startKeepAlivePing(): void {
+  if (keepAliveInterval) return; // Already running
+  
+  console.log(`[DB Keep-Alive] Starting ping every ${KEEP_ALIVE_INTERVAL_MS / 1000}s to keep connection active`);
+  
+  keepAliveInterval = setInterval(async () => {
+    try {
+      if (!_pool) return;
+      
+      const client = await _pool.connect();
+      await client.query('SELECT 1');
+      client.release();
+      
+      console.log('[DB Keep-Alive] Ping successful - connection active');
+    } catch (err: any) {
+      console.warn('[DB Keep-Alive] Ping failed:', err.message);
+      // Don't record as failure - this is just a keep-alive, not a real request
+    }
+  }, KEEP_ALIVE_INTERVAL_MS);
+  
+  // Don't let this timer keep the process alive
+  keepAliveInterval.unref();
 }
 
 export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number; error?: string; poolStats?: ReturnType<typeof getPoolStats> }> {
