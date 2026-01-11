@@ -210,54 +210,71 @@ export class CachedSessionStore extends Store {
     const now = Date.now();
     const existing = this.cache.get(sid);
 
-    // Update cache immediately
+    // Update cache immediately - this ensures /auth/me reads succeed right away
     this.cache.set(sid, {
       data: session,
       lastDbSync: existing?.lastDbSync || 0,
       dirty: true,
     });
 
-    // If circuit is open, don't try to write to DB
+    // CRITICAL: Callback immediately so login doesn't block on DB writes
+    // The session is already in memory cache - /auth/me will read from cache
+    callback?.();
+
+    // If circuit is open, don't try to write to DB (background only)
     if (this.isSyncCircuitOpen()) {
-      callback?.();
       return;
     }
 
-    // If this is a new session or it's been a while since last DB write,
-    // write immediately to ensure session persistence
+    // Schedule async DB write - non-blocking, errors logged but don't fail request
+    // This runs in background after callback has already been called
     const shouldWriteImmediately = !existing || (now - (existing.lastDbSync || 0)) > this.syncIntervalMs;
 
     if (shouldWriteImmediately) {
-      this.backingStore.set(sid, session, (err) => {
-        if (!err) {
-          const cached = this.cache.get(sid);
-          if (cached) {
-            cached.dirty = false;
-            cached.lastDbSync = Date.now();
+      // Use setImmediate to ensure this never blocks the current request
+      setImmediate(() => {
+        this.backingStore.set(sid, session, (err) => {
+          if (!err) {
+            const cached = this.cache.get(sid);
+            if (cached) {
+              cached.dirty = false;
+              cached.lastDbSync = Date.now();
+            }
+          } else {
+            console.log(`[CachedSessionStore] Async DB write error (non-blocking): ${err.message}`);
+            if (err.message?.includes('timeout')) {
+              this.openSyncCircuit('DB timeout on session write');
+            }
           }
-        } else if (err.message?.includes('timeout')) {
-          this.openSyncCircuit('DB timeout on session write');
-        }
-        callback?.(err);
+        });
       });
-    } else {
-      // Defer to background sync
-      callback?.();
     }
+    // Otherwise defer to background sync timer
   }
 
   destroy(sid: string, callback?: (err?: any) => void): void {
-    // Remove from cache immediately
+    // Remove from cache immediately - logout appears instant to user
     this.cache.delete(sid);
+    
+    // CRITICAL: Callback immediately so logout doesn't block on DB
+    callback?.();
     
     // If circuit is open, don't try to write to DB
     if (this.isSyncCircuitOpen()) {
-      callback?.();
       return;
     }
     
-    // Remove from backing store
-    this.backingStore.destroy(sid, callback);
+    // Schedule async DB delete - non-blocking
+    setImmediate(() => {
+      this.backingStore.destroy(sid, (err) => {
+        if (err) {
+          console.log(`[CachedSessionStore] Async session destroy error (non-blocking): ${err.message}`);
+          if (err.message?.includes('timeout')) {
+            this.openSyncCircuit('DB timeout on session destroy');
+          }
+        }
+      });
+    });
   }
 
   touch(sid: string, session: SessionData, callback?: (err?: any) => void): void {

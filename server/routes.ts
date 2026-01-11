@@ -717,7 +717,7 @@ export async function registerRoutes(
     console.log(`[AUTH DIAGNOSTIC] ${event}:`, JSON.stringify(diagnosticData, null, 2));
   }
   
-  app.post("/api/auth/login", requestTimeoutWrapper(10000), async (req, res) => {
+  app.post("/api/auth/login", requestTimeoutWrapper(12000), async (req, res) => {
     const requestId = (req as any).requestId || `login-${Date.now()}`;
     const timings: Record<string, number> = {};
     const loginStart = Date.now();
