@@ -219,6 +219,77 @@ export async function probeDatabase(): Promise<boolean> {
   }
 }
 
+/**
+ * Fast DB probe for auth routes - fails fast (2s) without affecting circuit breaker.
+ * Used for graceful degraded login when DB is cold/unavailable.
+ * 
+ * Uses a separate promise to ensure connections are always released,
+ * even if the timeout wins the race.
+ */
+export async function fastProbeForAuth(): Promise<{ available: boolean; coldStart: boolean }> {
+  const FAST_TIMEOUT_MS = 2000;
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  
+  try {
+    const { pool } = ensureDatabase();
+    
+    // Track if we've timed out
+    let timedOut = false;
+    
+    // Create timeout promise with clearable handle
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        reject(new Error('Fast probe timeout'));
+      }, FAST_TIMEOUT_MS);
+    });
+    
+    // Create connection promise that always releases the client
+    const connectPromise = (async () => {
+      const client = await pool.connect();
+      
+      // If we already timed out, release immediately and return silently
+      if (timedOut) {
+        client.release();
+        return false; // Indicate late arrival, don't throw
+      }
+      
+      try {
+        await client.query('SELECT 1');
+        return true; // Success indicator
+      } finally {
+        client.release();
+      }
+    })();
+    
+    // Attach catch handler to prevent unhandled rejection if timeout wins
+    connectPromise.catch(() => { /* Swallow late rejection */ });
+    
+    // Race the connection against timeout
+    await Promise.race([connectPromise, timeoutPromise]);
+    
+    // Clear timeout to prevent late rejection
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+    
+    return { available: true, coldStart: false };
+  } catch (err: any) {
+    // Clear timeout to prevent late rejection
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+    
+    // Detect cold-start vs hard failure
+    const isColdStart = err.message.includes('timeout') || 
+                        err.message.includes('ETIMEDOUT') ||
+                        err.message.includes('connection');
+    console.log(`[DB FastProbe] Failed in ${FAST_TIMEOUT_MS}ms: ${err.message} (coldStart=${isColdStart})`);
+    // Do NOT record as circuit breaker failure - this is just a fast probe
+    return { available: false, coldStart: isColdStart };
+  }
+}
+
 export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolClient | null; error?: string }> {
   if (isCircuitBreakerOpen()) {
     return { client: null, error: 'Database temporarily unavailable (circuit breaker open)' };

@@ -6,7 +6,7 @@ import { hash, compare } from "bcrypt";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
-import { pool, circuitBreaker } from "./db";
+import { pool, circuitBreaker, fastProbeForAuth } from "./db";
 import { CachedSessionStore } from "./cached-session-store";
 import { circuitBreakerGuard, requestTimeoutWrapper, handleCircuitBreakerError } from "./circuitBreakerMiddleware";
 import { 
@@ -739,6 +739,20 @@ export async function registerRoutes(
       const rateLimit = checkRateLimit(identifier);
       if (!rateLimit.allowed) {
         return res.status(429).json({ error: `Too many login attempts. Please try again in ${LOCKOUT_MINUTES} minutes.` });
+      }
+
+      // GRACEFUL DEGRADED LOGIN: Fast DB probe (≤2s) to detect cold-start
+      // Fails fast without affecting circuit breaker - returns friendly message
+      const dbProbe = await fastProbeForAuth();
+      if (!dbProbe.available) {
+        console.log(`[LOGIN] DB unavailable during login attempt: coldStart=${dbProbe.coldStart}`);
+        return res.status(503).json({
+          error: dbProbe.coldStart 
+            ? "System is warming up. Please try again in a few seconds."
+            : "Service temporarily unavailable. Please try again.",
+          code: "DB_WARMING_UP",
+          retryAfter: dbProbe.coldStart ? 3 : 10,
+        });
       }
 
       // Timing: User lookup (case-insensitive)
