@@ -64,20 +64,22 @@ export function logDbTiming(operation: string, startTime: number, context?: Reco
   }
 }
 
-async function connectWithRetry(pool: pkg.Pool, maxRetries = 2): Promise<void> {
-  const delays = [300, 800, 1500];
+async function connectWithRetry(pool: pkg.Pool, maxRetries = 3): Promise<void> {
+  // Longer delays for Neon cold-start tolerance (can take 1-3s to wake up)
+  const delays = [500, 1500, 3000, 5000];
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const client = await pool.connect();
       await client.query('SELECT 1');
       client.release();
-      console.log(`[DB Pool] Connection established on attempt ${attempt + 1}`);
+      console.log(`[DB Pool] Connection established on attempt ${attempt + 1}${attempt > 0 ? ' (cold-start recovery)' : ''}`);
       return;
     } catch (err: any) {
-      console.error(`[DB Pool] Connection attempt ${attempt + 1} failed:`, err.message);
+      const isColdStart = err.message.includes('timeout') || err.message.includes('ETIMEDOUT');
+      console.error(`[DB Pool] Connection attempt ${attempt + 1} failed${isColdStart ? ' (possible cold-start)' : ''}:`, err.message);
       if (attempt < maxRetries) {
-        const delay = delays[attempt] || 1500;
+        const delay = delays[attempt] || 5000;
         console.log(`[DB Pool] Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
@@ -108,7 +110,7 @@ function ensureDatabase() {
       max: maxConnections,
       min: 0,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000, // 10s to handle Neon cold-starts
       statement_timeout: 15000,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
@@ -147,41 +149,10 @@ export async function initializePool(): Promise<void> {
   
   _initPromise = (async () => {
     const { pool } = ensureDatabase();
-    await connectWithRetry(pool, 2);
-    
-    // Start keep-alive ping to prevent Neon from suspending the connection
-    startKeepAlivePing();
+    await connectWithRetry(pool, 3); // Allow 3 retries for cold-start tolerance
   })();
   
   return _initPromise;
-}
-
-// Keep-alive ping to prevent Neon serverless from suspending the database
-let keepAliveInterval: NodeJS.Timeout | null = null;
-const KEEP_ALIVE_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes
-
-function startKeepAlivePing(): void {
-  if (keepAliveInterval) return; // Already running
-  
-  console.log(`[DB Keep-Alive] Starting ping every ${KEEP_ALIVE_INTERVAL_MS / 1000}s to keep connection active`);
-  
-  keepAliveInterval = setInterval(async () => {
-    try {
-      if (!_pool) return;
-      
-      const client = await _pool.connect();
-      await client.query('SELECT 1');
-      client.release();
-      
-      console.log('[DB Keep-Alive] Ping successful - connection active');
-    } catch (err: any) {
-      console.warn('[DB Keep-Alive] Ping failed:', err.message);
-      // Don't record as failure - this is just a keep-alive, not a real request
-    }
-  }, KEEP_ALIVE_INTERVAL_MS);
-  
-  // Don't let this timer keep the process alive
-  keepAliveInterval.unref();
 }
 
 export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number; error?: string; poolStats?: ReturnType<typeof getPoolStats> }> {
