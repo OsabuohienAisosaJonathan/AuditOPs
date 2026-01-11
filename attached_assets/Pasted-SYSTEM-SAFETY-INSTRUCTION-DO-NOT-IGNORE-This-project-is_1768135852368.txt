@@ -1,0 +1,89 @@
+SYSTEM / SAFETY INSTRUCTION (DO NOT IGNORE):
+This project is a Node.js + Express backend written in TypeScript, executed with tsx.
+
+DO NOT rewrite the entire app.
+DO NOT change routes, database schema, or business logic.
+DO NOT convert TypeScript to JavaScript.
+
+Make targeted, minimal fixes only to resolve login timeouts and “Service temporarily unavailable” errors.
+
+PROBLEM STATEMENT (CONFIRMED BY LOGS):
+Login requests (POST /api/auth/login) are failing with 503 errors after ~5 seconds due to session sync timeouts, causing the session circuit breaker to open.
+
+The app is receiving production traffic but is using a development-style in-memory session store, combined with aggressive timeouts and missing APP_URL, leading to intermittent authentication failures.
+
+REQUIRED FIXES (IMPLEMENT ALL):
+
+1. Session Handling (CRITICAL)
+
+Replace or reconfigure the current pure memory session store so that:
+
+Login does NOT block on DB session synchronization.
+
+Session persistence failures do NOT fail authentication.
+
+Auth routes must remain fast and non-blocking.
+
+Ensure session creation succeeds even if background sync is slow.
+
+2. Timeout Alignment
+
+Increase Express request timeout for auth routes to ≥12 seconds.
+
+Ensure DB/session sync timeouts are shorter than server timeout.
+
+Prevent the server from returning 503 while the DB is still processing.
+
+3. Circuit Breaker Adjustment
+
+Relax the circuit breaker logic specifically for authentication/session sync.
+
+Authentication must not trip the breaker unless DB is fully unreachable.
+
+Circuit breaker should fail gracefully without blocking login.
+
+4. Environment Configuration
+
+Enforce correct production detection.
+
+Require and use:
+
+APP_URL=https://miauditops.com
+
+
+Ensure cookies and session logic correctly respect:
+
+secure: true
+
+trusted proxy
+
+correct domain handling
+
+5. Error Handling & Logging
+
+Ensure all auth routes always return a response.
+
+Prevent hanging promises or unresolved awaits.
+
+Log session sync latency without failing the request.
+
+NON-NEGOTIABLE RULES:
+
+Do NOT refactor unrelated files.
+
+Do NOT change database tables.
+
+Do NOT remove existing auth logic.
+
+Do NOT introduce new frameworks.
+
+DELIVERABLE:
+Apply minimal, surgical changes so that:
+
+Login completes in <2 seconds under normal conditions.
+
+No more 503 Service temporarily unavailable during login.
+
+Session sync failures never block user authentication.
+
+Confirm what you changed and why, before finalizing.
