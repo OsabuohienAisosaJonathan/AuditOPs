@@ -26,7 +26,7 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { registerPlatformAdminRoutes } from "./platform-admin-routes";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import archiver from "archiver";
 import { backfillSrdLedger, backfillAllSrdsForClient, postMovementToLedgers, recalculateForward } from "./srd-ledger-service";
 import { srdLedgerEngine } from "./srd-ledger-engine";
@@ -7687,14 +7687,16 @@ export async function registerRoutes(
         }
       }
       
-      // Create workbook with all sheets
-      const workbook = XLSX.utils.book_new();
+      // Create workbook with all sheets using ExcelJS
+      const workbook = new ExcelJS.Workbook();
       
       // Helper to convert data to sheet with flattened objects
       const addSheet = (data: any[], sheetName: string) => {
+        const worksheet = workbook.addWorksheet(sheetName);
+        
         if (data.length === 0) {
-          const emptySheet = XLSX.utils.json_to_sheet([{ note: "No data available" }]);
-          XLSX.utils.book_append_sheet(workbook, emptySheet, sheetName);
+          worksheet.columns = [{ header: "note", key: "note" }];
+          worksheet.addRow({ note: "No data available" });
         } else {
           const flatData = data.map(item => {
             const flat: Record<string, any> = {};
@@ -7709,8 +7711,13 @@ export async function registerRoutes(
             }
             return flat;
           });
-          const sheet = XLSX.utils.json_to_sheet(flatData);
-          XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+          
+          // Get columns from first row keys
+          const columns = Object.keys(flatData[0]).map(key => ({ header: key, key }));
+          worksheet.columns = columns;
+          
+          // Add all rows
+          flatData.forEach(row => worksheet.addRow(row));
         }
       };
       
@@ -7733,21 +7740,34 @@ export async function registerRoutes(
         
         archive.pipe(res);
         
-        // Add each sheet as a CSV file
-        for (const sheetName of workbook.SheetNames) {
-          const sheet = workbook.Sheets[sheetName];
-          const csv = XLSX.utils.sheet_to_csv(sheet);
-          archive.append(csv, { name: `${sheetName}.csv` });
+        // Add each sheet as a CSV file using ExcelJS
+        for (const worksheet of workbook.worksheets) {
+          let csv = "";
+          worksheet.eachRow((row, rowNumber) => {
+            const values = row.values as any[];
+            // ExcelJS row.values is 1-indexed, first element is undefined
+            const rowData = values.slice(1).map(v => {
+              if (v === null || v === undefined) return "";
+              const str = String(v);
+              // Escape quotes and wrap in quotes if contains comma or quote
+              if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+                return `"${str.replace(/"/g, '""')}"`;
+              }
+              return str;
+            });
+            csv += rowData.join(",") + "\n";
+          });
+          archive.append(csv, { name: `${worksheet.name}.csv` });
         }
         
         await archive.finalize();
       } else {
-        // Generate Excel file
-        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+        // Generate Excel file using ExcelJS
+        const buffer = await workbook.xlsx.writeBuffer();
         
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition", `attachment; filename=audit-export-${new Date().toISOString().split("T")[0]}.xlsx`);
-        res.send(buffer);
+        res.send(Buffer.from(buffer));
       }
       
       // Log the export
