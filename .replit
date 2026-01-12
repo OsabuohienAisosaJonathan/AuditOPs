@@ -44,7 +44,7 @@ mockupState = "FULLSTACK"
 [userenv]
 
 [userenv.shared]
-DATABASE_URL = "postgresql://neondb_owner:npg_Y80OlBxsHpGc@ep-lingering-pond-ah0iwnzn-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DATABASE_URL = "postgresql://neondb_owner:npg_0cZoXI2uznri@ep-damp-sound-ahl7oi2o.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
 ADMIN_BOOTSTRAP_KEY = "Miemployaclk780424$"
 PAYSTACK_PUBLIC_KEY = "pk_live_170242a5660ebf71127fa5231c70e4945cc55788"
 

@@ -6,7 +6,7 @@ import { hash, compare } from "bcrypt";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
-import { pool, circuitBreaker, fastProbeForAuth } from "./db";
+import { pool, circuitBreaker } from "./db";
 import { CachedSessionStore } from "./cached-session-store";
 import { circuitBreakerGuard, requestTimeoutWrapper, handleCircuitBreakerError } from "./circuitBreakerMiddleware";
 import { 
@@ -26,7 +26,7 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { registerPlatformAdminRoutes } from "./platform-admin-routes";
-import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 import archiver from "archiver";
 import { backfillSrdLedger, backfillAllSrdsForClient, postMovementToLedgers, recalculateForward } from "./srd-ledger-service";
 import { srdLedgerEngine } from "./srd-ledger-engine";
@@ -739,20 +739,6 @@ export async function registerRoutes(
       const rateLimit = checkRateLimit(identifier);
       if (!rateLimit.allowed) {
         return res.status(429).json({ error: `Too many login attempts. Please try again in ${LOCKOUT_MINUTES} minutes.` });
-      }
-
-      // GRACEFUL DEGRADED LOGIN: Fast DB probe (≤2s) to detect cold-start
-      // Fails fast without affecting circuit breaker - returns friendly message
-      const dbProbe = await fastProbeForAuth();
-      if (!dbProbe.available) {
-        console.log(`[LOGIN] DB unavailable during login attempt: coldStart=${dbProbe.coldStart}`);
-        return res.status(503).json({
-          error: dbProbe.coldStart 
-            ? "System is warming up. Please try again in a few seconds."
-            : "Service temporarily unavailable. Please try again.",
-          code: "DB_WARMING_UP",
-          retryAfter: dbProbe.coldStart ? 3 : 10,
-        });
       }
 
       // Timing: User lookup (case-insensitive)
@@ -7687,16 +7673,14 @@ export async function registerRoutes(
         }
       }
       
-      // Create workbook with all sheets using ExcelJS
-      const workbook = new ExcelJS.Workbook();
+      // Create workbook with all sheets
+      const workbook = XLSX.utils.book_new();
       
       // Helper to convert data to sheet with flattened objects
       const addSheet = (data: any[], sheetName: string) => {
-        const worksheet = workbook.addWorksheet(sheetName);
-        
         if (data.length === 0) {
-          worksheet.columns = [{ header: "note", key: "note" }];
-          worksheet.addRow({ note: "No data available" });
+          const emptySheet = XLSX.utils.json_to_sheet([{ note: "No data available" }]);
+          XLSX.utils.book_append_sheet(workbook, emptySheet, sheetName);
         } else {
           const flatData = data.map(item => {
             const flat: Record<string, any> = {};
@@ -7711,13 +7695,8 @@ export async function registerRoutes(
             }
             return flat;
           });
-          
-          // Get columns from first row keys
-          const columns = Object.keys(flatData[0]).map(key => ({ header: key, key }));
-          worksheet.columns = columns;
-          
-          // Add all rows
-          flatData.forEach(row => worksheet.addRow(row));
+          const sheet = XLSX.utils.json_to_sheet(flatData);
+          XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
         }
       };
       
@@ -7740,34 +7719,21 @@ export async function registerRoutes(
         
         archive.pipe(res);
         
-        // Add each sheet as a CSV file using ExcelJS
-        for (const worksheet of workbook.worksheets) {
-          let csv = "";
-          worksheet.eachRow((row, rowNumber) => {
-            const values = row.values as any[];
-            // ExcelJS row.values is 1-indexed, first element is undefined
-            const rowData = values.slice(1).map(v => {
-              if (v === null || v === undefined) return "";
-              const str = String(v);
-              // Escape quotes and wrap in quotes if contains comma or quote
-              if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-                return `"${str.replace(/"/g, '""')}"`;
-              }
-              return str;
-            });
-            csv += rowData.join(",") + "\n";
-          });
-          archive.append(csv, { name: `${worksheet.name}.csv` });
+        // Add each sheet as a CSV file
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const csv = XLSX.utils.sheet_to_csv(sheet);
+          archive.append(csv, { name: `${sheetName}.csv` });
         }
         
         await archive.finalize();
       } else {
-        // Generate Excel file using ExcelJS
-        const buffer = await workbook.xlsx.writeBuffer();
+        // Generate Excel file
+        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
         
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition", `attachment; filename=audit-export-${new Date().toISOString().split("T")[0]}.xlsx`);
-        res.send(Buffer.from(buffer));
+        res.send(buffer);
       }
       
       // Log the export
