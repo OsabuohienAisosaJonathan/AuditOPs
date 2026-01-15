@@ -1,39 +1,36 @@
-import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
-import pkg from "pg";
-const { Pool } = pkg;
+import { drizzle, MySql2Database } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import * as schema from "@shared/schema";
 import * as circuitBreaker from "./circuitBreaker";
 
 console.log('[DB STARTUP] Environment check:', {
   DATABASE_URL: !!process.env.DATABASE_URL,
-  PGHOST: !!process.env.PGHOST,
-  PGPORT: !!process.env.PGPORT,
-  PGUSER: !!process.env.PGUSER,
-  PGPASSWORD: !!process.env.PGPASSWORD,
-  PGDATABASE: !!process.env.PGDATABASE,
   NODE_ENV: process.env.NODE_ENV || 'not set',
   APP_URL: !!process.env.APP_URL,
 });
 
-let _pool: pkg.Pool | null = null;
-let _db: NodePgDatabase<typeof schema> | null = null;
+let _pool: mysql.Pool | null = null;
+let _db: MySql2Database<typeof schema> | null = null;
 let _initPromise: Promise<void> | null = null;
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-export function getPoolStats(): { 
-  totalCount: number; 
-  idleCount: number; 
-  waitingCount: number; 
+export function getPoolStats(): {
+  totalCount: number;
+  idleCount: number;
+  waitingCount: number;
   circuitBreakerState: string;
   circuitBreakerOpen: boolean;
 } | null {
   if (!_pool) return null;
   const cbStats = circuitBreaker.getCircuitStats();
+  // mysql2 pool doesn't expose easy stats like pg pool does in the same properties
+  // We can mock basic availability or inspect internal (undocumented) pool structure if needed
+  // For now, return placeholders or simplified stats
   return {
-    totalCount: _pool.totalCount,
-    idleCount: _pool.idleCount,
-    waitingCount: _pool.waitingCount,
+    totalCount: 0, // Not directly exposed in standard public API
+    idleCount: 0,
+    waitingCount: 0,
     circuitBreakerState: cbStats.state,
     circuitBreakerOpen: cbStats.isOpen,
   };
@@ -55,7 +52,7 @@ export function logDbTiming(operation: string, startTime: number, context?: Reco
   const duration = Date.now() - startTime;
   const stats = getPoolStats();
   const warnThreshold = 1000;
-  
+
   if (duration > warnThreshold) {
     console.warn(`[DB SLOW] ${operation} took ${duration}ms`, {
       ...context,
@@ -64,20 +61,18 @@ export function logDbTiming(operation: string, startTime: number, context?: Reco
   }
 }
 
-async function connectWithRetry(pool: pkg.Pool, maxRetries = 3): Promise<void> {
-  // Longer delays for Neon cold-start tolerance (can take 1-3s to wake up)
+async function connectWithRetry(pool: mysql.Pool, maxRetries = 3): Promise<void> {
   const delays = [500, 1500, 3000, 5000];
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const client = await pool.connect();
-      await client.query('SELECT 1');
-      client.release();
-      console.log(`[DB Pool] Connection established on attempt ${attempt + 1}${attempt > 0 ? ' (cold-start recovery)' : ''}`);
+      const connection = await pool.getConnection();
+      await connection.query('SELECT 1');
+      connection.release();
+      console.log(`[DB Pool] Connection established on attempt ${attempt + 1}`);
       return;
     } catch (err: any) {
-      const isColdStart = err.message.includes('timeout') || err.message.includes('ETIMEDOUT');
-      console.error(`[DB Pool] Connection attempt ${attempt + 1} failed${isColdStart ? ' (possible cold-start)' : ''}:`, err.message);
+      console.error(`[DB Pool] Connection attempt ${attempt + 1} failed:`, err.message);
       if (attempt < maxRetries) {
         const delay = delays[attempt] || 5000;
         console.log(`[DB Pool] Retrying in ${delay}ms...`);
@@ -92,72 +87,49 @@ async function connectWithRetry(pool: pkg.Pool, maxRetries = 3): Promise<void> {
 function ensureDatabase() {
   if (!process.env.DATABASE_URL) {
     const errorMsg = isProduction
-      ? "DATABASE_URL is missing in production secrets. Add it in the Secrets panel."
-      : "DATABASE_URL must be set. Did you forget to provision a database?";
+      ? "DATABASE_URL is missing in production secrets."
+      : "DATABASE_URL must be set.";
     console.error(`[DB FATAL] ${errorMsg}`);
     throw new Error(errorMsg);
   }
-  
+
   if (!_pool) {
-    const dbUrl = new URL(process.env.DATABASE_URL);
-    const isPooled = dbUrl.hostname.includes('pooler') || dbUrl.port === '6543';
-    console.log(`[DB Config] host=${dbUrl.hostname}, pooled=${isPooled}, ssl=${dbUrl.searchParams.get('sslmode') || 'default'}, env=${isProduction ? 'production' : 'development'}`);
-    
-    const maxConnections = isProduction ? 5 : 8;
-    
-    _pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      max: maxConnections,
-      min: 0,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // 10s to handle Neon cold-starts
-      statement_timeout: 15000,
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 10000,
-      allowExitOnIdle: true,
+    console.log(`[DB Config] Initializing MySQL pool, env=${isProduction ? 'production' : 'development'}`);
+
+    // Parse DATABASE_URL if needed or pass directly if mysql2 supports connection string (it does)
+    _pool = mysql.createPool({
+      uri: process.env.DATABASE_URL,
+      waitForConnections: true,
+      connectionLimit: isProduction ? 5 : 10,
+      queueLimit: 0,
+      multipleStatements: true, // Often useful for migrations or batch queries
+      connectTimeout: 10000
     });
-    
-    console.log(`[DB Pool] Created singleton pool with max=${maxConnections} connections`);
-    
-    _pool.on('error', (err) => {
-      console.error('[DB Pool] Unexpected error on idle client:', err.message);
-      if (err.message.includes('timeout') || err.message.includes('ETIMEDOUT') || err.message.includes('ECONNREFUSED')) {
-        recordDbTimeout();
-      }
-    });
-    
-    _pool.on('connect', () => {
-      const stats = getPoolStats();
-      console.log('[DB Pool] New connection established', stats);
-    });
-    
-    _pool.on('remove', () => {
-      const stats = getPoolStats();
-      console.log('[DB Pool] Connection removed', stats);
-    });
+
+    console.log(`[DB Pool] Created singleton MySQL pool`);
   }
-  
+
   if (!_db) {
-    _db = drizzle({ client: _pool, schema });
+    _db = drizzle(_pool, { mode: "default", schema });
   }
-  
+
   return { pool: _pool, db: _db };
 }
 
 export async function initializePool(): Promise<void> {
   if (_initPromise) return _initPromise;
-  
+
   _initPromise = (async () => {
     const { pool } = ensureDatabase();
-    await connectWithRetry(pool, 3); // Allow 3 retries for cold-start tolerance
+    await connectWithRetry(pool, 3);
   })();
-  
+
   return _initPromise;
 }
 
 export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number; error?: string; poolStats?: ReturnType<typeof getPoolStats> }> {
   const startTime = Date.now();
-  
+
   if (!process.env.DATABASE_URL) {
     return {
       ok: false,
@@ -166,30 +138,31 @@ export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number;
       poolStats: null,
     };
   }
-  
+
   try {
     const { pool } = ensureDatabase();
-    
-    const client = await Promise.race([
-      pool.connect(),
-      new Promise<never>((_, reject) => 
+
+    // MySQL2 pool.getConnection() is roughly equivalent to pg pool.connect()
+    const connection = await Promise.race([
+      pool.getConnection(),
+      new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Health check connection timeout')), 5000)
       )
-    ]) as pkg.PoolClient;
-    
+    ]) as mysql.PoolConnection;
+
     try {
-      await client.query('SELECT 1');
+      await connection.query('SELECT 1');
       const latencyMs = Date.now() - startTime;
       recordDbSuccess();
       return { ok: true, latencyMs, poolStats: getPoolStats() };
     } finally {
-      client.release();
+      connection.release();
     }
   } catch (err: any) {
     recordDbTimeout();
-    return { 
-      ok: false, 
-      latencyMs: Date.now() - startTime, 
+    return {
+      ok: false,
+      latencyMs: Date.now() - startTime,
       error: err.message,
       poolStats: getPoolStats()
     };
@@ -199,19 +172,19 @@ export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number;
 export async function probeDatabase(): Promise<boolean> {
   try {
     const { pool } = ensureDatabase();
-    const client = await Promise.race([
-      pool.connect(),
-      new Promise<never>((_, reject) => 
+    const connection = await Promise.race([
+      pool.getConnection(),
+      new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Probe timeout')), 5000)
       )
-    ]) as pkg.PoolClient;
-    
+    ]) as mysql.PoolConnection;
+
     try {
-      await client.query('SELECT 1');
+      await connection.query('SELECT 1');
       recordDbSuccess();
       return true;
     } finally {
-      client.release();
+      connection.release();
     }
   } catch (err) {
     recordDbTimeout();
@@ -219,27 +192,29 @@ export async function probeDatabase(): Promise<boolean> {
   }
 }
 
-export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolClient | null; error?: string }> {
+export async function acquireConnectionWithGuard(): Promise<{ client: mysql.PoolConnection | null; error?: string }> {
   if (isCircuitBreakerOpen()) {
     return { client: null, error: 'Database temporarily unavailable (circuit breaker open)' };
   }
-  
+
   const startTime = Date.now();
   try {
     const { pool } = ensureDatabase();
-    
+
     const client = await Promise.race([
-      pool.connect(),
-      new Promise<never>((_, reject) => 
+      pool.getConnection(),
+      new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Connection acquisition timeout')), 5000)
       )
-    ]) as pkg.PoolClient;
-    
+    ]) as mysql.PoolConnection;
+
+    // Note: client is a PoolConnection, closest to PoolClient in pg
+
     const acquireTime = Date.now() - startTime;
     if (acquireTime > 1000) {
       console.warn(`[DB Pool] Slow connection acquisition: ${acquireTime}ms`, getPoolStats());
     }
-    
+
     recordDbSuccess();
     return { client };
   } catch (err: any) {
@@ -252,14 +227,15 @@ export async function acquireConnectionWithGuard(): Promise<{ client: pkg.PoolCl
 
 export { circuitBreaker };
 
-export const pool = new Proxy({} as pkg.Pool, {
+// Proxies for export
+export const pool = new Proxy({} as mysql.Pool, {
   get(_target, prop) {
     const { pool } = ensureDatabase();
     return (pool as any)[prop];
   }
 });
 
-export const db = new Proxy({} as NodePgDatabase<typeof schema>, {
+export const db = new Proxy({} as MySql2Database<typeof schema>, {
   get(_target, prop) {
     const { db } = ensureDatabase();
     return (db as any)[prop];

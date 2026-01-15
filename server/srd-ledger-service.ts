@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { randomUUID } from "crypto";
 import { storeStock, inventoryDepartments, items, srdTransfers, stockMovements, stockMovementLines, purchaseItemEvents } from "@shared/schema";
 import { eq, and, gte, lte, lt, desc, asc, sql, inArray } from "drizzle-orm";
 import type { StoreStock, InsertStoreStock, InventoryDepartment, Item } from "@shared/schema";
@@ -61,8 +62,8 @@ function calculateExpectedClosing(
   const positiveAdj = movements.adjustmentQty > 0 ? movements.adjustmentQty : 0;
   const negativeAdj = movements.adjustmentQty < 0 ? Math.abs(movements.adjustmentQty) : 0;
   const deductions = movements.issuedQty + movements.transfersOutQty + movements.interDeptOutQty +
-                     movements.wasteQty + movements.writeOffQty + movements.soldQty + negativeAdj;
-  
+    movements.wasteQty + movements.writeOffQty + movements.soldQty + negativeAdj;
+
   return opening + additions + positiveAdj - deductions;
 }
 
@@ -74,7 +75,7 @@ async function getSrdType(srdId: string): Promise<string | null> {
 async function getItemsForSrd(srdId: string, clientId: string): Promise<Item[]> {
   const [srd] = await db.select().from(inventoryDepartments).where(eq(inventoryDepartments.id, srdId));
   if (!srd) return [];
-  
+
   return db.select().from(items).where(
     and(
       eq(items.clientId, clientId),
@@ -111,7 +112,7 @@ async function getLastClosingBefore(
       lt(storeStock.date, beforeDate)
     )
   ).orderBy(desc(storeStock.date)).limit(1);
-  
+
   if (prev) {
     // IMPORTANT: When a physical stock count exists, use it as the opening for the next day
     // This ensures stock count "resets" the chain to actual physical inventory
@@ -124,7 +125,7 @@ async function getLastClosingBefore(
     const closing = parseDecimal(prev.closingQty);
     return { closing, sourceDate: prev.date };
   }
-  
+
   return { closing: 0, sourceDate: null };
 }
 
@@ -138,7 +139,7 @@ async function getMovementsForDate(
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
-  
+
   const summary: MovementSummary = {
     addedQty: 0,
     issuedQty: 0,
@@ -152,9 +153,9 @@ async function getMovementsForDate(
     adjustmentQty: 0,
     soldQty: 0,
   };
-  
+
   const srdType = await getSrdType(srdId);
-  
+
   const transfers = await db.select().from(srdTransfers).where(
     and(
       eq(srdTransfers.clientId, clientId),
@@ -164,21 +165,21 @@ async function getMovementsForDate(
       eq(srdTransfers.status, "posted")
     )
   );
-  
+
   // Track processed transfers to avoid double-counting with stockMovements
   // Use transfer ID for unique identification (allows multiple same-day transfers)
   const processedTransferIds = new Set<string>();
-  
+
   for (const t of transfers) {
     const qty = parseDecimal(t.qty);
     // Track by transfer ID for unique identification
     processedTransferIds.add(t.id);
-    
+
     // CRITICAL: Branch on transferType FIRST, then fall back to store type heuristics
     // This ensures Issue/Transfer/Adjustment types are correctly mapped regardless of inventoryType format
     // IMPORTANT: Normalize to lowercase - production data may store as "ISSUE", "TRANSFER", etc.
     const transferType = (t.transferType || "transfer").toLowerCase();
-    
+
     if (transferType === "issue") {
       // Issue: Main Store -> Department Store
       // Main Store (fromSrdId): issuedQty column (Req Dep)
@@ -203,13 +204,13 @@ async function getMovementsForDate(
       const normalizedSrdType = srdType?.toUpperCase().replace(/[_\s-]/g, '') || '';
       const isMainStore = normalizedSrdType.includes('MAIN');
       const isDeptStore = normalizedSrdType.includes('DEPARTMENT') || normalizedSrdType.includes('DEPT');
-      
+
       if (t.fromSrdId === srdId) {
         const toType = await getSrdType(t.toSrdId);
         const normalizedToType = toType?.toUpperCase().replace(/[_\s-]/g, '') || '';
         const toIsMain = normalizedToType.includes('MAIN');
         const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
-        
+
         if (isMainStore && toIsDept) {
           // LEGACY FIX: Main→Dept typed as "transfer" should use Issue columns
           summary.issuedQty += qty;
@@ -224,13 +225,13 @@ async function getMovementsForDate(
           summary.transfersOutQty += qty;
         }
       }
-      
+
       if (t.toSrdId === srdId) {
         const fromType = await getSrdType(t.fromSrdId);
         const normalizedFromType = fromType?.toUpperCase().replace(/[_\s-]/g, '') || '';
         const fromIsMain = normalizedFromType.includes('MAIN');
         const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
-        
+
         if (fromIsMain && isDeptStore) {
           // LEGACY FIX: Main→Dept typed as "transfer" should use Added column
           summary.addedQty += qty;
@@ -247,7 +248,7 @@ async function getMovementsForDate(
       }
     }
   }
-  
+
   const purchases = await db.select().from(purchaseItemEvents).where(
     and(
       eq(purchaseItemEvents.clientId, clientId),
@@ -257,11 +258,11 @@ async function getMovementsForDate(
       lte(purchaseItemEvents.date, endOfDay)
     )
   );
-  
+
   for (const p of purchases) {
     summary.addedQty += parseDecimal(p.qty);
   }
-  
+
   const movements = await db.select({
     movement: stockMovements,
     line: stockMovementLines,
@@ -275,10 +276,10 @@ async function getMovementsForDate(
         lte(stockMovements.date, endOfDay)
       )
     );
-  
+
   for (const { movement, line } of movements) {
     const qty = parseDecimal(line.qty);
-    
+
     if (movement.fromSrdId === srdId || movement.toSrdId === srdId) {
       switch (movement.movementType) {
         case "waste":
@@ -331,7 +332,7 @@ async function getMovementsForDate(
             const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
             const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
             const toIsMain = normalizedToType.includes('MAIN');
-            
+
             if (fromIsMain && toIsDept) {
               // LEGACY FIX: Main→Dept typed as "transfer" should use Issue columns
               summary.issuedQty += qty;
@@ -352,7 +353,7 @@ async function getMovementsForDate(
             const fromIsDept = normalizedFromType.includes('DEPARTMENT') || normalizedFromType.includes('DEPT');
             const toIsDept = normalizedToType.includes('DEPARTMENT') || normalizedToType.includes('DEPT');
             const toIsMain = normalizedToType.includes('MAIN');
-            
+
             if (fromIsMain && toIsDept) {
               // LEGACY FIX: Main→Dept typed as "transfer" should use Added column for Dept
               summary.addedQty += qty;
@@ -369,7 +370,7 @@ async function getMovementsForDate(
       }
     }
   }
-  
+
   return summary;
 }
 
@@ -387,7 +388,7 @@ async function upsertLedgerRow(
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
-  
+
   const [existing] = await db.select().from(storeStock).where(
     and(
       eq(storeStock.storeDepartmentId, srdId),
@@ -396,12 +397,12 @@ async function upsertLedgerRow(
       lte(storeStock.date, endOfDay)
     )
   );
-  
+
   const closingQty = calculateExpectedClosing(opening, movements);
-  
+
   const existingPhysical = existing && existing.physicalClosingQty !== null ? parseDecimal(existing.physicalClosingQty) : null;
   const variance = existingPhysical !== null ? existingPhysical - closingQty : 0;
-  
+
   const rowData: Partial<InsertStoreStock> = {
     openingQty: safeToFixed(opening),
     addedQty: safeToFixed(movements.addedQty),
@@ -419,24 +420,29 @@ async function upsertLedgerRow(
     varianceQty: safeToFixed(variance),
     costPriceSnapshot: safeToFixed(costPrice),
   };
-  
+
   if (existing) {
-    const [updated] = await db.update(storeStock).set({
+    await db.update(storeStock).set({
       ...rowData,
       updatedAt: new Date(),
-    }).where(eq(storeStock.id, existing.id)).returning();
+    }).where(eq(storeStock.id, existing.id));
+    const [updated] = await db.select().from(storeStock).where(eq(storeStock.id, existing.id));
     return updated;
   }
-  
-  const [created] = await db.insert(storeStock).values({
+
+  const id = randomUUID();
+  await db.insert(storeStock).values({
     clientId,
     storeDepartmentId: srdId,
     itemId,
     date: startOfDay,
     ...rowData,
     createdBy: userId,
-  } as InsertStoreStock).returning();
-  
+    id,
+  } as InsertStoreStock);
+
+  const [created] = await db.select().from(storeStock).where(eq(storeStock.id, id));
+
   return created;
 }
 
@@ -455,59 +461,59 @@ export async function backfillSrdLedger(params: LedgerRecalcParams): Promise<{
     maxLookbackDays = MAX_LOOKBACK_DAYS,
     maxForwardDays = MAX_FORWARD_DAYS,
   } = params;
-  
+
   const result = {
     rowsProcessed: 0,
     rowsCreated: 0,
     rowsUpdated: 0,
     errors: [] as string[],
   };
-  
+
   console.log(`[SRD Ledger] Starting backfill for SRD ${srdId}, item: ${itemId || 'all'}, range: ${formatDateYMD(startDate)} to ${formatDateYMD(endDate)}`);
-  
+
   try {
-    const itemsToProcess = itemId 
-      ? [{ id: itemId, costPrice: "0" }] 
+    const itemsToProcess = itemId
+      ? [{ id: itemId, costPrice: "0" }]
       : await getItemsForSrd(srdId, clientId);
-    
+
     for (const item of itemsToProcess) {
       const effectiveStart = new Date(startDate);
       effectiveStart.setDate(effectiveStart.getDate() - maxLookbackDays);
       effectiveStart.setHours(0, 0, 0, 0);
-      
+
       const effectiveEnd = new Date(endDate);
       effectiveEnd.setDate(effectiveEnd.getDate() + maxForwardDays);
       effectiveEnd.setHours(23, 59, 59, 999);
-      
+
       const today = new Date();
       if (effectiveEnd > today) {
         effectiveEnd.setTime(today.getTime());
         effectiveEnd.setHours(23, 59, 59, 999);
       }
-      
+
       const existingRows = await getExistingLedgerRows(srdId, item.id, effectiveStart, effectiveEnd);
       const existingByDate = new Map<string, StoreStock>();
       for (const row of existingRows) {
         existingByDate.set(formatDateYMD(row.date), row);
       }
-      
+
       const { closing: initialOpening, sourceDate } = await getLastClosingBefore(srdId, item.id, effectiveStart);
       console.log(`[SRD Ledger] Item ${item.id}: initial opening=${initialOpening} from ${sourceDate ? formatDateYMD(sourceDate) : 'none'}`);
-      
+
       let currentOpening = initialOpening;
       const currentDate = new Date(effectiveStart);
-      
+
       while (currentDate <= effectiveEnd) {
         const dateKey = formatDateYMD(currentDate);
-        
+
         try {
           const movements = await getMovementsForDate(clientId, srdId, item.id, currentDate);
-          
+
           const costPrice = parseDecimal((item as Item).costPrice);
-          
+
           const existingRow = existingByDate.get(dateKey);
           const wasCreate = !existingRow;
-          
+
           const updatedRow = await upsertLedgerRow(
             clientId,
             srdId,
@@ -517,39 +523,39 @@ export async function backfillSrdLedger(params: LedgerRecalcParams): Promise<{
             movements,
             costPrice
           );
-          
+
           if (wasCreate) {
             result.rowsCreated++;
           } else {
             result.rowsUpdated++;
           }
           result.rowsProcessed++;
-          
+
           // CRITICAL: Always use calculated closing for the next day's opening
           // This ensures backdated corrections properly propagate forward
           // physicalClosingQty is for variance tracking only - it should NOT break the chain
           currentOpening = parseDecimal(updatedRow.closingQty);
-          
+
         } catch (err: any) {
           const errorMsg = `Item ${item.id} on ${dateKey}: ${err.message}`;
           console.log(`[SRD Ledger] ERROR: ${errorMsg}`);
           result.errors.push(errorMsg);
         }
-        
+
         currentDate.setDate(currentDate.getDate() + 1);
       }
     }
-    
+
     console.log(`[SRD Ledger] Backfill complete: ${result.rowsProcessed} rows (${result.rowsCreated} created, ${result.rowsUpdated} updated), ${result.errors.length} errors`);
     if (result.errors.length > 0) {
       console.log(`[SRD Ledger] Errors:`, result.errors.slice(0, 5).join('; '));
     }
-    
+
   } catch (err: any) {
     console.error(`[SRD Ledger] Backfill failed:`, err);
     result.errors.push(`Backfill failed: ${err.message}`);
   }
-  
+
   return result;
 }
 
@@ -561,16 +567,16 @@ export async function recalculateForward(
   maxDays: number = MAX_FORWARD_DAYS
 ): Promise<{ rowsUpdated: number }> {
   console.log(`[SRD Ledger] Forward recalc for SRD ${srdId}, item ${itemId} from ${formatDateYMD(fromDate)}`);
-  
+
   const endDate = new Date(fromDate);
   endDate.setDate(endDate.getDate() + maxDays);
-  
+
   const today = new Date();
   if (endDate > today) {
     endDate.setTime(today.getTime());
   }
   endDate.setHours(23, 59, 59, 999);
-  
+
   const result = await backfillSrdLedger({
     clientId,
     srdId,
@@ -580,7 +586,7 @@ export async function recalculateForward(
     maxLookbackDays: 0,
     maxForwardDays: maxDays,
   });
-  
+
   return { rowsUpdated: result.rowsUpdated + result.rowsCreated };
 }
 
@@ -595,11 +601,11 @@ export async function postMovementToLedgers(movement: {
   adjustmentDirection?: string;
 }): Promise<void> {
   console.log(`[SRD Ledger] Posting movement: type=${movement.movementType}, item=${movement.itemId}, qty=${movement.qty}, from=${movement.fromSrdId}, to=${movement.toSrdId}`);
-  
+
   if (movement.fromSrdId) {
     await recalculateForward(movement.clientId, movement.fromSrdId, movement.itemId, movement.date);
   }
-  
+
   if (movement.toSrdId && movement.toSrdId !== movement.fromSrdId) {
     await recalculateForward(movement.clientId, movement.toSrdId, movement.itemId, movement.date);
   }
@@ -617,7 +623,7 @@ export async function ensureLedgerRowExists(
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
-  
+
   const [existing] = await db.select().from(storeStock).where(
     and(
       eq(storeStock.storeDepartmentId, srdId),
@@ -626,13 +632,13 @@ export async function ensureLedgerRowExists(
       lte(storeStock.date, endOfDay)
     )
   );
-  
+
   if (existing) {
     return existing;
   }
-  
+
   const { closing: opening } = await getLastClosingBefore(srdId, itemId, startOfDay);
-  
+
   const movements: MovementSummary = {
     addedQty: 0,
     issuedQty: 0,
@@ -646,7 +652,7 @@ export async function ensureLedgerRowExists(
     adjustmentQty: 0,
     soldQty: 0,
   };
-  
+
   return upsertLedgerRow(clientId, srdId, itemId, date, opening, movements, costPrice, userId);
 }
 
@@ -658,14 +664,14 @@ export async function backfillAllSrdsForClient(clientId: string, startDate: Date
   errors: string[];
 }> {
   console.log(`[SRD Ledger] Backfilling ALL SRDs for client ${clientId}`);
-  
+
   const srds = await db.select().from(inventoryDepartments).where(
     and(
       eq(inventoryDepartments.clientId, clientId),
       eq(inventoryDepartments.status, "active")
     )
   );
-  
+
   const result = {
     totalRows: 0,
     totalCreated: 0,
@@ -673,7 +679,7 @@ export async function backfillAllSrdsForClient(clientId: string, startDate: Date
     srdCount: srds.length,
     errors: [] as string[],
   };
-  
+
   for (const srd of srds) {
     const srdResult = await backfillSrdLedger({
       clientId,
@@ -681,14 +687,14 @@ export async function backfillAllSrdsForClient(clientId: string, startDate: Date
       startDate,
       endDate,
     });
-    
+
     result.totalRows += srdResult.rowsProcessed;
     result.totalCreated += srdResult.rowsCreated;
     result.totalUpdated += srdResult.rowsUpdated;
     result.errors.push(...srdResult.errors);
   }
-  
+
   console.log(`[SRD Ledger] Client backfill complete: ${result.srdCount} SRDs, ${result.totalRows} rows`);
-  
+
   return result;
 }

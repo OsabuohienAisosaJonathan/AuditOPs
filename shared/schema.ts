@@ -767,8 +767,8 @@ export const inventoryDepartmentCategories = mysqlTable("inventory_department_ca
 export const RECEIVABLE_STATUSES = ["open", "part_paid", "settled", "written_off"] as const;
 export type ReceivableStatus = typeof RECEIVABLE_STATUSES[number];
 
-export const receivables = pgTable("receivables", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const receivables = mysqlTable("receivables", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   auditDate: timestamp("audit_date").notNull(),
@@ -783,8 +783,8 @@ export const receivables = pgTable("receivables", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const receivableHistory = pgTable("receivable_history", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const receivableHistory = mysqlTable("receivable_history", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
   receivableId: varchar("receivable_id").notNull().references(() => receivables.id, { onDelete: "cascade" }),
   action: text("action").notNull(),
   previousStatus: text("previous_status"),
@@ -802,8 +802,8 @@ export const receivableHistory = pgTable("receivable_history", {
 export const SURPLUS_STATUSES = ["open", "classified", "cleared", "posted"] as const;
 export type SurplusStatus = typeof SURPLUS_STATUSES[number];
 
-export const surpluses = pgTable("surpluses", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const surpluses = mysqlTable("surpluses", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   auditDate: timestamp("audit_date").notNull(),
@@ -817,8 +817,8 @@ export const surpluses = pgTable("surpluses", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const surplusHistory = pgTable("surplus_history", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const surplusHistory = mysqlTable("surplus_history", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
   surplusId: varchar("surplus_id").notNull().references(() => surpluses.id, { onDelete: "cascade" }),
   action: text("action").notNull(),
   previousStatus: text("previous_status"),
@@ -835,16 +835,16 @@ export const surplusHistory = pgTable("surplus_history", {
 export const SERIAL_EVENT_TYPES = ["count", "transfer", "adjustment", "waste", "write_off", "received"] as const;
 export type SerialEventType = typeof SERIAL_EVENT_TYPES[number];
 
-export const itemSerialEvents = pgTable("item_serial_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  date: timestamp("date").notNull(),
-  srdId: varchar("srd_id").notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
-  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+export const itemSerialEvents = mysqlTable("item_serial_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
+  date: datetime("date").notNull(),
+  srdId: varchar("srd_id", { length: 36 }).notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
   eventType: text("event_type").notNull(),
-  refId: varchar("ref_id"),
-  serialNumber: text("serial_number").notNull(),
-  createdBy: varchar("created_by").references(() => users.id),
+  refId: varchar("ref_id", { length: 255 }),
+  serialNumber: varchar("serial_number", { length: 255 }).notNull(),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -900,19 +900,19 @@ export const insertSrdLedgerDailySchema = createInsertSchema(srdLedgerDaily).omi
 export const insertSrdStockMovementSchema = createInsertSchema(srdStockMovements).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Purchase Item Events - history/audit trail of all item purchases
-export const purchaseItemEvents = pgTable("purchase_item_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  srdId: varchar("srd_id").references(() => inventoryDepartments.id, { onDelete: "set null" }),
-  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
-  date: timestamp("date").notNull(),
+export const purchaseItemEvents = mysqlTable("purchase_item_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
+  srdId: varchar("srd_id", { length: 36 }).references(() => inventoryDepartments.id, { onDelete: "set null" }),
+  itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
+  date: datetime("date").notNull(),
   qty: decimal("qty", { precision: 10, scale: 2 }).notNull(),
   unitCostAtPurchase: decimal("unit_cost_at_purchase", { precision: 12, scale: 2 }).notNull(),
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
   supplierName: text("supplier_name"),
   invoiceNo: text("invoice_no"),
   notes: text("notes"),
-  createdBy: varchar("created_by").references(() => users.id),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -934,32 +934,32 @@ export const SUBSCRIPTION_PROVIDERS = ["manual", "manual_free", "paystack", "str
 export type SubscriptionProvider = typeof SUBSCRIPTION_PROVIDERS[number];
 
 // Subscriptions table for tenant billing and feature access
-export const subscriptions = pgTable("subscriptions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+export const subscriptions = mysqlTable("subscriptions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id),
   planName: text("plan_name").notNull().default("starter"),
   billingPeriod: text("billing_period").notNull().default("monthly"),
-  slotsPurchased: integer("slots_purchased").notNull().default(1),
+  slotsPurchased: int("slots_purchased").notNull().default(1),
   status: text("status").notNull().default("active"),
   provider: text("provider").default("manual"),
   startDate: timestamp("start_date").defaultNow().notNull(),
-  nextBillingDate: timestamp("next_billing_date"),
-  expiresAt: timestamp("expires_at"),
-  endDate: timestamp("end_date"),
+  nextBillingDate: datetime("next_billing_date"),
+  expiresAt: datetime("expires_at"),
+  endDate: datetime("end_date"),
   notes: text("notes"),
-  updatedBy: varchar("updated_by"),
+  updatedBy: varchar("updated_by", { length: 36 }),
   // Owner overrides (null = use plan defaults)
-  maxClientsOverride: integer("max_clients_override"),
-  maxSrdDepartmentsOverride: integer("max_srd_departments_override"),
-  maxMainStoreOverride: integer("max_main_store_override"),
-  maxSeatsOverride: integer("max_seats_override"),
-  retentionDaysOverride: integer("retention_days_override"),
+  maxClientsOverride: int("max_clients_override"),
+  maxSrdDepartmentsOverride: int("max_srd_departments_override"),
+  maxMainStoreOverride: int("max_main_store_override"),
+  maxSeatsOverride: int("max_seats_override"),
+  retentionDaysOverride: int("retention_days_override"),
   // Paystack integration fields
   paystackCustomerCode: text("paystack_customer_code"),
   paystackSubscriptionCode: text("paystack_subscription_code"),
   paystackPlanCode: text("paystack_plan_code"),
   paystackEmailToken: text("paystack_email_token"),
-  lastPaymentDate: timestamp("last_payment_date"),
+  lastPaymentDate: datetime("last_payment_date"),
   lastPaymentAmount: decimal("last_payment_amount", { precision: 12, scale: 2 }),
   lastPaymentReference: text("last_payment_reference"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1050,24 +1050,24 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
 };
 
 // Configurable Subscription Plans (editable by Owner/Platform Admin)
-export const subscriptionPlans = pgTable("subscription_plans", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  slug: text("slug").notNull().unique(), // starter, growth, business, enterprise
+export const subscriptionPlans = mysqlTable("subscription_plans", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  slug: varchar("slug", { length: 255 }).notNull().unique(), // starter, growth, business, enterprise
   displayName: text("display_name").notNull(),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0),
+  sortOrder: int("sort_order").notNull().default(0),
   // Pricing (in smallest currency unit, e.g., kobo for NGN)
   monthlyPrice: decimal("monthly_price", { precision: 12, scale: 2 }).notNull().default("0"),
   quarterlyPrice: decimal("quarterly_price", { precision: 12, scale: 2 }).notNull().default("0"),
   yearlyPrice: decimal("yearly_price", { precision: 12, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("NGN"),
   // Slot & Capacity Limits
-  maxClients: integer("max_clients").notNull().default(1),
-  maxSrdDepartmentsPerClient: integer("max_srd_departments_per_client").notNull().default(4),
-  maxMainStorePerClient: integer("max_main_store_per_client").notNull().default(1),
-  maxSeats: integer("max_seats").notNull().default(2),
-  retentionDays: integer("retention_days").notNull().default(30),
+  maxClients: int("max_clients").notNull().default(1),
+  maxSrdDepartmentsPerClient: int("max_srd_departments_per_client").notNull().default(4),
+  maxMainStorePerClient: int("max_main_store_per_client").notNull().default(1),
+  maxSeats: int("max_seats").notNull().default(2),
+  retentionDays: int("retention_days").notNull().default(30),
   // Feature Flags (entitlements)
   canViewReports: boolean("can_view_reports").notNull().default(true),
   canDownloadReports: boolean("can_download_reports").notNull().default(false),
@@ -1088,13 +1088,13 @@ export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans
 export const PAYMENT_STATUSES = ["pending", "completed", "failed", "refunded"] as const;
 export type PaymentStatus = typeof PAYMENT_STATUSES[number];
 
-export const payments = pgTable("payments", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+export const payments = mysqlTable("payments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   currency: text("currency").notNull().default("NGN"),
-  periodCoveredStart: timestamp("period_covered_start").notNull(),
-  periodCoveredEnd: timestamp("period_covered_end").notNull(),
+  periodCoveredStart: datetime("period_covered_start").notNull(),
+  periodCoveredEnd: datetime("period_covered_end").notNull(),
   status: text("status").notNull().default("pending"),
   reference: text("reference"),
   notes: text("notes"),
@@ -1214,16 +1214,16 @@ export const PLATFORM_ADMIN_ROLES = [
 export type PlatformAdminRole = typeof PLATFORM_ADMIN_ROLES[number];
 
 // Platform Admin Users - separate from tenant users
-export const platformAdminUsers = pgTable("platform_admin_users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: text("email").notNull().unique(),
+export const platformAdminUsers = mysqlTable("platform_admin_users", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  email: varchar("email", { length: 255 }).notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default("readonly_admin"),
   isActive: boolean("is_active").notNull().default(true),
-  lastLoginAt: timestamp("last_login_at"),
-  loginAttempts: integer("login_attempts").default(0),
-  lockedUntil: timestamp("locked_until"),
+  lastLoginAt: datetime("last_login_at"),
+  loginAttempts: int("login_attempts").default(0),
+  lockedUntil: datetime("locked_until"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1233,14 +1233,14 @@ export type InsertPlatformAdminUser = z.infer<typeof insertPlatformAdminUserSche
 export type PlatformAdminUser = typeof platformAdminUsers.$inferSelect;
 
 // Platform Admin Audit Log - tracks all admin actions
-export const platformAdminAuditLog = pgTable("platform_admin_audit_log", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  adminId: varchar("admin_id").notNull().references(() => platformAdminUsers.id),
+export const platformAdminAuditLog = mysqlTable("platform_admin_audit_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  adminId: varchar("admin_id", { length: 36 }).notNull().references(() => platformAdminUsers.id),
   actionType: text("action_type").notNull(),
   targetType: text("target_type").notNull(),
-  targetId: varchar("target_id"),
-  beforeJson: jsonb("before_json"),
-  afterJson: jsonb("after_json"),
+  targetId: varchar("target_id", { length: 36 }),
+  beforeJson: json("before_json"),
+  afterJson: json("after_json"),
   notes: text("notes"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
