@@ -2993,31 +2993,27 @@ export class DbStorage implements IStorage {
         ...userData,
         id: userId,
         organizationId: organization.id,
-        await tx.insert(users).values({
-          ...userData,
-          id: userId,
-          organizationId: organization.id,
-          organizationRole: "owner",
-          accessScope: userData.accessScope as any,
-        });
-        const [user] = await tx.select().from(users).where(eq(users.id, userId));
-
-        // Create starter subscription for the organization
-        const subId = randomUUID();
-        await tx.insert(subscriptions).values({
-          organizationId: organization.id,
-          planName: "starter",
-          billingPeriod: "monthly",
-          slotsPurchased: 1,
-          status: "trial",
-          startDate: new Date(),
-          id: subId,
-        });
-        const [subscription] = await tx.select().from(subscriptions).where(eq(subscriptions.id, subId));
-
-        return { organization, user, subscription };
+        organizationRole: "owner",
+        accessScope: userData.accessScope as any,
       });
-    }
+      const [user] = await tx.select().from(users).where(eq(users.id, userId));
+
+      // Create starter subscription for the organization
+      const subId = randomUUID();
+      await tx.insert(subscriptions).values({
+        organizationId: organization.id,
+        planName: "starter",
+        billingPeriod: "monthly",
+        slotsPurchased: 1,
+        status: "trial",
+        startDate: new Date(),
+        id: subId,
+      });
+      const [subscription] = await tx.select().from(subscriptions).where(eq(subscriptions.id, subId));
+
+      return { organization, user, subscription };
+    });
+  }
 }
 
-  export const storage = new DbStorage();
+export const storage = new DbStorage();
