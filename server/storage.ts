@@ -584,14 +584,15 @@ export class DbStorage implements IStorage {
 
   async upsertOrganizationSettings(organizationId: string, data: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings> {
     const startTime = Date.now();
-    // Use proper UPSERT via onDuplicateKeyUpdate
+    // Use proper UPSERT via onConflictDoUpdate (Postgres)
     await db.insert(organizationSettings)
       .values({
         ...data,
         organizationId,
         updatedAt: new Date()
       } as InsertOrganizationSettings)
-      .onDuplicateKeyUpdate({
+      .onConflictDoUpdate({
+        target: organizationSettings.organizationId,
         set: {
           ...data,
           updatedAt: new Date()

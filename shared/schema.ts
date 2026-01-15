@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { mysqlTable, text, varchar, int, timestamp, decimal, json, boolean, date, datetime, foreignKey } from "drizzle-orm/mysql-core";
+import { pgTable as mysqlTable, text, varchar, integer as int, timestamp, decimal, jsonb as json, boolean, date, foreignKey } from "drizzle-orm/pg-core";
+const datetime = timestamp; // Alias datetime to timestamp for PG compatibility
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -17,7 +18,7 @@ export type OrgType = typeof ORG_TYPES[number];
 
 // Organizations table (tenants)
 export const organizations = mysqlTable("organizations", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   type: text("type").notNull().default("company"),
   email: text("email"),
@@ -36,7 +37,7 @@ export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type Organization = typeof organizations.$inferSelect;
 
 export const users = mysqlTable("users", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).references(() => organizations.id),
   organizationRole: text("organization_role").default("member"),
   username: varchar("username", { length: 255 }).notNull().unique(),
@@ -63,7 +64,7 @@ export const users = mysqlTable("users", {
 });
 
 export const clients = mysqlTable("clients", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).references(() => organizations.id),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
@@ -74,7 +75,7 @@ export const clients = mysqlTable("clients", {
 
 // Categories are optional grouping labels under a client (e.g., F&B, Front Desk, Admin)
 export const categories = mysqlTable("categories", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
@@ -86,7 +87,7 @@ export const categories = mysqlTable("categories", {
 
 // Organization settings for company profile and currency (tenant-scoped)
 export const organizationSettings = mysqlTable("organization_settings", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id).unique(),
   companyName: text("company_name"),
   address: text("address"),
@@ -101,7 +102,7 @@ export const organizationSettings = mysqlTable("organization_settings", {
 
 // User settings for individual preferences (user-scoped)
 export const userSettings = mysqlTable("user_settings", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id).unique(),
   theme: text("theme").notNull().default("light"),
   autoSaveEnabled: boolean("auto_save_enabled").notNull().default(true),
@@ -116,7 +117,7 @@ export const userSettings = mysqlTable("user_settings", {
 
 // Notifications for in-app and email alerts
 export const notifications = mysqlTable("notifications", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id, { onDelete: "cascade" }),
   userId: varchar("user_id", { length: 36 }).references(() => users.id, { onDelete: "cascade" }),
   type: text("type").notNull(), // 'exception', 'variance', 'system', 'export'
@@ -134,7 +135,7 @@ export const notifications = mysqlTable("notifications", {
 
 // Data exports for tenant backup/export functionality
 export const dataExports = mysqlTable("data_exports", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id, { onDelete: "cascade" }),
   createdBy: varchar("created_by", { length: 36 }).notNull().references(() => users.id),
   format: text("format").notNull(), // 'csv', 'excel', 'json'
@@ -154,7 +155,7 @@ export const dataExports = mysqlTable("data_exports", {
 
 // Departments are the core operational unit - all transactions and reconciliations tie to departments
 export const departments = mysqlTable("departments", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   categoryId: varchar("category_id", { length: 36 }).references(() => categories.id, { onDelete: "set null" }),
   name: text("name").notNull(),
@@ -165,7 +166,7 @@ export const departments = mysqlTable("departments", {
 });
 
 export const suppliers = mysqlTable("suppliers", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   contactPerson: text("contact_person"),
@@ -177,7 +178,7 @@ export const suppliers = mysqlTable("suppliers", {
 });
 
 export const items = mysqlTable("items", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   categoryId: varchar("category_id", { length: 36 }).references(() => categories.id, { onDelete: "set null" }),
   supplierId: varchar("supplier_id", { length: 36 }).references(() => suppliers.id, { onDelete: "set null" }),
@@ -199,7 +200,7 @@ export const items = mysqlTable("items", {
 });
 
 export const purchaseLines = mysqlTable("purchase_lines", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   purchaseId: varchar("purchase_id", { length: 36 }).notNull().references(() => purchases.id, { onDelete: "cascade" }),
   itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
   quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
@@ -209,7 +210,7 @@ export const purchaseLines = mysqlTable("purchase_lines", {
 });
 
 export const stockCounts = mysqlTable("stock_counts", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   storeDepartmentId: varchar("store_department_id", { length: 36 }).references(() => inventoryDepartments.id, { onDelete: "set null" }),
@@ -231,7 +232,7 @@ export const stockCounts = mysqlTable("stock_counts", {
 });
 
 export const salesEntries = mysqlTable("sales_entries", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   date: datetime("date").notNull(),
@@ -254,7 +255,7 @@ export const salesEntries = mysqlTable("sales_entries", {
 
 // Purchases are now tied to departments (e.g., "Store" department for inventory purchases)
 export const purchases = mysqlTable("purchases", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   supplierName: text("supplier_name").notNull(),
@@ -280,7 +281,7 @@ export const ADJUSTMENT_DIRECTIONS = ["increase", "decrease"] as const;
 export type AdjustmentDirection = typeof ADJUSTMENT_DIRECTIONS[number];
 
 export const stockMovements = mysqlTable("stock_movements", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   outletId: varchar("outlet_id", { length: 36 }),
@@ -306,7 +307,7 @@ export const stockMovements = mysqlTable("stock_movements", {
 
 // Stock movement line items for per-item tracking
 export const stockMovementLines = mysqlTable("stock_movement_lines", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   movementId: varchar("movement_id", { length: 36 }).notNull().references(() => stockMovements.id, { onDelete: "cascade" }),
   itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
   qty: decimal("qty", { precision: 10, scale: 2 }).notNull(),
@@ -316,7 +317,7 @@ export const stockMovementLines = mysqlTable("stock_movement_lines", {
 });
 
 export const reconciliations = mysqlTable("reconciliations", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   date: datetime("date").notNull(),
@@ -335,7 +336,7 @@ export const reconciliations = mysqlTable("reconciliations", {
 
 // Exceptions are tied to departments
 export const exceptions = mysqlTable("exceptions", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   caseNumber: varchar("case_number", { length: 255 }).notNull().unique(),
   clientId: varchar("client_id", { length: 36 }).references(() => clients.id, { onDelete: "cascade" }),
   outletId: varchar("outlet_id", { length: 36 }),
@@ -359,7 +360,7 @@ export const exceptions = mysqlTable("exceptions", {
 });
 
 export const exceptionComments = mysqlTable("exception_comments", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   exceptionId: varchar("exception_id", { length: 36 }).notNull().references(() => exceptions.id, { onDelete: "cascade" }),
   comment: text("comment").notNull(),
   createdBy: varchar("created_by", { length: 36 }).notNull().references(() => users.id),
@@ -368,7 +369,7 @@ export const exceptionComments = mysqlTable("exception_comments", {
 
 // Exception activity feed for investigation timeline
 export const exceptionActivity = mysqlTable("exception_activity", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   exceptionId: varchar("exception_id", { length: 36 }).notNull().references(() => exceptions.id, { onDelete: "cascade" }),
   activityType: text("activity_type").notNull().default("note"), // note, status_change, outcome_change, system
   message: text("message").notNull(),
@@ -379,7 +380,7 @@ export const exceptionActivity = mysqlTable("exception_activity", {
 });
 
 export const auditLogs = mysqlTable("audit_logs", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
   action: text("action").notNull(),
   entity: text("entity").notNull(),
@@ -390,7 +391,7 @@ export const auditLogs = mysqlTable("audit_logs", {
 });
 
 export const adminActivityLogs = mysqlTable("admin_activity_logs", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   actorId: varchar("actor_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }), // Removed .notNull()
   targetUserId: varchar("target_user_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
   actionType: text("action_type").notNull(),
@@ -402,7 +403,7 @@ export const adminActivityLogs = mysqlTable("admin_activity_logs", {
 });
 
 export const systemSettings = mysqlTable("system_settings", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   key: text("key").notNull().unique(), // text in mysql cannot be unique key directly unless hashed or strict length, but drizzle might handle it as VARCHAR(255) if type=text? No, drizzle text is TEXT. Use varchar for unique keys.
   // Wait, system_settings key should be varchar if unique.
   // In PG text can be unique. In MySQL TEXT requires prefix length.
@@ -417,7 +418,7 @@ export const systemSettings = mysqlTable("system_settings", {
 
 // Payment declarations are now tied to client + department + date
 export const paymentDeclarations = mysqlTable("payment_declarations", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
@@ -440,7 +441,7 @@ export const ACCESS_STATUS = ["assigned", "suspended", "removed"] as const;
 export type AccessStatus = typeof ACCESS_STATUS[number];
 
 export const userClientAccess = mysqlTable("user_client_access", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("assigned"),
@@ -462,7 +463,7 @@ export const AUDIT_CONTEXT_STATUS = ["active", "cleared"] as const;
 export type AuditContextStatus = typeof AUDIT_CONTEXT_STATUS[number];
 
 export const auditContexts = mysqlTable("audit_contexts", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).references(() => departments.id, { onDelete: "cascade" }),
@@ -482,7 +483,7 @@ export const AUDIT_STATUS = ["draft", "submitted", "locked"] as const;
 export type AuditStatus = typeof AUDIT_STATUS[number];
 
 export const audits = mysqlTable("audits", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id", { length: 36 }).notNull().references(() => departments.id, { onDelete: "cascade" }),
   period: text("period").notNull().default("daily"),
@@ -504,7 +505,7 @@ export const audits = mysqlTable("audits", {
 // ============================================================
 
 export const auditReissuePermissions = mysqlTable("audit_reissue_permissions", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   auditId: varchar("audit_id", { length: 36 }).notNull().references(() => audits.id, { onDelete: "cascade" }),
   grantedTo: varchar("granted_to", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
   grantedBy: varchar("granted_by", { length: 36 }).notNull().references(() => users.id),
@@ -520,7 +521,7 @@ export const auditReissuePermissions = mysqlTable("audit_reissue_permissions", {
 // ============================================================
 
 export const auditChangeLog = mysqlTable("audit_change_log", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   auditId: varchar("audit_id", { length: 36 }).references(() => audits.id, { onDelete: "cascade" }),
   userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id),
   clientId: varchar("client_id", { length: 36 }).references(() => clients.id),
@@ -540,7 +541,7 @@ export const auditChangeLog = mysqlTable("audit_change_log", {
 // ============================================================
 
 export const storeIssues = mysqlTable("store_issues", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   issueDate: datetime("issue_date").notNull(),
   fromDepartmentId: varchar("from_department_id", { length: 36 }).notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
@@ -552,7 +553,7 @@ export const storeIssues = mysqlTable("store_issues", {
 });
 
 export const storeIssueLines = mysqlTable("store_issue_lines", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   storeIssueId: varchar("store_issue_id", { length: 36 }).notNull().references(() => storeIssues.id, { onDelete: "cascade" }),
   itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
   qtyIssued: decimal("qty_issued", { precision: 10, scale: 2 }).notNull(),
@@ -568,7 +569,7 @@ export const SRD_TRANSFER_TYPES = ["issue", "return", "transfer"] as const;
 export type SrdTransferType = typeof SRD_TRANSFER_TYPES[number];
 
 export const srdTransfers = mysqlTable("srd_transfers", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   refId: varchar("ref_id", { length: 255 }).notNull(),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   fromSrdId: varchar("from_srd_id", { length: 36 }).notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
@@ -604,7 +605,7 @@ export const SRD_MOVEMENT_EVENT_TYPES = [
 export type SrdMovementEventType = typeof SRD_MOVEMENT_EVENT_TYPES[number];
 
 export const srdLedgerDaily = mysqlTable("srd_ledger_daily", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   srdId: varchar("srd_id", { length: 36 }).notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
   srdType: text("srd_type").notNull(), // 'MAIN' or 'DEPARTMENT'
@@ -643,7 +644,7 @@ export const srdLedgerDaily = mysqlTable("srd_ledger_daily", {
 // ============================================================
 
 export const srdStockMovements = mysqlTable("srd_stock_movements", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   movementDate: date("movement_date").notNull(),
   eventType: text("event_type").notNull(), // PURCHASE, REQ_MAIN_TO_DEP, etc.
@@ -662,7 +663,7 @@ export const srdStockMovements = mysqlTable("srd_stock_movements", {
 // ============================================================
 
 export const storeStock = mysqlTable("store_stock", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   storeDepartmentId: varchar("store_department_id", { length: 36 }).notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
   itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
@@ -696,7 +697,7 @@ export const GRN_STATUS = ["pending", "received"] as const;
 export type GRNStatus = typeof GRN_STATUS[number];
 
 export const goodsReceivedNotes = mysqlTable("goods_received_notes", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   supplierId: varchar("supplier_id", { length: 36 }).references(() => suppliers.id, { onDelete: "set null" }),
   supplierName: text("supplier_name").notNull(),
@@ -716,7 +717,7 @@ export const goodsReceivedNotes = mysqlTable("goods_received_notes", {
 // ============================================================
 
 export const storeNames = mysqlTable("store_names", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
@@ -732,7 +733,7 @@ export const INVENTORY_TYPES = ["MAIN_STORE", "DEPARTMENT_STORE"] as const;
 export type InventoryType = typeof INVENTORY_TYPES[number];
 
 export const inventoryDepartments = mysqlTable("inventory_departments", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   storeNameId: varchar("store_name_id", { length: 36 }).notNull().references(() => storeNames.id, { onDelete: "restrict" }),
   departmentId: varchar("department_id", { length: 36 }).references(() => departments.id, { onDelete: "set null" }),
@@ -746,7 +747,7 @@ export const inventoryDepartments = mysqlTable("inventory_departments", {
 // ============================================================
 
 export const inventoryDepartmentCategories = mysqlTable("inventory_department_categories", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   // Use manual FK to avoid long identifier error
   inventoryDepartmentId: varchar("inventory_department_id", { length: 36 }).notNull(),
@@ -768,7 +769,7 @@ export const RECEIVABLE_STATUSES = ["open", "part_paid", "settled", "written_off
 export type ReceivableStatus = typeof RECEIVABLE_STATUSES[number];
 
 export const receivables = mysqlTable("receivables", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   auditDate: timestamp("audit_date").notNull(),
@@ -784,7 +785,7 @@ export const receivables = mysqlTable("receivables", {
 });
 
 export const receivableHistory = mysqlTable("receivable_history", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   receivableId: varchar("receivable_id").notNull().references(() => receivables.id, { onDelete: "cascade" }),
   action: text("action").notNull(),
   previousStatus: text("previous_status"),
@@ -803,7 +804,7 @@ export const SURPLUS_STATUSES = ["open", "classified", "cleared", "posted"] as c
 export type SurplusStatus = typeof SURPLUS_STATUSES[number];
 
 export const surpluses = mysqlTable("surpluses", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
   auditDate: timestamp("audit_date").notNull(),
@@ -818,7 +819,7 @@ export const surpluses = mysqlTable("surpluses", {
 });
 
 export const surplusHistory = mysqlTable("surplus_history", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   surplusId: varchar("surplus_id").notNull().references(() => surpluses.id, { onDelete: "cascade" }),
   action: text("action").notNull(),
   previousStatus: text("previous_status"),
@@ -836,7 +837,7 @@ export const SERIAL_EVENT_TYPES = ["count", "transfer", "adjustment", "waste", "
 export type SerialEventType = typeof SERIAL_EVENT_TYPES[number];
 
 export const itemSerialEvents = mysqlTable("item_serial_events", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   date: datetime("date").notNull(),
   srdId: varchar("srd_id", { length: 36 }).notNull().references(() => inventoryDepartments.id, { onDelete: "cascade" }),
@@ -901,7 +902,7 @@ export const insertSrdStockMovementSchema = createInsertSchema(srdStockMovements
 
 // Purchase Item Events - history/audit trail of all item purchases
 export const purchaseItemEvents = mysqlTable("purchase_item_events", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id, { onDelete: "cascade" }),
   srdId: varchar("srd_id", { length: 36 }).references(() => inventoryDepartments.id, { onDelete: "set null" }),
   itemId: varchar("item_id", { length: 36 }).notNull().references(() => items.id, { onDelete: "cascade" }),
@@ -935,7 +936,7 @@ export type SubscriptionProvider = typeof SUBSCRIPTION_PROVIDERS[number];
 
 // Subscriptions table for tenant billing and feature access
 export const subscriptions = mysqlTable("subscriptions", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id),
   planName: text("plan_name").notNull().default("starter"),
   billingPeriod: text("billing_period").notNull().default("monthly"),
@@ -1051,7 +1052,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, Entitlements> = {
 
 // Configurable Subscription Plans (editable by Owner/Platform Admin)
 export const subscriptionPlans = mysqlTable("subscription_plans", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   slug: varchar("slug", { length: 255 }).notNull().unique(), // starter, growth, business, enterprise
   displayName: text("display_name").notNull(),
   description: text("description"),
@@ -1089,7 +1090,7 @@ export const PAYMENT_STATUSES = ["pending", "completed", "failed", "refunded"] a
 export type PaymentStatus = typeof PAYMENT_STATUSES[number];
 
 export const payments = mysqlTable("payments", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id", { length: 36 }).notNull().references(() => organizations.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   currency: text("currency").notNull().default("NGN"),
@@ -1215,7 +1216,7 @@ export type PlatformAdminRole = typeof PLATFORM_ADMIN_ROLES[number];
 
 // Platform Admin Users - separate from tenant users
 export const platformAdminUsers = mysqlTable("platform_admin_users", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email", { length: 255 }).notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
@@ -1234,7 +1235,7 @@ export type PlatformAdminUser = typeof platformAdminUsers.$inferSelect;
 
 // Platform Admin Audit Log - tracks all admin actions
 export const platformAdminAuditLog = mysqlTable("platform_admin_audit_log", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`(uuid())`),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   adminId: varchar("admin_id", { length: 36 }).notNull().references(() => platformAdminUsers.id),
   actionType: text("action_type").notNull(),
   targetType: text("target_type").notNull(),
