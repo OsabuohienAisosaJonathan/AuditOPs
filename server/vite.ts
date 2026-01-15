@@ -6,6 +6,9 @@ import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
 
+// Use process.cwd() for path resolution in CJS/ESM cross-compatible way
+const __dirname = process.cwd();
+
 const viteLogger = createLogger();
 
 export async function setupVite(server: Server, app: Express) {
@@ -36,7 +39,7 @@ export async function setupVite(server: Server, app: Express) {
 
     try {
       const clientTemplate = path.resolve(
-        import.meta.dirname,
+        __dirname,
         "..",
         "client",
         "index.html",

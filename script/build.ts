@@ -63,16 +63,16 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  
+
   // External = deps NOT in allowlist + ALL native modules (always external)
   const externals = [
     ...allDeps.filter((dep) => !allowlist.includes(dep)),
     ...nativeModules, // Always mark native modules as external
   ];
-  
+
   // Remove duplicates
   const uniqueExternals = [...new Set(externals)];
-  
+
   console.log("Native modules (external):", nativeModules.filter(m => allDeps.includes(m) || m === "bcrypt"));
 
   await esbuild({
@@ -83,7 +83,7 @@ async function buildAll() {
     format: "cjs",
     outfile: "dist/index.cjs",
     define: {
-      "process.env.NODE_ENV": '"production"',
+      // "process.env.NODE_ENV": '"production"', // Removed to avoid conflict with runtime assignment
     },
     minify: true,
     external: uniqueExternals,

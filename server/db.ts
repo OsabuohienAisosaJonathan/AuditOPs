@@ -31,6 +31,15 @@ export async function checkDbHealth() {
   }
 }
 
+export async function probeDatabase(): Promise<boolean> {
+  try {
+    await pool.query('SELECT 1');
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 export function getPoolStats() {
   // neon-serverless pool stats might differ, basic stub for compatibility
   return {
