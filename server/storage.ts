@@ -467,7 +467,7 @@ export class DbStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    await db.insert(users).values({ ...insertUser, id });
+    await db.insert(users).values({ ...insertUser, id, accessScope: insertUser.accessScope as any });
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
@@ -1720,7 +1720,10 @@ export class DbStorage implements IStorage {
     await db.insert(paymentDeclarations).values({
       ...insertDeclaration,
       id,
-      totalReported: total
+      ...insertDeclaration,
+      id,
+      totalReported: total,
+      supportingDocuments: (insertDeclaration.supportingDocuments as any) || [],
     });
     const [result] = await db.select().from(paymentDeclarations).where(eq(paymentDeclarations.id, id));
     return result;
@@ -1739,7 +1742,9 @@ export class DbStorage implements IStorage {
 
     await db.update(paymentDeclarations).set({
       ...updateData,
+      ...updateData,
       totalReported: total,
+      supportingDocuments: updateData.supportingDocuments ? (updateData.supportingDocuments as any) : undefined,
       updatedAt: new Date()
     }).where(eq(paymentDeclarations.id, id));
     const [result] = await db.select().from(paymentDeclarations).where(eq(paymentDeclarations.id, id));
@@ -2803,10 +2808,11 @@ export class DbStorage implements IStorage {
   }
 
   async recallSrdTransfer(refId: string): Promise<boolean> {
-    const [result] = await db.update(srdTransfers)
+    const result = await db.update(srdTransfers)
       .set({ status: "recalled" })
       .where(eq(srdTransfers.refId, refId));
-    return result.affectedRows > 0;
+    // Drizzle with neondatabase/serverless returns { rowCount: number } for update
+    return (result.rowCount || 0) > 0;
   }
 
   async generateTransferRefId(clientId: string, date: Date): Promise<string> {
@@ -2864,8 +2870,8 @@ export class DbStorage implements IStorage {
   }
 
   async deletePurchaseItemEvent(id: string): Promise<boolean> {
-    const [result] = await db.delete(purchaseItemEvents).where(eq(purchaseItemEvents.id, id));
-    return result.affectedRows > 0;
+    const result = await db.delete(purchaseItemEvents).where(eq(purchaseItemEvents.id, id));
+    return (result.rowCount || 0) > 0;
   }
 
   async updatePurchaseItemEvent(id: string, updateData: Partial<InsertPurchaseItemEvent>): Promise<PurchaseItemEvent | undefined> {
@@ -2987,26 +2993,31 @@ export class DbStorage implements IStorage {
         ...userData,
         id: userId,
         organizationId: organization.id,
-        organizationRole: "owner",
-      });
-      const [user] = await tx.select().from(users).where(eq(users.id, userId));
+        await tx.insert(users).values({
+          ...userData,
+          id: userId,
+          organizationId: organization.id,
+          organizationRole: "owner",
+          accessScope: userData.accessScope as any,
+        });
+        const [user] = await tx.select().from(users).where(eq(users.id, userId));
 
-      // Create starter subscription for the organization
-      const subId = randomUUID();
-      await tx.insert(subscriptions).values({
-        organizationId: organization.id,
-        planName: "starter",
-        billingPeriod: "monthly",
-        slotsPurchased: 1,
-        status: "trial",
-        startDate: new Date(),
-        id: subId,
-      });
-      const [subscription] = await tx.select().from(subscriptions).where(eq(subscriptions.id, subId));
+        // Create starter subscription for the organization
+        const subId = randomUUID();
+        await tx.insert(subscriptions).values({
+          organizationId: organization.id,
+          planName: "starter",
+          billingPeriod: "monthly",
+          slotsPurchased: 1,
+          status: "trial",
+          startDate: new Date(),
+          id: subId,
+        });
+        const [subscription] = await tx.select().from(subscriptions).where(eq(subscriptions.id, subId));
 
-      return { organization, user, subscription };
-    });
-  }
+        return { organization, user, subscription };
+      });
+    }
 }
 
-export const storage = new DbStorage();
+  export const storage = new DbStorage();

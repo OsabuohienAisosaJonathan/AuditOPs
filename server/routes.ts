@@ -6,7 +6,7 @@ import { hash, compare } from "bcrypt";
 import session from "express-session";
 // import connectPgSimple from "connect-pg-simple"; // Removed for MySQL migration
 import MemoryStore from "memorystore";
-import { pool, circuitBreaker } from "./db";
+import { pool } from "./db";
 // import { CachedSessionStore } from "./cached-session-store"; // Removed for MySQL migration
 import { circuitBreakerGuard, requestTimeoutWrapper, handleCircuitBreakerError } from "./circuitBreakerMiddleware";
 import {
